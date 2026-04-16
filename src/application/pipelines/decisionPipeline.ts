@@ -882,7 +882,7 @@ const best =
   scalper ||
   sorted?.[0] ||
   watchlist[0] ||
-  null;
+  null; 
 
   const noBet = !best;
 
