@@ -98,10 +98,7 @@ export default function Dashboard({ data }: any) {
 
   if (!data) return null;
 
-  const elite = data?.elite;
-  const scalper = data?.scalper;
-
-  const best = data?.best || elite || scalper || null;
+const best = data?.best ?? null;
 
   const fullHistory = getHistory();
   const history = fullHistory.slice(-6).reverse();

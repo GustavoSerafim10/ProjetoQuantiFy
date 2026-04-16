@@ -420,7 +420,7 @@ function classifyDecision(
       "DOUBLE_CHANCE_1X",
       "DOUBLE_CHANCE_X2"
     ].includes(m) &&
-    probability >= 0.65 &&
+    probability >= 0.62 &&
     ev >= 0.05 &&
     risk <= 0.58
   ) {
@@ -485,7 +485,14 @@ function selectBestMarketByContext(markets: any[], data: any) {
 
     boost = Math.max(0.85, Math.min(boost, 1.20));
 
-    const finalScore = m.valueScore * boost;
+    const finalScore =
+  (
+    m.ev * 0.35 +
+    m.probability * 0.20 +
+    (1 - m.risk) * 0.20 +
+    m.confidence * 0.15 +
+    m.signalScore * 0.10
+  ) * boost;
 
     return {
       ...m,
@@ -870,12 +877,12 @@ const valid = enriched.filter((m: any) =>
   /* ===============================
      FINAL PICK
   ================================ */
-
-  const best =
-    scalper ||
-    elite ||
-    watchlist[0] ||
-    null;
+const best =
+  elite ||
+  scalper ||
+  sorted?.[0] ||
+  watchlist[0] ||
+  null;
 
   const noBet = !best;
 
