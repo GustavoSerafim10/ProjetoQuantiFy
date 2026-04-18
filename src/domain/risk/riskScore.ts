@@ -82,23 +82,25 @@ function simulateMatch(lambdaHome: number, lambdaAway: number, iterations = 4000
 }
 
 /* ===============================
-   🚀 RISK SCORE 4.2 (BALANCED FIX)
+   🚀 RISK SCORE 4.3 (EDGE-BALANCED)
 =============================== */
 
 export function calculateRiskScore(input: RiskInput): number {
-
   const lambdaHome = safe(input.lambdaHome, 1.2);
   const lambdaAway = safe(input.lambdaAway, 1.0);
 
-  const prob = Math.max(0.0001, Math.min(0.9999, safe(input.eventProbability, 0.5)));
+  const prob = Math.max(
+    0.0001,
+    Math.min(0.9999, safe(input.eventProbability, 0.5))
+  );
 
   const leagueAvgGoals = safe(input.leagueAvgGoals, 1.3);
   const recentStd = safe(input.recentGoalStd, 1.0);
   const seasonAvg = safe(input.seasonGoalAvg, 1.2);
 
-  const goalScore = input.goalExpectationScore ?? 0.5;
-  const totalLambda = input.totalLambda ?? (lambdaHome + lambdaAway);
-  const marketType = input.marketType ?? "OTHER";
+  const goalScore = safe(input.goalExpectationScore, 0.5);
+  const totalLambda = safe(input.totalLambda, lambdaHome + lambdaAway);
+  const marketType = String(input.marketType ?? "OTHER").toUpperCase();
 
   /* ===========================
      🎲 1. SIMULAÇÃO
@@ -111,30 +113,28 @@ export function calculateRiskScore(input: RiskInput): number {
   ============================ */
 
   const varianceRisk = Math.min(1, sim.stdDev / 2.8);
-  const tailRisk = Math.min(1, sim.extremeRate * 1.2);
+  const tailRisk = Math.min(1, sim.extremeRate * 1.15);
 
-  // 🔥 CORREÇÃO PRINCIPAL (NÃO INFLAR JOGO EQUILIBRADO)
-  const probInstability = Math.abs(prob - 0.5);
+  // quanto menor a probabilidade do evento, maior o risco
+  const probabilityRisk = 1 - prob;
 
-  const volatility =
-    recentStd / (seasonAvg || 1);
-
+  const volatility = recentStd / (seasonAvg || 1);
   const volatilityClamped = Math.min(1, volatility);
 
   const leagueFactor =
-    leagueAvgGoals > 3 ? 1 :
-    leagueAvgGoals < 2 ? 0.75 :
-    0.85;
+    leagueAvgGoals > 3 ? 0.95 :
+    leagueAvgGoals < 2 ? 0.78 :
+    0.86;
 
   /* ===========================
      🧠 3. BASE RISK
   ============================ */
 
   let risk =
-    (varianceRisk * 0.22) +
-    (tailRisk * 0.12) +
-    (probInstability * 0.20) +
-    (volatilityClamped * 0.26) +
+    (varianceRisk * 0.24) +
+    (tailRisk * 0.10) +
+    (probabilityRisk * 0.22) +
+    (volatilityClamped * 0.24) +
     (leagueFactor * 0.20);
 
   /* ===========================
@@ -143,32 +143,36 @@ export function calculateRiskScore(input: RiskInput): number {
 
   const balance = Math.abs(lambdaHome - lambdaAway);
 
-  // menos agressivo
+  // jogo muito equilibrado gera um leve aumento de incerteza
   if (balance < 0.25) {
     risk *= 1.06;
   }
 
   /* ===== OVER ===== */
   if (marketType === "OVER") {
+    if (goalScore < 0.45) risk *= 1.12;
+    else if (goalScore < 0.55) risk *= 1.05;
+    else if (goalScore > 0.65) risk *= 0.96;
 
-    if (goalScore < 0.45) risk *= 1.18;
-    else if (goalScore < 0.55) risk *= 1.08;
-    else if (goalScore > 0.65) risk *= 0.95;
-
-    if (totalLambda < 2.2) risk *= 1.12;
-    if (totalLambda > 3.3) risk *= 0.95;
+    if (totalLambda < 2.2) risk *= 1.08;
+    if (totalLambda > 3.3) risk *= 0.96;
   }
 
   /* ===== BTTS ===== */
   if (marketType === "BTTS") {
-
-    if (goalScore < 0.50) risk *= 1.08;
-    if (balance > 0.9) risk *= 1.05;
+    if (goalScore < 0.50) risk *= 1.06;
+    if (balance > 0.9) risk *= 1.04;
   }
 
   /* ===== RESULT ===== */
   if (marketType === "RESULT") {
     risk *= 1.02;
+  }
+
+  /* ===== DOUBLE CHANCE ===== */
+  if (marketType === "DOUBLE") {
+    if (prob > 0.68) risk *= 0.95;
+    if (balance > 0.8) risk *= 0.97;
   }
 
   /* ===========================

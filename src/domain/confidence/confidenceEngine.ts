@@ -7,53 +7,81 @@ interface ConfidenceInput {
 }
 
 export function calculateGlobalConfidence(input: ConfidenceInput): number {
-
   const { goals, btts, result, lambdaHome, lambdaAway } = input;
+
+  const safeGoalsOver25 = Number(goals?.over25 ?? 0.5);
+  const safeBttsYes = Number(btts?.yes ?? 0.5);
+  const safeHomeWin = Number(result?.homeWin ?? 0.33);
+  const safeDraw = Number(result?.draw ?? 0.33);
+  const safeAwayWin = Number(result?.awayWin ?? 0.33);
+  const safeLambdaHome = Number(lambdaHome ?? 1.2);
+  const safeLambdaAway = Number(lambdaAway ?? 1.0);
 
   /* ===========================
      1️⃣ DOMINÂNCIA (RESULTADO)
   ============================ */
 
   const maxResult = Math.max(
-    result.homeWin,
-    result.draw,
-    result.awayWin
+    safeHomeWin,
+    safeDraw,
+    safeAwayWin
   );
 
-  const dominance = Math.abs(maxResult - 0.33) * 1.6;
+  const dominance = Math.abs(maxResult - 0.33) * 1.5;
 
   /* ===========================
      2️⃣ CONSISTÊNCIA (MODELOS)
   ============================ */
 
-  const goalsBias = Math.abs(goals.over25 - 0.5);
-  const bttsBias = Math.abs(btts.yes - 0.5);
+  const goalsBias = Math.abs(safeGoalsOver25 - 0.5);
+  const bttsBias = Math.abs(safeBttsYes - 0.5);
 
-  const consistency = (goalsBias * 0.6 + bttsBias * 0.4);
+  const consistency =
+    (goalsBias * 0.6) +
+    (bttsBias * 0.4);
 
   /* ===========================
-     3️⃣ INTENSIDADE (λ)
+     3️⃣ INTENSIDADE / ESTABILIDADE (λ)
   ============================ */
 
-  const totalLambda = lambdaHome + lambdaAway;
+  const totalLambda = safeLambdaHome + safeLambdaAway;
+  const lambdaDiff = Math.abs(safeLambdaHome - safeLambdaAway);
 
-  // 🔥 melhor leitura de caos
-  let chaosPenalty = 0;
+  let structureFactor = 0.5;
 
-  if (totalLambda > 3.2) chaosPenalty = 1;
-  else if (totalLambda < 2.0) chaosPenalty = 0.6;
-  else chaosPenalty = 0.8;
+  // zona saudável de intensidade
+  if (totalLambda >= 2.2 && totalLambda <= 3.4) {
+    structureFactor = 0.72;
+  }
+  // jogo mais truncado
+  else if (totalLambda < 2.2) {
+    structureFactor = 0.58;
+  }
+  // jogo muito aberto
+  else {
+    structureFactor = 0.62;
+  }
+
+  // leve bônus por assimetria clara
+  if (lambdaDiff > 0.8) {
+    structureFactor += 0.05;
+  }
+
+  structureFactor = Math.max(0, Math.min(structureFactor, 1));
 
   /* ===========================
-     🔥 CONFIDENCE FINAL
+     4️⃣ CONFIDENCE FINAL
   ============================ */
 
   let confidence =
-    (dominance * 0.4) +
-    (consistency * 0.4) +
-    ((1 - chaosPenalty) * 0.2);
+    (dominance * 0.38) +
+    (consistency * 0.37) +
+    (structureFactor * 0.25);
 
-  // clamp
+  /* ===========================
+     5️⃣ CLAMP FINAL
+  ============================ */
+
   confidence = Math.max(0, Math.min(1, confidence));
 
   return Number(confidence.toFixed(4));

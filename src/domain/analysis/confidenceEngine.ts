@@ -6,78 +6,87 @@ export function calculateConfidence({
   lambdaHome,
   lambdaAway,
   market,
-  goalExpectationScore // 🔥 NOVO
+  goalExpectationScore
 }: any) {
+  const safeProbability = Math.max(0, Math.min(Number(probability ?? 0.5), 1));
+  const safeOdds = Number(odds ?? 0);
+  const safeEv = Number(ev ?? 0);
+  const safeKelly = Number(kelly ?? 0);
+  const safeLambdaHome = Number(lambdaHome ?? 1);
+  const safeLambdaAway = Number(lambdaAway ?? 1);
+  const safeGoalScore = Number(goalExpectationScore ?? 0.5);
+  const marketName = String(market ?? "").toUpperCase();
 
   /* ===========================
-     🔥 1. BASE
+     1. BASE
   ============================ */
 
-  let confidence = probability;
+  let confidence = safeProbability;
 
   /* ===========================
-     🔥 2. EDGE (MAIS SUAVE)
+     2. EDGE
   ============================ */
 
-  confidence += (ev - 0.03) * 0.4;
+  confidence += (safeEv - 0.03) * 0.35;
 
   /* ===========================
-     🔥 3. KELLY (FORÇA REAL)
+     3. KELLY
   ============================ */
 
-  confidence += (kelly - 0.02) * 0.6;
+  confidence += (safeKelly - 0.02) * 0.45;
 
   /* ===========================
-     🔥 4. LAMBDA INTELIGENTE
+     4. LAMBDA / ESTRUTURA
   ============================ */
 
-  const totalLambda = lambdaHome + lambdaAway;
-  const balance = 1 - Math.abs(lambdaHome - lambdaAway);
+  const totalLambda = safeLambdaHome + safeLambdaAway;
+  const balance = 1 - Math.abs(safeLambdaHome - safeLambdaAway);
 
-  // Over depende de volume
-  if (market.includes("OVER")) {
-    confidence += (totalLambda - 2.4) * 0.15;
+  if (marketName.includes("OVER")) {
+    confidence += (totalLambda - 2.4) * 0.12;
   }
 
-  // BTTS depende de equilíbrio
-  if (market.includes("BTTS")) {
-    confidence += balance * 0.10;
-  }
-
-  /* ===========================
-     🔥 5. GOAL EXPECTATION SCORE (NOVO CORE)
-  ============================ */
-
-  if (goalExpectationScore !== undefined) {
-    if (market.includes("OVER")) {
-      confidence += (goalExpectationScore - 0.55) * 0.5;
-    }
-
-    if (market.includes("BTTS")) {
-      confidence += (goalExpectationScore - 0.50) * 0.3;
-    }
+  if (marketName.includes("BTTS")) {
+    confidence += balance * 0.08;
   }
 
   /* ===========================
-     🔥 6. CONTROLE DE ODDS
+     5. GOAL EXPECTATION SCORE
   ============================ */
 
-  if (odds < 1.30) confidence -= 0.04;
-  else if (odds > 3.5) confidence -= 0.03;
+  if (marketName.includes("OVER")) {
+    confidence += (safeGoalScore - 0.55) * 0.35;
+  }
+
+  if (marketName.includes("BTTS")) {
+    confidence += (safeGoalScore - 0.50) * 0.20;
+  }
 
   /* ===========================
-     🔥 7. EXTREMOS
+     6. CONTROLE SUAVE DE ODDS
   ============================ */
 
-  if (probability > 0.90) confidence -= 0.05;
-  if (probability < 0.55) confidence -= 0.05;
+  if (safeOdds > 4.5) {
+    confidence -= 0.03;
+  }
 
   /* ===========================
-     🔥 8. NORMALIZAÇÃO FINAL
+     7. EXTREMOS
   ============================ */
 
-  if (confidence > 1) confidence = 1;
-  if (confidence < 0) confidence = 0;
+  if (safeProbability > 0.92) {
+    confidence -= 0.02;
+  }
+
+  if (safeProbability < 0.45) {
+    confidence -= 0.03;
+  }
+
+  /* ===========================
+     8. NORMALIZAÇÃO FINAL
+  ============================ */
+
+  confidence = Math.max(0, Math.min(confidence, 1));
 
   return Number(confidence.toFixed(4));
 }

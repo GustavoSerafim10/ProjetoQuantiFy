@@ -1,36 +1,37 @@
 export function applyCorrelationAdjustments(markets: any[]) {
+  if (!Array.isArray(markets)) return [];
 
   return markets.map((m: any) => {
+    const market = String(m?.market ?? "").toUpperCase();
 
-    let adjustedProb = m.probability;
+    let correlationFactor = 1;
 
-    // 🔥 Over gols + corners → reforça
-    if (
-      m.market.includes("OVER") &&
-      m.market.includes("CORNERS")
-    ) {
-      adjustedProb *= 1.05;
+    /* ===========================
+       AJUSTES LEVES DE CORRELAÇÃO
+       NÃO ALTERAR RADICALMENTE A PROB
+    ============================ */
+
+    // mercados compostos ofensivos
+    if (market.includes("OVER") && market.includes("CORNERS")) {
+      correlationFactor *= 1.03;
     }
 
-    // 🔥 BTTS + Over → reforça
-    if (
-      m.market.includes("BTTS_YES") &&
-      m.market.includes("OVER")
-    ) {
-      adjustedProb *= 1.07;
+    // mercado composto ofensivo forte
+    if (market.includes("BTTS") && market.includes("OVER")) {
+      correlationFactor *= 1.04;
     }
 
-    // 🔴 Under + BTTS YES → penaliza
-    if (
-      m.market.includes("UNDER") &&
-      m.market.includes("BTTS_YES")
-    ) {
-      adjustedProb *= 0.90;
+    // combinação estruturalmente conflitante
+    if (market.includes("UNDER") && market.includes("BTTS_YES")) {
+      correlationFactor *= 0.92;
     }
+
+    // clamp leve
+    correlationFactor = Math.max(0.92, Math.min(correlationFactor, 1.05));
 
     return {
       ...m,
-      probability: Math.min(adjustedProb, 0.95)
+      correlationFactor: Number(correlationFactor.toFixed(4))
     };
   });
 }

@@ -2,34 +2,13 @@
 // 🔥 EDGE REAL (VS ODDS)
 // ===============================
 export function calculateEdge(prob: number, odd: number) {
+  const safeProb = Number(prob ?? 0);
+  const safeOdd = Number(odd ?? 0);
 
-  if (!odd || odd <= 1) return 0;
+  if (!Number.isFinite(safeProb) || !Number.isFinite(safeOdd)) return 0;
+  if (safeOdd <= 1) return 0;
 
-  let ev = (prob * odd) - 1;
-
-  /* =========================================
-     🔥 AJUSTES PROFISSIONAIS (SEM QUEBRAR BASE)
-  ========================================= */
-
-  // 🔻 penaliza odds muito baixas (valor inflado artificialmente)
-  if (odd < 1.40) {
-    ev *= 0.90;
-  }
-
-  // 🔻 penaliza odds muito altas (variância / incerteza)
-  if (odd > 3.50) {
-    ev *= 0.92;
-  }
-
-  // 🔻 probabilidade muito alta costuma esconder pouco valor real
-  if (prob > 0.80) {
-    ev *= 0.95;
-  }
-
-  // 🔻 probabilidade muito baixa (ruído)
-  if (prob < 0.40) {
-    ev *= 0.90;
-  }
+  const ev = (safeProb * safeOdd) - 1;
 
   return Number(ev.toFixed(4));
 }
@@ -38,35 +17,43 @@ export function calculateEdge(prob: number, odd: number) {
 // 💰 KELLY CRITERION
 // ===============================
 export function calculateKelly(prob: number, odd: number) {
+  const safeProb = Number(prob ?? 0);
+  const safeOdd = Number(odd ?? 0);
 
-  if (!odd || odd <= 1) return 0;
+  if (!Number.isFinite(safeProb) || !Number.isFinite(safeOdd)) return 0;
+  if (safeOdd <= 1) return 0;
 
-  const edge = calculateEdge(prob, odd);
+  const edge = calculateEdge(safeProb, safeOdd);
 
-  let kelly = edge / (odd - 1);
+  let kelly = edge / (safeOdd - 1);
 
   /* =========================================
      🔥 PROTEÇÕES AVANÇADAS
   ========================================= */
 
-  // 🔻 odds muito altas → reduz stake
-  if (odd > 3.0) {
+  // odds altas → reduzir exposição
+  if (safeOdd > 3.0) {
     kelly *= 0.85;
   }
 
-  // 🔻 odds muito baixas → reduz stake (valor menor real)
-  if (odd < 1.40) {
-    kelly *= 0.80;
+  // longshots mais agressivos
+  if (safeOdd > 5.0) {
+    kelly *= 0.75;
   }
 
-  // 🔒 limites (controle de banca)
+  // risco natural de odds muito baixas:
+  // não matar, só reduzir um pouco a agressividade
+  if (safeOdd < 1.35) {
+    kelly *= 0.90;
+  }
+
+  // controle final
   kelly = Math.max(0, Math.min(kelly, 0.25));
 
   return Number(kelly.toFixed(4));
 }
-
 // ===============================
-// 🧠 SCORE INTERNO (REFINADO)
+// 🧠 SCORE INTERNO (EDGE-FIRST)
 // ===============================
 export function calculateEdgeScore({
   probability,
@@ -77,23 +64,14 @@ export function calculateEdgeScore({
   expectedValue: number;
   risk: number;
 }) {
-
-  /* =========================================
-     🔥 NORMALIZAÇÃO
-  ========================================= */
-
-  const ev = Math.max(-1, Math.min(expectedValue, 1));
-  const prob = Math.max(0, Math.min(probability, 1));
-  const safeRisk = Math.max(0, Math.min(risk, 1));
-
-  /* =========================================
-     🔥 SCORE FINAL
-  ========================================= */
+  const ev = Math.max(-1, Math.min(Number(expectedValue ?? 0), 1));
+  const prob = Math.max(0, Math.min(Number(probability ?? 0), 1));
+  const safeRisk = Math.max(0, Math.min(Number(risk ?? 1), 1));
 
   const score =
-    (ev * 0.6) +
-    (prob * 0.3) +
-    ((1 - safeRisk) * 0.1);
+    (ev * 0.70) +
+    (prob * 0.20) +
+    ((1 - safeRisk) * 0.10);
 
   return Number(score.toFixed(4));
 }
