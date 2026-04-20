@@ -18,9 +18,10 @@ import { detectTrap } from "../engines/trapDetector";
 import { autoLearningEngine } from "../../domain/learning/autoLearningEngine";
 
 import { marketFilter } from "../filters/marketFilter";
+import { gameFilter } from "../filters/gameFilter";
 
 /* ===============================
-   🔥 SNIPER FILTER (EDGE-FIRST V3)
+   🔥 SNIPER FILTER (EDGE-FIRST V5)
 ================================ */
 function sniperFilter(m: any, data: any) {
   const market = String(m.market ?? "").toUpperCase();
@@ -36,6 +37,7 @@ function sniperFilter(m: any, data: any) {
   const lambdaHome = Number(data?.lambdaHome ?? 1);
   const lambdaAway = Number(data?.lambdaAway ?? 1);
   const lambdaDiff = Math.abs(lambdaHome - lambdaAway);
+  const totalLambda = lambdaHome + lambdaAway;
   const goalExpectationScore = Number(data?.goalExpectationScore ?? 0.5);
 
   /* =========================================
@@ -51,28 +53,23 @@ function sniperFilter(m: any, data: any) {
      2) HARD CUTS REAIS (SÓ EXTREMOS)
   ========================================= */
 
-  // sem valor real
   if (ev <= 0.01) {
     return false;
   }
 
-  // probabilidade muito fraca
-  if (probability < 0.40) {
+  if (probability < 0.36) {
     return false;
   }
 
-  // risco extremo
   if (risk >= 0.78) {
     return false;
   }
 
-  // confiança extremamente baixa
-  if (confidence < 0.42) {
+  if (confidence < 0.38 && ev < 0.08) {
     return false;
   }
 
-  // trap extremo
-  if (trapScore >= 0.72) {
+  if (trapScore >= 0.74) {
     return false;
   }
 
@@ -81,9 +78,9 @@ function sniperFilter(m: any, data: any) {
   ========================================= */
 
   const implied = 1 / odd;
+  const edge = probability - implied;
 
-  // pequena borda técnica para evitar matar edge marginal válido
-  if (probability + 0.015 < implied) {
+  if (edge < -0.012) {
     return false;
   }
 
@@ -91,15 +88,12 @@ function sniperFilter(m: any, data: any) {
      4) ESTRUTURA
   ========================================= */
 
-  // não matar tudo por estrutura imperfeita
-  // só bloquear quando estrutura estiver ruim + valor fraco
   if (!structureValid && ev < 0.05) {
     return false;
   }
 
   /* =========================================
      5) REGRAS ESPECÍFICAS POR MERCADO
-     (agora só bloqueiam extremos ruins)
   ========================================= */
 
   if (market === "HOME_WIN" || market === "AWAY_WIN") {
@@ -114,15 +108,60 @@ function sniperFilter(m: any, data: any) {
     return true;
   }
 
+  if (market === "DRAW") {
+    if (lambdaDiff > 0.55 && ev < 0.09) {
+      return false;
+    }
+
+    if (totalLambda > 3.25 && ev < 0.10) {
+      return false;
+    }
+
+    if (probability < 0.24 && ev < 0.10) {
+      return false;
+    }
+
+    return true;
+  }
+
   if (
     market === "DOUBLE_CHANCE_1X" ||
     market === "DOUBLE_CHANCE_X2"
   ) {
-    if (probability < 0.58 && ev < 0.05) {
+    if (probability < 0.62 && ev < 0.06) {
       return false;
     }
 
-    if (risk > 0.70 && ev < 0.08) {
+    if (risk > 0.68 && ev < 0.08) {
+      return false;
+    }
+
+    if (goalExpectationScore > 0.72 && ev < 0.08) {
+      return false;
+    }
+
+    /* =========================================
+       🔥 ANTI-LONGSHOT FAKE (DC)
+    ========================================= */
+
+    const suspiciousDCLongshot =
+      odd >= 2.20 &&
+      lambdaDiff < 0.55 &&
+      confidence < 0.72;
+
+    if (suspiciousDCLongshot && ev < 0.12) {
+      return false;
+    }
+
+    return true;
+  }
+
+  if (market === "DOUBLE_CHANCE_12") {
+    if (probability < 0.70 && ev < 0.06) {
+      return false;
+    }
+
+    if (risk > 0.66 && ev < 0.08) {
       return false;
     }
 
@@ -157,12 +196,28 @@ function sniperFilter(m: any, data: any) {
     return true;
   }
 
+  if (market === "OVER_3_5") {
+    if (goalExpectationScore < 0.62 && ev < 0.10) {
+      return false;
+    }
+
+    if (probability < 0.40 && ev < 0.12) {
+      return false;
+    }
+
+    return true;
+  }
+
   if (market === "BTTS_YES") {
     if (data?.marketContext?.isBadBTTSGame && ev < 0.10) {
       return false;
     }
 
     if (probability < 0.56 && ev < 0.08) {
+      return false;
+    }
+
+    if (lambdaDiff > 1.15 && ev < 0.09) {
       return false;
     }
 
@@ -179,6 +234,25 @@ function sniperFilter(m: any, data: any) {
     }
 
     return true;
+  }
+
+  /* =========================================
+     6) 🔥 ANTI-LONGSHOT FAKE (WINNER)
+  ========================================= */
+
+  const isHomeWin = market === "HOME_WIN";
+  const isAwayWin = market === "AWAY_WIN";
+
+  const suspiciousWinnerLongshot =
+    (
+      (isHomeWin && odd >= 4.50) ||
+      (isAwayWin && odd >= 4.50)
+    ) &&
+    lambdaDiff < 0.65 &&
+    confidence < 0.75;
+
+  if (suspiciousWinnerLongshot && ev < 0.15) {
+    return false;
   }
 
   return true;
@@ -386,7 +460,7 @@ function calculateSignalScore(
 
   return Number(score.toFixed(4));
 }
-// 🔥 CLASSIFICAÇÃO PROFISSIONAL — EDGE-FIRST V2
+// 🔥 CLASSIFICAÇÃO PROFISSIONAL — EDGE-FIRST V3
 function classifyDecision(
   market: any
 ): "SCALPER" | "ELITE" | "WATCHLIST" | "NO BET" {
@@ -416,14 +490,9 @@ function classifyDecision(
 
   /* =========================
      HARD CUTS REAIS
-     (só casos ruins de verdade)
   ========================= */
 
   if (safeEv <= 0.01) {
-    return "NO BET";
-  }
-
-  if (safeProbability < 0.40) {
     return "NO BET";
   }
 
@@ -431,18 +500,24 @@ function classifyDecision(
     return "NO BET";
   }
 
+  // corte extremo apenas para probabilidades realmente ruins
+  if (safeProbability < 0.36) {
+    return "NO BET";
+  }
+
   if (safeOdd > 1) {
     const impliedProb = 1 / safeOdd;
+    const edge = safeProbability - impliedProb;
 
-    // pequena tolerância para não matar edge marginal válido
-    if (safeProbability + 0.015 < impliedProb) {
+    // evita mercado abaixo da linha justa com leve tolerância
+    if (edge < -0.012) {
       return "NO BET";
     }
   }
 
   /* =========================
      SCALPER
-     alta taxa de acerto + risco mais baixo
+     alta taxa de acerto + baixo risco
   ========================= */
 
   if (
@@ -459,7 +534,7 @@ function classifyDecision(
 
   if (
     ["HOME_WIN", "AWAY_WIN"].includes(m) &&
-    safeProbability >= 0.43 &&
+    safeProbability >= 0.44 &&
     safeEv >= 0.08 &&
     safeRisk <= 0.66
   ) {
@@ -485,7 +560,7 @@ function classifyDecision(
 
   if (
     m === "OVER_2_5" &&
-    safeProbability >= 0.54 &&
+    safeProbability >= 0.55 &&
     safeEv >= 0.06 &&
     safeRisk <= 0.66
   ) {
@@ -498,9 +573,9 @@ function classifyDecision(
 
   if (
     ["BTTS_YES", "BTTS_NO"].includes(m) &&
-    safeProbability >= 0.56 &&
+    safeProbability >= 0.57 &&
     safeEv >= 0.06 &&
-    safeRisk <= 0.66
+    safeRisk <= 0.65
   ) {
     return "ELITE";
   }
@@ -511,22 +586,22 @@ function classifyDecision(
 
   if (
     ["DOUBLE_CHANCE_1X", "DOUBLE_CHANCE_X2"].includes(m) &&
-    safeProbability >= 0.60 &&
-    safeEv >= 0.04 &&
-    safeRisk <= 0.68
+    safeProbability >= 0.64 &&
+    safeEv >= 0.05 &&
+    safeRisk <= 0.64
   ) {
     return "ELITE";
   }
 
   /* =========================
      WATCHLIST
-     edge existe, mas não é pick principal
+     edge existe, mas ainda não é pick principal
   ========================= */
 
   if (
-    safeEv >= 0.03 &&
-    safeProbability >= 0.50 &&
-    safeRisk <= 0.72
+    safeEv >= 0.035 &&
+    safeProbability >= 0.52 &&
+    safeRisk <= 0.70
   ) {
     return "WATCHLIST";
   }
@@ -534,66 +609,236 @@ function classifyDecision(
   return "NO BET";
 }
 /* ===============================
-   🧠 SELECT BEST MARKET BY CONTEXT (VALUE-FIRST V3)
-=============================== */
+   🧠 SELECT BEST MARKET BY CONTEXT (V6.1 FULL PROFIT MODE)
+================================ */
 function selectBestMarketByContext(markets: any[], data: any) {
   if (!markets || markets.length === 0) return markets;
 
-  const goalScore = Number(data?.goalExpectationScore ?? 0.5);
-  const totalLambda = Number(
-    (data?.lambdaHome ?? 1) + (data?.lambdaAway ?? 1)
-  );
-  const diff = Math.abs(
-    Number(data?.lambdaHome ?? 1) - Number(data?.lambdaAway ?? 1)
-  );
+  const clamp = (n: number, min: number, max: number) =>
+    Math.max(min, Math.min(max, n));
+
+  const safe = (n: any, fallback = 0) => {
+    const num = Number(n);
+    return isNaN(num) ? fallback : num;
+  };
+
+  const goalScore = safe(data?.goalExpectationScore, 0.5);
+  const lambdaHome = safe(data?.lambdaHome, 1);
+  const lambdaAway = safe(data?.lambdaAway, 1);
+  const totalLambda = lambdaHome + lambdaAway;
+  const diff = Math.abs(lambdaHome - lambdaAway);
 
   const context = data?.marketContext || {};
-  const pace = context?.paceLevel || "medium";
-  const gameType = context?.gameType || "balanced";
+  const pace = String(context?.paceLevel || "medium").toLowerCase();
+  const gameType = String(context?.gameType || "balanced").toLowerCase();
+
+  const gameProfile = String(
+    data?.gameProfile || "UNKNOWN"
+  ).toUpperCase();
 
   const scored = markets.map((m) => {
-    let boost = 1;
     const market = String(m.market ?? "").toUpperCase();
+    const classification = String(m.classification ?? "").toUpperCase();
+
+    const ev = safe(m.ev, 0);
+    const risk = clamp(safe(m.risk, 1), 0, 1);
+    const confidence = clamp(safe(m.confidence, 0.5), 0, 1);
+    const probability = clamp(safe(m.probability, 0), 0, 1);
+    const signalScore = clamp(safe(m.signalScore, 0), 0, 1);
+
+    let boost = 1;
 
     /* ===============================
-       CONTEXTO COMO AJUSTE LEVE
+       SANIDADE LOCAL
     ================================ */
 
-    if (market.includes("OVER")) {
-      if (goalScore > 0.65) boost *= 1.05;
+    if (
+      !Number.isFinite(ev) ||
+      !Number.isFinite(risk) ||
+      !Number.isFinite(probability)
+    ) {
+      return {
+        ...m,
+        contextBoost: 0,
+        contextScore: -9999
+      };
+    }
+
+    if (ev <= 0) {
+      return {
+        ...m,
+        contextBoost: 0,
+        contextScore: -999
+      };
+    }
+
+    /* ===============================
+       FLAGS DE MERCADO
+    ================================ */
+
+    const isWinner =
+      market === "HOME_WIN" ||
+      market === "AWAY_WIN";
+
+    const isDoubleChance =
+      market === "DOUBLE_CHANCE_1X" ||
+      market === "DOUBLE_CHANCE_X2";
+
+    const isOver15 = market === "OVER_1_5";
+    const isOver25 = market === "OVER_2_5";
+
+    const isBtts =
+      market === "BTTS_YES" ||
+      market === "BTTS_NO";
+
+    const isDraw = market === "DRAW";
+
+    /* ===============================
+       CONTEXTO LEVE BASE
+    ================================ */
+
+    if (isOver15 || isOver25) {
+      if (goalScore > 0.65) boost *= 1.04;
       else if (goalScore < 0.40) boost *= 0.95;
 
-      if (pace === "high") boost *= 1.03;
-      if (gameType === "open") boost *= 1.03;
+      if (pace === "high") boost *= 1.025;
+      if (gameType === "open") boost *= 1.025;
 
       if (totalLambda < 2.1) boost *= 0.95;
+      if (totalLambda > 3.2) boost *= 1.025;
     }
 
-    if (market.includes("BTTS")) {
-      if (goalScore > 0.58) boost *= 1.04;
-      else if (goalScore < 0.42) boost *= 0.96;
+    if (isBtts) {
+      if (goalScore > 0.58) boost *= 1.035;
+      else if (goalScore < 0.42) boost *= 0.965;
 
-      if (diff < 0.50) boost *= 1.03;
-      if (pace === "low") boost *= 0.96;
+      if (diff < 0.50) boost *= 1.025;
+      if (pace === "low") boost *= 0.965;
+      if (gameType === "open") boost *= 1.02;
     }
 
-    if (market.includes("HOME") || market.includes("AWAY")) {
-      if (diff > 1.0) boost *= 1.05;
+    if (isWinner) {
+      if (diff > 1.0) boost *= 1.045;
       else if (diff < 0.30) boost *= 0.96;
 
-      if (gameType === "dominant") boost *= 1.03;
+      if (gameType === "dominant") boost *= 1.025;
     }
 
-    if (market.includes("1X") || market.includes("X2")) {
-      if (diff > 0.90) boost *= 1.04;
-      if (goalScore < 0.50) boost *= 1.02;
+    if (isDraw) {
+      if (diff < 0.35) boost *= 1.03;
+      if (goalScore < 0.48) boost *= 1.02;
+      if (pace === "high") boost *= 0.97;
     }
+
+    if (isDoubleChance) {
+      if (diff > 0.90) boost *= 1.025;
+      if (goalScore < 0.50) boost *= 1.015;
+
+      if (goalScore > 0.65) boost *= 0.99;
+    }
+
+    /* ===============================
+       V6 — BOOST POR PERFIL DE JOGO
+    ================================ */
+
+    if (gameProfile === "OPEN_GOALS") {
+      if (isOver25) boost *= 1.06;
+      if (isBtts) boost *= 1.05;
+      if (isOver15) boost *= 1.02;
+
+      if (isWinner) boost *= 0.96;
+      if (isDoubleChance) boost *= 0.95;
+      if (isDraw) boost *= 0.94;
+    }
+
+    if (gameProfile === "BTTS_GAME") {
+      if (isBtts) boost *= 1.07;
+      if (isOver25) boost *= 1.03;
+      if (isOver15) boost *= 1.01;
+
+      if (isWinner) boost *= 0.95;
+      if (isDoubleChance) boost *= 0.96;
+      if (isDraw) boost *= 0.95;
+    }
+
+    if (gameProfile === "CLEAR_FAVORITE") {
+      if (isWinner) boost *= 1.07;
+      if (isDoubleChance) boost *= 1.03;
+      if (isOver15) boost *= 1.03;
+
+      if (isOver25 && diff < 0.75) boost *= 0.97;
+      if (isBtts && Math.min(lambdaHome, lambdaAway) < 1.0) boost *= 0.95;
+      if (isDraw) boost *= 0.92;
+    }
+
+    if (gameProfile === "LOW_GOAL_GAME") {
+      if (isDraw) boost *= 1.03;
+
+      if (isOver25) boost *= 0.90;
+      if (isBtts) boost *= 0.92;
+      if (isOver15) boost *= 0.96;
+      if (isWinner) boost *= 0.98;
+    }
+
+    if (
+      gameProfile === "HYBRID" ||
+      gameProfile === "MUDDY" ||
+      gameProfile === "UNKNOWN"
+    ) {
+      if (isWinner) boost *= 0.96;
+      if (isDoubleChance) boost *= 0.97;
+      if (isOver25) boost *= 0.96;
+      if (isBtts) boost *= 0.97;
+    }
+
+/* ===============================
+   DOMINÂNCIA DE MERCADO
+   OVER > BTTS quando o jogo é muito aberto
+================================ */
+
+const isVeryOpenGame =
+  totalLambda > 3.2 &&
+  goalScore > 0.65;
+
+if (isVeryOpenGame && isOver25) {
+  boost *= 1.08;
+}
+
+if (isVeryOpenGame && isBtts) {
+  boost *= 0.93;
+}
+
+    /* ===============================
+       DOMINÂNCIA ASSIMÉTRICA
+       Favorito forte → reduzir BTTS / over alto
+    ================================ */
+
+    const isAsymmetricDominance =
+      diff >= 0.75 &&
+      Math.min(lambdaHome, lambdaAway) < 1.05;
+
+    if (isAsymmetricDominance) {
+      if (isWinner) boost *= 1.04;
+      if (isOver15) boost *= 1.02;
+
+      if (isOver25) boost *= 0.96;
+      if (isBtts) boost *= 0.93;
+    }
+
+    /* ===============================
+       AJUSTE LEVE POR CLASSIFICAÇÃO
+    ================================ */
+
+    if (classification === "SCALPER") boost *= 1.02;
+    else if (classification === "ELITE") boost *= 1.015;
+    else if (classification === "WATCHLIST") boost *= 0.995;
+    else if (classification === "NO BET") boost *= 0.96;
 
     /* ===============================
        LIMITAR IMPACTO DO CONTEXTO
     ================================ */
 
-    boost = Math.max(0.92, Math.min(boost, 1.10));
+    boost = clamp(boost, 0.90, 1.10);
 
     /* ===============================
        SCORE FINAL — VALUE FIRST
@@ -601,15 +846,16 @@ function selectBestMarketByContext(markets: any[], data: any) {
 
     const finalScore =
       (
-        (Number(m.ev ?? 0) * 0.50) +
-        (Number(1 - (m.risk ?? 1)) * 0.18) +
-        (Number(m.confidence ?? 0) * 0.12) +
-        (Number(m.probability ?? 0) * 0.10) +
-        (Number(m.signalScore ?? 0) * 0.10)
+        (ev * 0.54) +
+        ((1 - risk) * 0.18) +
+        (confidence * 0.11) +
+        (probability * 0.11) +
+        (signalScore * 0.06)
       ) * boost;
 
     return {
       ...m,
+      contextBoost: Number(boost.toFixed(4)),
       contextScore: Number(finalScore.toFixed(4))
     };
   });
@@ -861,14 +1107,36 @@ if (learning.ready) {
       getMarketBoost(type);
 
 /* ===============================
-   🎯 VALUE SCORE (EDGE-FIRST V2)
+   🎯 VALUE SCORE (EDGE-FIRST V3)
 ================================ */
 
+const safe = (n: any, fallback = 0) => {
+  const num = Number(n);
+  return isNaN(num) ? fallback : num;
+};
+
+const clamp = (n: number, min: number, max: number) =>
+  Math.max(min, Math.min(max, n));
+
+const safeEv = safe(ev, 0);
+const safeRisk = clamp(safe(risk, 1), 0, 1);
+const safeConfidence = clamp(safe(confidence, 0), 0, 1);
+const safeProbability = clamp(safe(probability, 0), 0, 1);
+
+/* ===============================
+   EV AJUSTADO
+================================ */ 
+
+const evComponent =
+  safeEv > 0
+    ? safeEv
+    : safeEv * 1.15; // penaliza um pouco mais EV negativo
+
 let valueScore =
-  (Number(ev ?? 0) * 0.75) +         // 🔥 EV DOMINANTE
-  (Number(1 - (risk ?? 1)) * 0.15) + // 🧠 CONTROLE DE RISCO
-  (Number(confidence ?? 0) * 0.05) + // 🔍 QUALIDADE DO MODELO
-  (Number(probability ?? 0) * 0.05); // ⚖️ SUPORTE LEVE
+  (evComponent * 0.72) +
+  ((1 - safeRisk) * 0.16) +
+  (safeConfidence * 0.05) +
+  (safeProbability * 0.07);
 
 let finalScore = valueScore;
 
@@ -957,123 +1225,416 @@ const valid = enriched.filter((m: any) =>
   )
 );
 
-  const sortedRaw = [...valid].sort(
-    (a: any, b: any) =>
-      b.valueScore - a.valueScore
+const sortedRaw = [...valid].sort((a: any, b: any) => {
+  const valueDiff = Number(b.valueScore ?? 0) - Number(a.valueScore ?? 0);
+  if (Math.abs(valueDiff) > 0.0001) return valueDiff;
+
+  const evDiff = Number(b.ev ?? 0) - Number(a.ev ?? 0);
+  if (Math.abs(evDiff) > 0.0001) return evDiff;
+
+  const probDiff = Number(b.probability ?? 0) - Number(a.probability ?? 0);
+  if (Math.abs(probDiff) > 0.0001) return probDiff;
+
+  return Number(a.risk ?? 1) - Number(b.risk ?? 1);
+});
+
+  /* ===============================
+   FORCE BEST SCALPER
+================================ */
+
+const forcedPicks: any[] = [];
+
+const bestScalper =
+  sortedRaw.find(
+    (m: any) => m.classification === "SCALPER"
   );
 
-  /* ===============================
-     FORCE BEST SCALPER
-  ================================ */
+if (bestScalper) {
+  forcedPicks.push(bestScalper);
+}
 
-  const forcedPicks: any[] = [];
+/* ===============================
+   DIVERSIFICATION
+================================ */
 
-  const bestScalper =
-    sortedRaw.find(
-      (m: any) =>
-        m.classification === "SCALPER"
-    );
+const diversified: any[] = [...forcedPicks];
 
-  if (bestScalper) {
-    forcedPicks.push(bestScalper);
+const usedTypes = new Set(
+  forcedPicks.map((m) => getMarketType(m.market))
+);
+
+for (const m of sortedRaw) {
+  const type = getMarketType(m.market);
+
+  if (!usedTypes.has(type)) {
+    diversified.push(m);
+    usedTypes.add(type);
   }
 
-  /* ===============================
-     DIVERSIFICATION
-  ================================ */
+  if (diversified.length >= 6) {
+    break;
+  }
+}
 
-  const diversified: any[] = [
-    ...forcedPicks
-  ];
+/* ===============================
+   GAME FILTER — V6 HARD GATE
+================================ */
 
-  const usedTypes = new Set(
-    forcedPicks.map((m) =>
-      getMarketType(m.market)
+const gameGate = gameFilter({
+  ...data,
+
+  lambdaHome: data?.lambdaHome ?? 1.2,
+  lambdaAway: data?.lambdaAway ?? 1.0,
+  goalExpectationScore: data?.goalExpectationScore ?? 0.5,
+
+  monteCarlo:
+    data?.monteCarlo ||
+    data?.simulation?.monteCarlo ||
+    null,
+
+  result: data?.result ?? null,
+  btts: data?.btts ?? null,
+  goals: data?.goals ?? null
+});
+
+const minGameScore =
+  gameGate.level === "STRONG" ? 0.60 :
+  gameGate.level === "GOOD" ? 0.62 :
+  0.999;
+
+if (
+  !gameGate.allowed ||
+  (gameGate.score ?? 0) < minGameScore
+) {
+  return {
+    ...data,
+    elite: null,
+    scalper: null,
+    best: null,
+    officialPick: null,
+    watchlist: [],
+    secondary: null,
+    combo: null,
+    markets: [],
+    discarded: enriched,
+    noBet: true,
+    blocked: true,
+    blockReason:
+      !gameGate.allowed
+        ? gameGate.reason
+        : "GAME_SCORE_TOO_LOW",
+    gameProfile: gameGate.profile,
+    gameFilterScore: gameGate.score,
+    gameFilterLevel: gameGate.level ?? "WEAK",
+    gameDiagnostics: gameGate.diagnostics ?? null
+  };
+}
+
+/* ===============================
+   CONTEXT REORDER
+================================ */
+
+const sorted = selectBestMarketByContext(
+  diversified,
+  {
+    ...data,
+    marketContext,
+    gameProfile: gameGate.profile ?? "UNKNOWN"
+  }
+);
+
+/* ===============================
+   CLASSIFICATION BUCKETS
+================================ */
+
+let elite: any | null = null;
+let scalper: any | null = null;
+const watchlist: any[] = [];
+
+for (const m of sorted) {
+  if (
+    m.classification === "SCALPER" &&
+    !scalper
+  ) {
+    scalper = m;
+  } else if (
+    m.classification === "ELITE" &&
+    !elite
+  ) {
+    elite = m;
+  } else if (
+    m.classification === "WATCHLIST"
+  ) {
+    watchlist.push(m);
+  }
+}
+
+/* ===============================
+   FINAL PICK
+================================ */
+
+const eliteClearlyBetter =
+  elite &&
+  (
+    !scalper ||
+    (
+      Number(elite.ev ?? 0) > Number(scalper.ev ?? 0) * 1.15 &&
+      Number(elite.probability ?? 0) >= 0.55 &&
+      Number(elite.risk ?? 1) <= 0.64
     )
   );
 
-  for (const m of sortedRaw) {
-    const type = getMarketType(
-      m.market
-    );
-
-    if (!usedTypes.has(type)) {
-      diversified.push(m);
-      usedTypes.add(type);
-    }
-
-    if (diversified.length >= 6) {
-      break;
-    }
-  }
-
-  /* ===============================
-     CLASSIFICATION BUCKETS
-  ================================ */
-
-  let elite: any | null = null;
-  let scalper: any | null = null;
-  const watchlist: any[] = [];
-
-  for (const m of diversified) {
-    if (
-      m.classification === "SCALPER" &&
-      !scalper
-    ) {
-      scalper = m;
-    }
-
-    else if (
-      m.classification === "ELITE" &&
-      !elite
-    ) {
-      elite = m;
-    }
-
-    else if (
-      m.classification === "WATCHLIST"
-    ) {
-      watchlist.push(m);
-    }
-  }
-
-  /* ===============================
-     CONTEXT REORDER
-  ================================ */
-
-  const sorted =
-    selectBestMarketByContext(
-      diversified,
-      {
-        ...data,
-        marketContext
-      }
-    );
-
-  /* ===============================
-     FINAL PICK
-  ================================ */
 const best =
-  sorted[0] ||
-  scalper ||
-  elite ||
-  watchlist[0] ||
-  null;
+  eliteClearlyBetter
+    ? elite
+    : scalper ||
+      elite ||
+      sorted.find((m: any) =>
+        ["SCALPER", "ELITE", "WATCHLIST"].includes(m.classification)
+      ) ||
+      watchlist[0] ||
+      sorted[0] ||
+      null;
 
 let finalBest = best;
 
-/* FINAL QUALITY GATE — SNIPER V2 */
+/* ===============================
+   FINAL QUALITY GATE — V6 FULL PROFIT MODE
+================================ */
 
+if (finalBest) {
+  const cls = String(finalBest.classification || "").toUpperCase();
+  const ev = Number(finalBest.ev ?? 0);
+  const probability = Number(finalBest.probability ?? 0);
+  const risk = Number(finalBest.risk ?? 1);
+  const odd = Number(finalBest.odd ?? 0);
+  const market = String(finalBest.market ?? "").toUpperCase();
+
+  const gameLevel = String(gameGate?.level ?? "WEAK").toUpperCase();
+  const gameProfile = String(gameGate?.profile ?? "UNKNOWN").toUpperCase();
+  const gameScore = Number(gameGate?.score ?? 0);
+
+  const invalidCore =
+    !Number.isFinite(ev) ||
+    !Number.isFinite(probability) ||
+    !Number.isFinite(risk) ||
+    !Number.isFinite(odd);
+
+  /* ===============================
+     1) SANIDADE + CLASSIFICAÇÃO
+  ================================ */
+
+  if (invalidCore || cls === "NO BET") {
+    finalBest = null;
+  } else if (cls === "SCALPER") {
+    if (
+      ev < 0.04 ||
+      probability < 0.70 ||
+      risk > 0.52
+    ) {
+      finalBest = null;
+    }
+  } else if (cls === "ELITE") {
+    if (
+      ev < 0.05 ||
+      probability < 0.50 ||
+      risk > 0.66
+    ) {
+      finalBest = null;
+    }
+  } else if (cls === "WATCHLIST") {
+    finalBest = null;
+  } else {
+    finalBest = null;
+  }
+
+  /* ===============================
+     2) GAME LEVEL GATE
+  ================================ */
+
+  // jogo fraco: só aceita scalper
+  if (
+    finalBest &&
+    gameLevel === "WEAK" &&
+    cls !== "SCALPER"
+  ) {
+    finalBest = null;
+  }
+
+  // jogo médio: elite precisa ser mais forte
+  if (
+    finalBest &&
+    gameLevel === "GOOD" &&
+    cls === "ELITE" &&
+    ev < 0.07
+  ) {
+    finalBest = null;
+  }
+
+  // score mínimo duro
+  if (
+    finalBest &&
+    gameScore < 0.60
+  ) {
+    finalBest = null;
+  }
+
+  /* ===============================
+   3) PROFILE GATE
+   Mercado deve combinar com o tipo de jogo
+================================ */
+
+// ===============================
+// FLAGS DE MERCADO
+// ===============================
+
+const isWinner =
+  market === "HOME_WIN" ||
+  market === "AWAY_WIN";
+
+const isDoubleChance =
+  market === "DOUBLE_CHANCE_1X" ||
+  market === "DOUBLE_CHANCE_X2" ||
+  market === "DOUBLE_CHANCE_12";
+
+const isOver15 =
+  market === "OVER_1_5";
+
+const isHighOver =
+  market === "OVER_2_5" ||
+  market === "OVER_3_5";
+
+const isBtts =
+  market === "BTTS_YES" ||
+  market === "BTTS_NO";
+
+// ===============================
+// REGRAS POR PERFIL
+// ===============================
+
+// Winner só em jogo de favorito claro
 if (
   finalBest &&
-  (
-    finalBest.classification === "NO BET" ||
-    finalBest.ev < 0.07 ||
-    finalBest.probability < 0.53 ||
-    finalBest.risk > 0.65
-  )
+  isWinner &&
+  gameProfile !== "CLEAR_FAVORITE"
 ) {
   finalBest = null;
+}
+
+// Double chance também só em favorito claro
+if (
+  finalBest &&
+  isDoubleChance &&
+  gameProfile !== "CLEAR_FAVORITE"
+) {
+  finalBest = null;
+}
+
+// Over 2.5 / 3.5 só em jogo aberto de verdade
+if (
+  finalBest &&
+  isHighOver &&
+  !["OPEN_GOALS", "BTTS_GAME"].includes(gameProfile)
+) {
+  finalBest = null;
+}
+
+// BTTS só em jogo simétrico / aberto
+if (
+  finalBest &&
+  isBtts &&
+  !["BTTS_GAME", "OPEN_GOALS"].includes(gameProfile)
+) {
+  finalBest = null;
+}
+
+// Over 1.5 pode passar em jogo forte ou aberto
+if (
+  finalBest &&
+  isOver15 &&
+  !["OPEN_GOALS", "BTTS_GAME", "CLEAR_FAVORITE"].includes(gameProfile)
+) {
+  finalBest = null;
+}
+
+  /* ===============================
+     4) ODD FLOOR INTELIGENTE
+  ================================ */
+
+  if (finalBest && odd < 1.20) {
+    finalBest = null;
+  }
+
+  if (finalBest && odd < 1.25 && ev < 0.10) {
+    finalBest = null;
+  }
+
+  if (
+    finalBest &&
+    odd < 1.30 &&
+    probability < 0.78 &&
+    ev < 0.08
+  ) {
+    finalBest = null;
+  }
+
+  // odds baixas só passam em jogo realmente forte
+  if (
+    finalBest &&
+    odd < 1.30 &&
+    gameLevel !== "STRONG"
+  ) {
+    finalBest = null;
+  }
+
+  /* ===============================
+     5) TRAVA ANTI-LONGSHOT FAKE
+  ================================ */
+
+  const isResultLike =
+    isWinner || isDoubleChance;
+
+  if (
+    finalBest &&
+    isResultLike &&
+    odd >= 2.20 &&
+    probability < 0.60 &&
+    ev < 0.16
+  ) {
+    finalBest = null;
+  }
+
+  if (
+    finalBest &&
+    isWinner &&
+    odd >= 4.50 &&
+    ev < 0.20
+  ) {
+    finalBest = null;
+  }
+
+  /* ===============================
+     6) CONTROLE EXTRA POR RISCO
+  ================================ */
+
+  if (
+    finalBest &&
+    cls === "ELITE" &&
+    risk > 0.62 &&
+    ev < 0.09
+  ) {
+    finalBest = null;
+  }
+
+  if (
+    finalBest &&
+    cls === "SCALPER" &&
+    odd < 1.35 &&
+    ev < 0.11 &&
+    gameLevel !== "STRONG"
+  ) {
+    finalBest = null;
+  }
 }
 
 /* ===============================
@@ -1088,11 +1649,16 @@ const officialPick =
 
 const noBet = !officialPick;
 
-  /* ===============================
+/* ===============================
    TRACKING
 ================================ */
 
-if (officialPick) {
+if (
+  officialPick &&
+  Number.isFinite(Number(officialPick.odd)) &&
+  Number.isFinite(Number(officialPick.probability)) &&
+  Number.isFinite(Number(officialPick.ev))
+) {
   registerBet({
     id: generateId(),
     match: data.match || "Unknown Match",
@@ -1109,23 +1675,23 @@ if (officialPick) {
       | "ELITE"
   });
 }
-  /* ===============================
-     COMBO BUILD
-  ================================ */
 
-  const combo = buildCombo(sorted);
+/* ===============================
+   COMBO BUILD
+================================ */
+
+const combo = buildCombo(sorted);
 
 return {
   elite,
   scalper,
-  best: officialPick,
+  best: finalBest || null,
+  officialPick,
   watchlist,
-  secondary: sorted[1] || null,
+  secondary: valid[1] || null,
   combo,
   markets: sorted,
-  discarded: enriched.filter(
-    (m: any) => !valid.includes(m)
-  ),
+  discarded: enriched.filter((m: any) => !valid.includes(m)),
   noBet
-};
 }
+};

@@ -1,9 +1,16 @@
 export function simulationPipeline(model: any) {
+  const safe = (n: any, fallback = 0) => {
+    const num = Number(n);
+    return isNaN(num) ? fallback : num;
+  };
 
-  const { lambdaHome, lambdaAway } = model;
+  const clamp = (n: number, min: number, max: number) =>
+    Math.max(min, Math.min(n, max));
+
+  let lambdaHome = clamp(safe(model?.lambdaHome, 1.2), 0.35, 3.4);
+  let lambdaAway = clamp(safe(model?.lambdaAway, 1.0), 0.35, 3.4);
 
   const simulations = 10000;
-
   const scoreMap: Record<string, number> = {};
 
   let over25Hits = 0;
@@ -14,7 +21,6 @@ export function simulationPipeline(model: any) {
   let awayWinHits = 0;
 
   for (let i = 0; i < simulations; i++) {
-
     const homeGoals = samplePoisson(lambdaHome);
     const awayGoals = samplePoisson(lambdaAway);
 
@@ -53,17 +59,26 @@ export function simulationPipeline(model: any) {
   const drawProb = drawHits / simulations;
   const awayWinProb = awayWinHits / simulations;
 
+  const doubleChance1X = homeWinProb + drawProb;
+  const doubleChanceX2 = drawProb + awayWinProb;
+  const doubleChance12 = homeWinProb + awayWinProb;
+
+  const totalLambda = Number((lambdaHome + lambdaAway).toFixed(4));
+
   /* ===========================
      🔥 PROB PRINCIPAL (CORE)
   ============================ */
 
-  const mainProb = Math.max(
-    over25Prob,
-    bttsProb,
-    homeWinProb,
-    drawProb,
-    awayWinProb
-  );
+  const marketCandidates = [
+    { market: "OVER_2.5", prob: over25Prob },
+    { market: "BTTS_YES", prob: bttsProb },
+    { market: "HOME_WIN", prob: homeWinProb },
+    { market: "DRAW", prob: drawProb },
+    { market: "AWAY_WIN", prob: awayWinProb }
+  ].sort((a, b) => b.prob - a.prob);
+
+  const mainMarket = marketCandidates[0]?.market || null;
+  const mainProb = marketCandidates[0]?.prob || 0;
 
   /* ===========================
      🔥 TOP SCORES
@@ -83,6 +98,10 @@ export function simulationPipeline(model: any) {
     monteCarlo: {
       iterations: simulations,
 
+      lambdaHome,
+      lambdaAway,
+      totalLambda,
+
       over15Prob,
       over25Prob,
       bttsProb,
@@ -91,8 +110,20 @@ export function simulationPipeline(model: any) {
       drawProb,
       awayWinProb,
 
-      mainProb, // 🔥 ESSENCIAL
-      topScores
+      doubleChance1X,
+      doubleChanceX2,
+      doubleChance12,
+
+      mainMarket,
+      mainProb,
+      topScores,
+
+      debug: {
+        source: "simulationPipeline",
+        lambdaHome,
+        lambdaAway,
+        totalLambda
+      }
     }
   };
 }

@@ -3,12 +3,25 @@ export interface MonteCarloMatchResult {
   draw: number;
   awayWin: number;
 
-  over15: number;   // 🔥 NOVO
+  over15: number;
   over25: number;
   under25: number;
 
   bttsYes: number;
   bttsNo: number;
+}
+
+function safe(n: any, fallback = 1) {
+  const num = Number(n);
+  return isNaN(num) ? fallback : num;
+}
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(n, max));
+}
+
+function sanitizeLambda(lambda: number, fallback = 1.2) {
+  return clamp(safe(lambda, fallback), 0.35, 3.4);
 }
 
 function samplePoisson(lambda: number): number {
@@ -29,20 +42,23 @@ export function monteCarloPoisson(
   lambdaAway: number,
   simulations: number = 100000
 ): MonteCarloMatchResult {
+  const safeLambdaHome = sanitizeLambda(lambdaHome, 1.2);
+  const safeLambdaAway = sanitizeLambda(lambdaAway, 1.0);
+
+  const totalSimulations = Math.max(1000, Math.floor(safe(simulations, 100000)));
 
   let homeWin = 0;
   let draw = 0;
   let awayWin = 0;
 
-  let over15 = 0;   // 🔥 NOVO
+  let over15 = 0;
   let over25 = 0;
 
   let bttsYes = 0;
 
-  for (let i = 0; i < simulations; i++) {
-
-    const homeGoals = samplePoisson(lambdaHome);
-    const awayGoals = samplePoisson(lambdaAway);
+  for (let i = 0; i < totalSimulations; i++) {
+    const homeGoals = samplePoisson(safeLambdaHome);
+    const awayGoals = samplePoisson(safeLambdaAway);
 
     const totalGoals = homeGoals + awayGoals;
 
@@ -58,8 +74,8 @@ export function monteCarloPoisson(
        GOALS
     =========================== */
 
-    if (totalGoals >= 2) over15++;   // 🔥 CORRETO (Over 1.5)
-    if (totalGoals >= 3) over25++;   // 🔥 MAIS PRECISO (>=3)
+    if (totalGoals >= 2) over15++;
+    if (totalGoals >= 3) over25++;
 
     /* ===========================
        BTTS
@@ -68,18 +84,16 @@ export function monteCarloPoisson(
     if (homeGoals > 0 && awayGoals > 0) bttsYes++;
   }
 
-  const total = simulations;
-
   return {
-    homeWin: homeWin / total,
-    draw: draw / total,
-    awayWin: awayWin / total,
+    homeWin: homeWin / totalSimulations,
+    draw: draw / totalSimulations,
+    awayWin: awayWin / totalSimulations,
 
-    over15: over15 / total, // 🔥 NOVO
-    over25: over25 / total,
-    under25: 1 - (over25 / total),
+    over15: over15 / totalSimulations,
+    over25: over25 / totalSimulations,
+    under25: 1 - over25 / totalSimulations,
 
-    bttsYes: bttsYes / total,
-    bttsNo: 1 - (bttsYes / total)
+    bttsYes: bttsYes / totalSimulations,
+    bttsNo: 1 - bttsYes / totalSimulations
   };
 }

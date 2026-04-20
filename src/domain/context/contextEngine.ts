@@ -14,20 +14,20 @@ export function contextEngine(data: any) {
      📊 FORMA RECENTE
   ============================ */
 
-  const homeForm = Number(homeStats?.last5Goals ?? 0) / 5;
-  const awayForm = Number(awayStats?.last5Goals ?? 0) / 5;
+const homeForm = Number(homeStats?.last5GoalsFor ?? 0) / 5;
+const awayForm = Number(awayStats?.last5GoalsFor ?? 0) / 5;
 
   /* ===========================
      ⚡ RITMO DE JOGO
   ============================ */
 
-  const homeTempo =
-    Number(homeStats?.avgShots ?? 0) +
-    Number(homeStats?.avgCorners ?? 0);
+ const homeTempo =
+  Number(homeStats?.shots ?? 0) +
+  Number(homeStats?.cornersAvg ?? 0);
 
-  const awayTempo =
-    Number(awayStats?.avgShots ?? 0) +
-    Number(awayStats?.avgCorners ?? 0);
+const awayTempo =
+  Number(awayStats?.shots ?? 0) +
+  Number(awayStats?.cornersAvg ?? 0);
 
   const rawTempoFactor =
     ((homeTempo + awayTempo) / 20) *
@@ -40,14 +40,14 @@ export function contextEngine(data: any) {
      🔥 PRESSÃO OFENSIVA
   ============================ */
 
-  const homePressure =
-    Number(homeStats?.avgShotsOnTarget ?? 0) +
-    Number(homeStats?.avgCorners ?? 0);
+const homePressure =
+  Number(homeStats?.shotsOnTarget ?? 0) +
+  Number(homeStats?.cornersAvg ?? 0);
 
-  const awayPressure =
-    Number(awayStats?.avgShotsOnTarget ?? 0) +
-    Number(awayStats?.avgCorners ?? 0);
-
+const awayPressure =
+  Number(awayStats?.shotsOnTarget ?? 0) +
+  Number(awayStats?.cornersAvg ?? 0);
+  
   const rawPressureFactor =
     ((homePressure + awayPressure) / 15) *
     Number(leagueData?.pressure ?? 1);
