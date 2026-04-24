@@ -102,24 +102,25 @@ export function gameFilter(data: any): GameFilterResult {
      PERFIS DE JOGO
   ================================ */
 
-  const isOpenGoalsGame =
-    totalLambda >= 2.75 &&
-    goalExpectationScore >= 0.58 &&
-    over25Prob >= 0.53;
+const isOpenGoalsGame =
+  totalLambda >= 2.9 &&
+  goalExpectationScore >= 0.60 &&
+  over25Prob >= 0.55;
 
-  const isBttsGame =
-    Math.min(lambdaHome, lambdaAway) >= 1.00 &&
-    bttsProb >= 0.57 &&
-    goalExpectationScore >= 0.54;
+const isBttsGame =
+  Math.min(lambdaHome, lambdaAway) >= 1.08 &&
+  bttsProb >= 0.60 &&
+  goalExpectationScore >= 0.56 &&
+  lambdaDiff <= 0.85;
 
   const isClearFavoriteGame =
     lambdaDiff >= 0.55 &&
     favoriteProb >= 0.48;
 
-  const isLowGoalGame =
-    totalLambda <= 2.35 &&
-    over15Prob <= 0.78 &&
-    over25Prob <= 0.50;
+const isLowGoalGame =
+  totalLambda <= 2.25 &&
+  over15Prob <= 0.75 &&
+  over25Prob <= 0.48;
 
   const isHybridGame =
     lambdaDiff >= 0.22 &&
@@ -146,20 +147,24 @@ export function gameFilter(data: any): GameFilterResult {
      SCORE GERAL DO JOGO
   ================================ */
 
-  const gameScore = Math.max(
-    openGameLean,
-    bttsLean,
-    favoriteLean,
-    lowGoalLean
-  );
+const gameScore =
+  (openGameLean * 0.30) +
+  (bttsLean * 0.25) +
+  (favoriteLean * 0.25) +
+  (lowGoalLean * 0.20);
 
-  let level: "WEAK" | "GOOD" | "STRONG" = "WEAK";
+let level: "WEAK" | "GOOD" | "STRONG" = "WEAK";
 
-  if (gameScore >= 0.75) {
-    level = "STRONG";
-  } else if (gameScore >= 0.55) {
-    level = "GOOD";
-  }
+if (gameScore >= 0.72) {
+  level = "STRONG";
+} else if (
+  gameScore >= 0.58 ||
+  (isOpenGoalsGame && openGameLean >= 0.55) ||
+  (isBttsGame && bttsLean >= 0.58) ||
+  (isClearFavoriteGame && favoriteLean >= 0.58)
+) {
+  level = "GOOD";
+}
 
   const diagnostics = {
     lambdaHome: Number(lambdaHome.toFixed(4)),

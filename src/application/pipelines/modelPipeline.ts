@@ -50,7 +50,6 @@ function sanitizeStats(stats: any) {
 
     cornersAvg: safe(stats.cornersAvg, 4),
     bigChances: safe(stats.bigChances, 1),
-    bigChancesAgainst: safe(stats.bigChancesAgainst, 1.5),
 
     fouls: safe(stats.fouls, 12),
     yellowCards: safe(stats.yellowCards, 2),
@@ -72,7 +71,7 @@ function sanitizeStats(stats: any) {
 
 function clampLambda(n: number) {
   if (isNaN(n)) return 1.2;
-  return Math.max(0.35, Math.min(n, 3.4));
+  return Math.max(0.2, Math.min(n, 2.5));
 }
 
 /* ===========================
@@ -81,23 +80,18 @@ function clampLambda(n: number) {
 
 function normalizeLambdas(home: number, away: number) {
   const total = home + away;
-  const MIN_TOTAL = 1.2;
-  const MAX_TOTAL = 3.8;
 
-  if (total <= 0) {
-    return { home: 1.2, away: 1.0 };
-  }
+  const MAX_TOTAL = 3.5;
 
-  if (total >= MIN_TOTAL && total <= MAX_TOTAL) {
+  if (total <= MAX_TOTAL) {
     return { home, away };
   }
 
-  const targetTotal = Math.max(MIN_TOTAL, Math.min(MAX_TOTAL, total));
-  const scale = targetTotal / total;
+  const scale = MAX_TOTAL / total;
 
   return {
-    home: Number((home * scale).toFixed(4)),
-    away: Number((away * scale).toFixed(4))
+    home: home * scale,
+    away: away * scale
   };
 }
 
@@ -106,18 +100,10 @@ function normalizeLambdas(home: number, away: number) {
 =========================== */
 
 function applyDefensiveAdjustment(lambda: number, opponentStats: any) {
-  const conceded = safe(opponentStats?.goalsAgainst, 1.3);
-  const recentConceded = safe(
-    opponentStats?.last5GoalsAgainst,
-    conceded
-  );
+  const conceded = opponentStats.goalsAgainst;
 
-  const defensiveResistance =
-    (conceded * 0.55) +
-    (recentConceded * 0.45);
-
-  if (defensiveResistance <= 0.75) return lambda * 0.92;
-  if (defensiveResistance <= 0.95) return lambda * 0.96;
+  if (conceded <= 0.8) return lambda * 0.85;
+  if (conceded <= 1.0) return lambda * 0.92;
 
   return lambda;
 }
@@ -129,51 +115,31 @@ function applyDefensiveAdjustment(lambda: number, opponentStats: any) {
 function balanceLambdas(home: number, away: number) {
   const diff = Math.abs(home - away);
 
-  // se estão praticamente iguais, só micro estabilização
-  if (diff < 0.08) {
+  if (diff < 0.3) {
     return {
-      home: Number((home * 0.998).toFixed(4)),
-      away: Number((away * 0.998).toFixed(4))
+      home: home * 0.98,
+      away: away * 0.98
     };
   }
 
-  // não achatar favoritismo real
-  if (diff > 0.9) {
-    const adjustment = Math.min(diff * 0.03, 0.05);
-
-    if (home > away) {
-      return {
-        home: Number((home - adjustment).toFixed(4)),
-        away: Number((away + adjustment * 0.25).toFixed(4))
-      };
-    }
-
-    return {
-      home: Number((home + adjustment * 0.25).toFixed(4)),
-      away: Number((away - adjustment).toFixed(4))
-    };
-  }
-
-  return {
-    home: Number(home.toFixed(4)),
-    away: Number(away.toFixed(4))
-  };
+  return { home, away };
 }
 
 /* ===========================
-   🔥 SCORE DE GOLS
+   🔥 SCORE DE GOLS (NOVO)
 =========================== */
 
 function calculateGoalExpectationScore(lambdaHome: number, lambdaAway: number) {
+
   const total = lambdaHome + lambdaAway;
-  const imbalance = Math.abs(lambdaHome - lambdaAway);
+  const balance = 1 - Math.abs(lambdaHome - lambdaAway);
 
   const totalNorm = Math.min(total / 3.2, 1);
-  const balanceNorm = Math.max(0, 1 - Math.min(imbalance / 1.8, 1));
+  const balanceNorm = Math.max(0, Math.min(balance, 1));
 
   const score =
-    (totalNorm * 0.72) +
-    (balanceNorm * 0.28);
+    (totalNorm * 0.7) +
+    (balanceNorm * 0.3);
 
   return Number(score.toFixed(4));
 }
@@ -183,6 +149,7 @@ function calculateGoalExpectationScore(lambdaHome: number, lambdaAway: number) {
 =========================== */
 
 export function modelPipeline(context: any) {
+
   if (!context?.homeStats || !context?.awayStats) {
     console.warn("⚠️ Dados insuficientes");
     return emptyResponse();
@@ -217,44 +184,19 @@ export function modelPipeline(context: any) {
      LAMBDA BASE
   ============================ */
 
-  let lambdaHomeBase = calculateLambda(
-    home,
-    away,
-    context?.odds,
-    leagueData,
-    true
-  );
-
-  let lambdaAwayBase = calculateLambda(
-    away,
-    home,
-    context?.odds,
-    leagueData,
-    false
-  );
-
-  console.log("🧪 HOME SANITIZED:", home);
-  console.log("🧪 AWAY SANITIZED:", away);
-  console.log("🧪 ODDS INPUT:", context?.odds);
-  console.log("🧪 LEAGUE DATA:", leagueData);
-  console.log("🧪 LAMBDA BASE HOME:", lambdaHomeBase);
-  console.log("🧪 LAMBDA BASE AWAY:", lambdaAwayBase);
+  let lambdaHomeBase = calculateLambda(home, away, leagueData);
+  let lambdaAwayBase = calculateLambda(away, home, leagueData);
 
   if (!lambdaHomeBase || isNaN(lambdaHomeBase)) {
-    lambdaHomeBase = ((home.goalsFor + away.goalsAgainst) / 2) || 1.25;
+    lambdaHomeBase = (home.goalsFor + away.goalsAgainst) / 2 || 1.2;
   }
 
   if (!lambdaAwayBase || isNaN(lambdaAwayBase)) {
-    lambdaAwayBase = ((away.goalsFor + home.goalsAgainst) / 2) || 1.05;
+    lambdaAwayBase = (away.goalsFor + home.goalsAgainst) / 2 || 1.0;
   }
 
-  const lambdaHomeSafe = clampLambda(lambdaHomeBase);
-  const lambdaAwaySafe = clampLambda(lambdaAwayBase);
-
-  console.log("🧪 SAFE LAMBDAS:", {
-    lambdaHomeSafe,
-    lambdaAwaySafe
-  });
+  let lambdaHomeSafe = clampLambda(lambdaHomeBase);
+  let lambdaAwaySafe = clampLambda(lambdaAwayBase);
 
   /* ===========================
      CONTEXTO
@@ -268,67 +210,43 @@ export function modelPipeline(context: any) {
     leagueData
   });
 
-  console.log("🧪 CONTEXT ADJUSTED:", contextAdjusted);
-
   let lambdaHome = clampLambda(
-    safe(contextAdjusted?.lambdaHome, lambdaHomeSafe)
+    safe(contextAdjusted.lambdaHome, lambdaHomeSafe)
   );
 
   let lambdaAway = clampLambda(
-    safe(contextAdjusted?.lambdaAway, lambdaAwaySafe)
+    safe(contextAdjusted.lambdaAway, lambdaAwaySafe)
   );
-
-  // proteção extra: contexto não pode distorcer demais o lambda base
-  lambdaHome = Math.max(lambdaHomeSafe * 0.88, Math.min(lambdaHomeSafe * 1.18, lambdaHome));
-  lambdaAway = Math.max(lambdaAwaySafe * 0.88, Math.min(lambdaAwaySafe * 1.18, lambdaAway));
-
-  lambdaHome = clampLambda(lambdaHome);
-  lambdaAway = clampLambda(lambdaAway);
-
-  console.log("🧪 AFTER CONTEXT:", {
-    lambdaHome,
-    lambdaAway
-  });
 
   /* ===========================
      AJUSTES PROFISSIONAIS
   ============================ */
 
-  lambdaHome = clampLambda(applyDefensiveAdjustment(lambdaHome, away));
-  lambdaAway = clampLambda(applyDefensiveAdjustment(lambdaAway, home));
-
-  console.log("🧪 AFTER DEFENSE:", {
-    lambdaHome,
-    lambdaAway
-  });
+  lambdaHome = applyDefensiveAdjustment(lambdaHome, away);
+  lambdaAway = applyDefensiveAdjustment(lambdaAway, home);
 
   const balanced = balanceLambdas(lambdaHome, lambdaAway);
-  console.log("🧪 BALANCED RESULT:", balanced);
-
-  lambdaHome = clampLambda(balanced.home);
-  lambdaAway = clampLambda(balanced.away);
+  lambdaHome = balanced.home;
+  lambdaAway = balanced.away;
 
   const normalized = normalizeLambdas(lambdaHome, lambdaAway);
-  console.log("🧪 NORMALIZED RESULT:", normalized);
-
-  lambdaHome = clampLambda(normalized.home);
-  lambdaAway = clampLambda(normalized.away);
+  lambdaHome = normalized.home;
+  lambdaAway = normalized.away;
 
   /* ===========================
-     SCORE FINAL DE GOLS
+     🔥 SCORE FINAL DE GOLS
   ============================ */
 
   const goalExpectationScore =
     calculateGoalExpectationScore(lambdaHome, lambdaAway);
 
-  const totalLambda = lambdaHome + lambdaAway;
+    const totalLambda = lambdaHome + lambdaAway;
 
-  const isLowGoalGame =
-    totalLambda < 2.0 ||
-    (lambdaHome < 1.0 && lambdaAway < 1.0);
+const isLowGoalGame =
+  totalLambda < 2.0 || // jogo travado
+  (lambdaHome < 1.0 && lambdaAway < 1.0); // ataques fracos
 
   console.log("🔥 LAMBDAS:", lambdaHome, lambdaAway);
-  console.log("🔥 TOTAL LAMBDA:", totalLambda);
   console.log("🔥 GOAL SCORE:", goalExpectationScore);
 
   /* ===========================
@@ -382,8 +300,8 @@ export function modelPipeline(context: any) {
   return {
     ...context,
     blocked: false,
-    goalExpectationScore,
-    isLowGoalGame,
+    goalExpectationScore, // 🔥 NOVO
+    isLowGoalGame, // 🔥 ADICIONA AQUI
     lambdaHome,
     lambdaAway,
     goals,

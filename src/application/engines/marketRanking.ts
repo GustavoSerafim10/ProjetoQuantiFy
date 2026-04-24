@@ -9,7 +9,7 @@ import { calculateMarketRisk } from "./riskMetrics";
 type SignalScoreInput = {
   probability: number;
   structureScore: number;
-  riskScore: number; // escala 0-10
+  riskScore: number;
   pressureIndex?: number;
 };
 
@@ -25,23 +25,16 @@ function calculateSignalScore(input: SignalScoreInput): number {
     pressureIndex = 0.5
   } = input;
 
-  const safeProbability = Math.max(0, Math.min(probability ?? 0.5, 1));
-  const safeStructure = Math.max(0, Math.min(structureScore ?? 0.5, 1));
-  const safePressure = Math.max(0, Math.min(pressureIndex ?? 0.5, 1));
-
-  // riskMetrics retorna 0–10, então normalizamos
-  const normalizedRisk = Math.max(0, Math.min((riskScore ?? 5) / 10, 1));
-
-  const probWeight = 0.28;
-  const structureWeight = 0.27;
-  const riskWeight = 0.25;
-  const pressureWeight = 0.20;
+  const probWeight = 0.4;
+  const structureWeight = 0.25;
+  const riskWeight = 0.2;
+  const pressureWeight = 0.15;
 
   const score =
-    (probWeight * safeProbability) +
-    (structureWeight * safeStructure) +
-    (riskWeight * (1 - normalizedRisk)) +
-    (pressureWeight * safePressure);
+    (probWeight * probability) +
+    (structureWeight * structureScore) +
+    (riskWeight * (1 - riskScore)) +
+    (pressureWeight * pressureIndex);
 
   return Number(score.toFixed(4));
 }
@@ -52,14 +45,13 @@ function calculateSignalScore(input: SignalScoreInput): number {
 
 export interface RankedMarket extends MarketDecision {
   edgeScore: number;
-  riskScore: number;      // 0–10
-  signalScore: number;    // 0–1 aprox
-  rankingScore: number;   // score final do ranking
+  riskScore: number;
+  signalScore: number;
 
   ev?: number;
   probability: number;
   confidence: number;
-  kelly: number;
+  kelly: number; // 🔥 obrigatório igual ao pai
 }
 
 /* ===============================
@@ -69,54 +61,36 @@ export interface RankedMarket extends MarketDecision {
 export function rankMarkets(
   analysis: GameAnalysis
 ): RankedMarket[] {
-  return analysis.markets
-    .filter((m: any) => {
-      const ev = Number(m?.ev ?? m?.expectedValue ?? 0);
-      return ev > 0;
-    })
-    .map((m: any) => {
-      const edgeScore = calculateEdgeScore(m);
-      const riskScore = calculateMarketRisk(m); // 0–10
 
-      const probability = Number(m?.probability ?? 0.5);
-      const structureScore = Number(m?.structureScore ?? 0.5);
-      const pressureIndex = Number(m?.pressureIndex ?? 0.5);
-      const confidence = Number(m?.confidence ?? 0.5);
-      const kelly = Number(m?.kelly ?? 0);
-      const ev = Number(m?.ev ?? m?.expectedValue ?? 0);
+return analysis.markets
+  .filter(m => m.expectedValue > 0)
+  .map((m: any) => {
 
-      const signalScore = calculateSignalScore({
-        probability,
-        structureScore,
-        riskScore,
-        pressureIndex
-      });
+    const edgeScore = calculateEdgeScore(m);
+    const riskScore = calculateMarketRisk(m);
 
-      const normalizedRisk = Math.max(0, Math.min(riskScore / 10, 1));
+    const probability = m.probability ?? 0.5;
+    const structureScore = m.structureScore ?? 0.5;
+    const pressureIndex = m.pressureIndex ?? 0.5;
 
-      /* ===========================
-         SCORE FINAL DO RANKING
-         VALUE FIRST
-      ============================ */
+    const signalScore = calculateSignalScore({
+      probability,
+      structureScore,
+      riskScore,
+      pressureIndex
+    });
 
-      const rankingScore =
-        (ev * 0.45) +
-        (edgeScore * 0.20) +
-        (signalScore * 0.15) +
-        (confidence * 0.10) +
-        ((1 - normalizedRisk) * 0.10);
+    return {
+      ...m,
+      edgeScore,
+      riskScore,
+      signalScore,
 
-      return {
-        ...m,
-        edgeScore,
-        riskScore,
-        signalScore,
-        rankingScore,
-        probability,
-        confidence,
-        kelly,
-        ev
-      };
-    })
-    .sort((a: any, b: any) => b.rankingScore - a.rankingScore);
+      probability,
+      confidence: m.confidence ?? 0.5,
+      kelly: m.kelly ?? 0,
+      ev: m.ev ?? m.expectedValue ?? 0
+    };
+  })
+  .sort((a: any, b: any) => b.signalScore - a.signalScore);
 }
