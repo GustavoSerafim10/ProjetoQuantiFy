@@ -71,8 +71,11 @@ function sanitizeStats(stats: any) {
 
 function clampLambda(n: number) {
   if (isNaN(n)) return 1.2;
-  return Math.max(0.2, Math.min(n, 2.5));
+
+  // limite individual saudável
+  return Math.max(0.35, Math.min(n, 2.45));
 }
+
 
 /* ===========================
    NORMALIZAÇÃO GLOBAL
@@ -81,17 +84,26 @@ function clampLambda(n: number) {
 function normalizeLambdas(home: number, away: number) {
   const total = home + away;
 
-  const MAX_TOTAL = 3.5;
+  const MIN_TOTAL = 1.4;
+  const MAX_TOTAL = 3.35;
 
-  if (total <= MAX_TOTAL) {
-    return { home, away };
+  if (total <= 0) {
+    return { home: 1.2, away: 1.0 };
   }
 
-  const scale = MAX_TOTAL / total;
+  if (total >= MIN_TOTAL && total <= MAX_TOTAL) {
+    return {
+      home: Number(home.toFixed(4)),
+      away: Number(away.toFixed(4))
+    };
+  }
+
+  const targetTotal = Math.max(MIN_TOTAL, Math.min(MAX_TOTAL, total));
+  const scale = targetTotal / total;
 
   return {
-    home: home * scale,
-    away: away * scale
+    home: Number((home * scale).toFixed(4)),
+    away: Number((away * scale).toFixed(4))
   };
 }
 
@@ -100,10 +112,18 @@ function normalizeLambdas(home: number, away: number) {
 =========================== */
 
 function applyDefensiveAdjustment(lambda: number, opponentStats: any) {
-  const conceded = opponentStats.goalsAgainst;
+  const conceded = safe(opponentStats?.goalsAgainst, 1.3);
+  const recentConceded = safe(
+    opponentStats?.last5GoalsAgainst,
+    conceded
+  );
 
-  if (conceded <= 0.8) return lambda * 0.85;
-  if (conceded <= 1.0) return lambda * 0.92;
+  const defensiveResistance =
+    (conceded * 0.60) +
+    (recentConceded * 0.40);
+
+  if (defensiveResistance <= 0.75) return lambda * 0.90;
+  if (defensiveResistance <= 0.95) return lambda * 0.95;
 
   return lambda;
 }
@@ -115,14 +135,35 @@ function applyDefensiveAdjustment(lambda: number, opponentStats: any) {
 function balanceLambdas(home: number, away: number) {
   const diff = Math.abs(home - away);
 
-  if (diff < 0.3) {
+  // Micro ajuste apenas quando é quase espelhado
+  if (diff < 0.10) {
     return {
-      home: home * 0.98,
-      away: away * 0.98
+      home: Number((home * 0.995).toFixed(4)),
+      away: Number((away * 0.995).toFixed(4))
     };
   }
 
-  return { home, away };
+  // Não achatar favoritismo real
+  if (diff > 0.85) {
+    const adjustment = Math.min(diff * 0.025, 0.045);
+
+    if (home > away) {
+      return {
+        home: Number((home - adjustment).toFixed(4)),
+        away: Number((away + adjustment * 0.20).toFixed(4))
+      };
+    }
+
+    return {
+      home: Number((home + adjustment * 0.20).toFixed(4)),
+      away: Number((away - adjustment).toFixed(4))
+    };
+  }
+
+  return {
+    home: Number(home.toFixed(4)),
+    away: Number(away.toFixed(4))
+  };
 }
 
 /* ===========================
@@ -198,44 +239,76 @@ export function modelPipeline(context: any) {
   let lambdaHomeSafe = clampLambda(lambdaHomeBase);
   let lambdaAwaySafe = clampLambda(lambdaAwayBase);
 
-  /* ===========================
-     CONTEXTO
-  ============================ */
+ /* ===========================
+   CONTEXTO
+=========================== */
 
-  const contextAdjusted = contextEngine({
-    homeStats: home,
-    awayStats: away,
-    baseLambdaHome: lambdaHomeSafe,
-    baseLambdaAway: lambdaAwaySafe,
-    leagueData
-  });
+const contextAdjusted = contextEngine({
+  homeStats: home,
+  awayStats: away,
+  baseLambdaHome: lambdaHomeSafe,
+  baseLambdaAway: lambdaAwaySafe,
+  leagueData
+});
 
-  let lambdaHome = clampLambda(
-    safe(contextAdjusted.lambdaHome, lambdaHomeSafe)
-  );
+let lambdaHome = clampLambda(
+  safe(contextAdjusted?.lambdaHome, lambdaHomeSafe)
+);
 
-  let lambdaAway = clampLambda(
-    safe(contextAdjusted.lambdaAway, lambdaAwaySafe)
-  );
+let lambdaAway = clampLambda(
+  safe(contextAdjusted?.lambdaAway, lambdaAwaySafe)
+);
 
-  /* ===========================
-     AJUSTES PROFISSIONAIS
-  ============================ */
+/*
+  Proteção contra distorção do contexto:
+  o contexto pode ajustar, mas não pode inflar/achatar demais.
+*/
+lambdaHome = Math.max(
+  lambdaHomeSafe * 0.88,
+  Math.min(lambdaHomeSafe * 1.16, lambdaHome)
+);
 
-  lambdaHome = applyDefensiveAdjustment(lambdaHome, away);
-  lambdaAway = applyDefensiveAdjustment(lambdaAway, home);
+lambdaAway = Math.max(
+  lambdaAwaySafe * 0.88,
+  Math.min(lambdaAwaySafe * 1.16, lambdaAway)
+);
 
-  const balanced = balanceLambdas(lambdaHome, lambdaAway);
-  lambdaHome = balanced.home;
-  lambdaAway = balanced.away;
+lambdaHome = clampLambda(lambdaHome);
+lambdaAway = clampLambda(lambdaAway);
 
-  const normalized = normalizeLambdas(lambdaHome, lambdaAway);
-  lambdaHome = normalized.home;
-  lambdaAway = normalized.away;
+/* ===========================
+   NORMALIZAÇÃO INICIAL
+=========================== */
 
-  /* ===========================
-     🔥 SCORE FINAL DE GOLS
-  ============================ */
+let normalized = normalizeLambdas(lambdaHome, lambdaAway);
+
+lambdaHome = clampLambda(normalized.home);
+lambdaAway = clampLambda(normalized.away);
+
+/* ===========================
+   AJUSTES PROFISSIONAIS
+=========================== */
+
+lambdaHome = applyDefensiveAdjustment(lambdaHome, away);
+lambdaAway = applyDefensiveAdjustment(lambdaAway, home);
+
+const balanced = balanceLambdas(lambdaHome, lambdaAway);
+
+lambdaHome = balanced.home;
+lambdaAway = balanced.away;
+
+/* ===========================
+   NORMALIZAÇÃO FINAL
+=========================== */
+
+normalized = normalizeLambdas(lambdaHome, lambdaAway);
+
+lambdaHome = normalized.home;
+lambdaAway = normalized.away;
+
+/* ===========================
+   🔥 SCORE FINAL DE GOLS
+=========================== */
 
   const goalExpectationScore =
     calculateGoalExpectationScore(lambdaHome, lambdaAway);

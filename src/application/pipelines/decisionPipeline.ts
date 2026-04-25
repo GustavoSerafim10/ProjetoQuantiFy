@@ -527,14 +527,14 @@ if (
      ELITE — OVER 1.5
   ========================= */
 
-  if (
-    m === "OVER_1_5" &&
-    probability >= 0.72 &&
-    ev >= 0.05 &&
-    risk <= 0.60
-  ) {
-    return "ELITE";
-  }
+if (
+  m === "OVER_1_5" &&
+  probability >= 0.75 &&
+  ev >= 0.15 &&
+  risk <= 0.55
+) {
+  return "ELITE";
+}
 
   /* =========================
      ELITE — OVER 2.5
