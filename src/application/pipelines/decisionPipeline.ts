@@ -156,14 +156,14 @@ function sniperFilter(
   if (market === "OVER_2_5") {
     if (data.isLowGoalGame) return false;
 
-    if (
-      data.goalExpectationScore < 0.58 ||
-      probability < 0.58 ||
-      ev < 0.08 ||
-      risk > 0.60
-    ) {
-      return false;
-    }
+ if (
+  data.goalExpectationScore < 0.62 ||
+  probability < 0.65 ||
+  ev < 0.13 ||
+  risk > 0.55
+) {
+  return false;
+}
 
     return true;
   }
@@ -465,9 +465,9 @@ function classifyDecision(
 if (
   m === "OVER_2_5" &&
   (
-    probability < 0.58 ||
-    ev < 0.08 ||
-    risk > 0.60
+    probability < 0.65 ||
+    ev < 0.13 ||
+    risk > 0.55
   )
 ) {
   return "NO BET";
@@ -540,14 +540,14 @@ if (
      ELITE — OVER 2.5
   ========================= */
 
-  if (
-    m === "OVER_2_5" &&
-    probability >= 0.58 &&
-    ev >= 0.08 &&
-    risk <= 0.62
-  ) {
-    return "ELITE";
-  }
+if (
+  m === "OVER_2_5" &&
+  probability >= 0.65 &&
+  ev >= 0.13 &&
+  risk <= 0.55
+) {
+  return "ELITE";
+}
 
   /* =========================
      ELITE — BTTS

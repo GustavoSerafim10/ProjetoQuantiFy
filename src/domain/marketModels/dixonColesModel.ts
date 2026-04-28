@@ -1,26 +1,62 @@
-export function dixonColesAdjustment(
-  i: number,
-  j: number,
+import {
+  goalMatrix,
+  matchOutcomeProbabilities,
+  overUnderProbability,
+  bttsProbability
+} from "../math/goalMatrix";
+
+export interface DixonColesModelOutput {
+  matrix: ReturnType<typeof goalMatrix>;
+
+  homeWinProb: number;
+  drawProb: number;
+  awayWinProb: number;
+
+  over15Prob: number;
+  under15Prob: number;
+  over25Prob: number;
+  under25Prob: number;
+
+  bttsYesProb: number;
+  bttsNoProb: number;
+
+  doubleChance1X: number;
+  doubleChanceX2: number;
+  doubleChance12: number;
+}
+
+export function dixonColesModel(
   lambdaHome: number,
   lambdaAway: number,
-  rho: number = -0.1 // correlação padrão
-): number {
+  rho = -0.12
+): DixonColesModelOutput {
+  const matrix = goalMatrix(lambdaHome, lambdaAway, {
+    maxGoals: 10,
+    rho
+  });
 
-  if (i === 0 && j === 0) {
-    return 1 - (lambdaHome * lambdaAway * rho);
-  }
+  const result = matchOutcomeProbabilities(matrix);
+  const ou15 = overUnderProbability(matrix, 1.5);
+  const ou25 = overUnderProbability(matrix, 2.5);
+  const btts = bttsProbability(matrix);
 
-  if (i === 0 && j === 1) {
-    return 1 + (lambdaHome * rho);
-  }
+  return {
+    matrix,
 
-  if (i === 1 && j === 0) {
-    return 1 + (lambdaAway * rho);
-  }
+    homeWinProb: result.homeWin,
+    drawProb: result.draw,
+    awayWinProb: result.awayWin,
 
-  if (i === 1 && j === 1) {
-    return 1 - rho;
-  }
+    over15Prob: ou15.over,
+    under15Prob: ou15.under,
+    over25Prob: ou25.over,
+    under25Prob: ou25.under,
 
-  return 1;
+    bttsYesProb: btts.yes,
+    bttsNoProb: btts.no,
+
+    doubleChance1X: result.homeWin + result.draw,
+    doubleChanceX2: result.awayWin + result.draw,
+    doubleChance12: result.homeWin + result.awayWin
+  };
 }

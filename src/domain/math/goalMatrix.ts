@@ -13,48 +13,56 @@ export interface MatchOutcome {
   awayWin: number;
 }
 
-const MAX_GOALS = 5; // 🔒 FIXO PARA ESTABILIDADE
+export interface GoalMatrixOptions {
+  maxGoals?: number;
+  rho?: number;
+}
+
+const DEFAULT_MAX_GOALS = 10;
+const DEFAULT_RHO = -0.12;
+
+function clampLambda(lambda: number, fallback = 1.2): number {
+  if (!Number.isFinite(lambda)) return fallback;
+  return Math.max(0.05, Math.min(lambda, 4.5));
+}
 
 export function goalMatrix(
   lambdaHome: number,
-  lambdaAway: number
+  lambdaAway: number,
+  options: GoalMatrixOptions = {}
 ): ScoreProbability[] {
+  const safeLambdaHome = clampLambda(lambdaHome, 1.2);
+  const safeLambdaAway = clampLambda(lambdaAway, 1.2);
 
-  // 🔒 Proteção contra valores inválidos
-  if (!isFinite(lambdaHome) || !isFinite(lambdaAway)) {
-    lambdaHome = 1.2;
-    lambdaAway = 1.2;
-  }
-
-  if (lambdaHome < 0) lambdaHome = 0.5;
-  if (lambdaAway < 0) lambdaAway = 0.5;
+  const maxGoals = options.maxGoals ?? DEFAULT_MAX_GOALS;
+  const rho = options.rho ?? DEFAULT_RHO;
 
   const matrix: ScoreProbability[] = [];
 
-  const rho = -0.08;
+  for (let home = 0; home <= maxGoals; home++) {
+    for (let away = 0; away <= maxGoals; away++) {
+      const probHome = poissonPMF(safeLambdaHome, home);
+      const probAway = poissonPMF(safeLambdaAway, away);
 
-  for (let home = 0; home <= MAX_GOALS; home++) {
-    for (let away = 0; away <= MAX_GOALS; away++) {
+      const baseProbability = probHome * probAway;
 
-      const probHome = poissonPMF(lambdaHome, home);
-      const probAway = poissonPMF(lambdaAway, away);
-
-      const base = probHome * probAway;
-
-      const tau = dixonColesAdjustment(
+      const dcAdjustment = dixonColesAdjustment(
         home,
         away,
-        lambdaHome,
-        lambdaAway,
+        safeLambdaHome,
+        safeLambdaAway,
         rho
       );
 
-      const adjusted = Math.max(0, base * tau);
+      const adjustedProbability = Math.max(
+        0,
+        baseProbability * dcAdjustment
+      );
 
       matrix.push({
         homeGoals: home,
         awayGoals: away,
-        probability: adjusted
+        probability: adjustedProbability
       });
     }
   }
@@ -65,36 +73,37 @@ export function goalMatrix(
 export function matchOutcomeProbabilities(
   matrix: ScoreProbability[]
 ): MatchOutcome {
-
   let homeWin = 0;
   let draw = 0;
   let awayWin = 0;
 
   for (const score of matrix) {
     if (score.homeGoals > score.awayGoals) homeWin += score.probability;
-    if (score.homeGoals === score.awayGoals) draw += score.probability;
-    if (score.homeGoals < score.awayGoals) awayWin += score.probability;
+    else if (score.homeGoals === score.awayGoals) draw += score.probability;
+    else awayWin += score.probability;
   }
 
   return { homeWin, draw, awayWin };
 }
 
-function normalizeMatrix(
-  matrix: ScoreProbability[]
-): ScoreProbability[] {
+function normalizeMatrix(matrix: ScoreProbability[]): ScoreProbability[] {
+  const total = matrix.reduce(
+    (acc, score) => acc + score.probability,
+    0
+  );
 
-  const total = matrix.reduce((acc, s) => acc + s.probability, 0);
+  if (!Number.isFinite(total) || total <= 0) {
+    const fallbackProbability = 1 / matrix.length;
 
-  if (!isFinite(total) || total === 0) {
-    return matrix.map(s => ({
-      ...s,
-      probability: 1 / matrix.length
+    return matrix.map(score => ({
+      ...score,
+      probability: fallbackProbability
     }));
   }
 
-  return matrix.map(s => ({
-    ...s,
-    probability: s.probability / total
+  return matrix.map(score => ({
+    ...score,
+    probability: score.probability / total
   }));
 }
 
@@ -106,23 +115,25 @@ export function overUnderProbability(
   let under = 0;
 
   for (const cell of matrix) {
-    const total = cell.homeGoals + cell.awayGoals;
-    if (total > line) over += cell.probability;
+    const totalGoals = cell.homeGoals + cell.awayGoals;
+
+    if (totalGoals > line) over += cell.probability;
     else under += cell.probability;
   }
 
   return { over, under };
 }
 
-export function bttsProbability(
-  matrix: ScoreProbability[]
-) {
+export function bttsProbability(matrix: ScoreProbability[]) {
   let yes = 0;
   let no = 0;
 
   for (const cell of matrix) {
-    if (cell.homeGoals > 0 && cell.awayGoals > 0) yes += cell.probability;
-    else no += cell.probability;
+    if (cell.homeGoals > 0 && cell.awayGoals > 0) {
+      yes += cell.probability;
+    } else {
+      no += cell.probability;
+    }
   }
 
   return { yes, no };

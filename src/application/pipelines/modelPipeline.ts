@@ -1,10 +1,11 @@
 import { goalsModel } from "../../domain/marketModels/goalsModel";
-import { bttsModel } from "../../domain/marketModels/bttsModel";
+
 import { contextEngine } from "../../domain/context/contextEngine";
 import { handicapModel } from "../../domain/marketModels/handicapModel";
 import { cornersModel } from "../../domain/marketModels/cornersModel";
 import { calculateGlobalConfidence } from "../../domain/confidence/confidenceEngine";
 import { skellamModel } from "../../domain/marketModels/skellamModel";
+import { dixonColesModel } from "../../domain/marketModels/dixonColesModel";
 import { leagueConfig } from "../../domain/config/leagueConfig";
 import { calculateLambda } from "../../domain/adapters/lambdaAdapter";
 
@@ -326,10 +327,23 @@ const isLowGoalGame =
      GOALS CORE
   ============================ */
 
-  const goals = goalsModel(lambdaHome, lambdaAway, home, away);
-  const btts = bttsModel(goals.matrix);
-  const result = skellamModel(lambdaHome, lambdaAway);
-  const handicap = handicapModel(goals.matrix);
+const goals = goalsModel(lambdaHome, lambdaAway, home, away);
+
+// 🔥 Dixon-Coles PRO
+// Corrige placares baixos: 0x0, 1x0, 0x1, 1x1
+const dixonColes = dixonColesModel(lambdaHome, lambdaAway);
+
+// BTTS passa a usar matriz Dixon-Coles
+const btts = {
+  yes: dixonColes.bttsYesProb,
+  no: dixonColes.bttsNoProb
+};
+
+// Resultado principal continua com Skellam PRO
+const result = skellamModel(lambdaHome, lambdaAway);
+
+// Handicap ainda usa matriz original por enquanto
+const handicap = handicapModel(goals.matrix);
 
   /* ===========================
      SHOTS
@@ -378,6 +392,7 @@ const isLowGoalGame =
     lambdaHome,
     lambdaAway,
     goals,
+    dixonColes,
     btts,
     result,
     handicap,
@@ -404,6 +419,7 @@ function emptyResponse() {
     lambdaHome: 1.2,
     lambdaAway: 1.0,
     goals: {},
+    dixonColes: {},
     btts: {},
     result: {},
     handicap: {},

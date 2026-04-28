@@ -1,29 +1,21 @@
-import { poissonPMF } from "../math/poisson";
+import { calculateSkellamProbabilities } from "../math/skellam";
 
 export function skellamModel(lambdaHome: number, lambdaAway: number) {
-
-  const maxGoals = 10;
-
-  let homeWin = 0;
-  let draw = 0;
-  let awayWin = 0;
-
-  for (let i = 0; i <= maxGoals; i++) {
-    for (let j = 0; j <= maxGoals; j++) {
-
-      const prob =
-        poissonPMF(lambdaHome, i) *
-        poissonPMF(lambdaAway, j);
-
-      if (i > j) homeWin += prob;
-      else if (i === j) draw += prob;
-      else awayWin += prob;
-    }
-  }
+  const result = calculateSkellamProbabilities(lambdaHome, lambdaAway, 12);
 
   return {
-    homeWin,
-    draw,
-    awayWin
+    homeWinProb: result.homeWinProb,
+    drawProb: result.drawProb,
+    awayWinProb: result.awayWinProb,
+    doubleChance1X: result.doubleChance1X,
+    doubleChanceX2: result.doubleChanceX2,
+    doubleChance12: result.doubleChance12,
+    confidence: result.confidence,
+    distribution: result.distribution,
+
+    // compatibilidade antiga
+    homeWin: result.homeWinProb,
+    draw: result.drawProb,
+    awayWin: result.awayWinProb
   };
 }
