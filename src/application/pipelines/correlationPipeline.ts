@@ -5,66 +5,74 @@ export function correlationPipeline(data: any) {
   const markets = data.markets ?? [];
 
   /* ===========================
-     🔥 AJUSTE BASE
+     🔥 STEP 1 — APPLY ENGINE
   ============================ */
 
-  const adjustedMarkets = applyCorrelationAdjustments(markets);
+  const adjustedMarkets = applyCorrelationAdjustments(
+    markets,
+    {
+      lambdaHome: data.lambdaHome,
+      lambdaAway: data.lambdaAway,
+      goalExpectationScore: data.goalExpectationScore
+    }
+  );
 
   /* ===========================
-     🚫 FILTRO DE CONFLITO AVANÇADO
+     🚫 STEP 2 — HARD CONFLICT FILTER
   ============================ */
 
   const filteredMarkets = adjustedMarkets.filter((m: any) => {
 
-    const name = m.market;
+    const name = m.market.toUpperCase();
 
-    /* ===========================
-       🔴 1. BTTS vs UNDER
-    ============================ */
+    /* =========================
+       🔴 OVER 2.5 x BTTS NO (ABSURDO)
+    ========================= */
+
     if (
-      name.includes("BTTS_YES") &&
-      hasMarket(adjustedMarkets, "UNDER")
+      name === "OVER_2_5" &&
+      hasExactMarket(adjustedMarkets, "BTTS_NO")
     ) {
       return false;
     }
 
-    /* ===========================
-       🔴 2. OVER vs BTTS NO
-    ============================ */
     if (
-      name.includes("OVER") &&
-      hasMarket(adjustedMarkets, "BTTS_NO")
+      name === "BTTS_NO" &&
+      hasExactMarket(adjustedMarkets, "OVER_2_5")
     ) {
       return false;
     }
 
-    /* ===========================
-       🔴 3. RESULT vs BTTS CONFLITO
-    ============================ */
+    /* =========================
+       🔴 RESULT x DOUBLE CHANCE (duplicação)
+    ========================= */
+
     if (
-      name.includes("HOME_WIN") &&
-      hasMarket(adjustedMarkets, "BTTS_NO") &&
-      data.lambdaAway > 1
+      name === "HOME_WIN" &&
+      hasExactMarket(adjustedMarkets, "DOUBLE_CHANCE_1X")
     ) {
       return false;
     }
 
-    /* ===========================
-       🔴 4. CORNERS vs BAIXA PRESSÃO
-    ============================ */
     if (
-      name.includes("CORNERS_OVER") &&
-      (data.lambdaHome + data.lambdaAway) < 2.2
+      name === "AWAY_WIN" &&
+      hasExactMarket(adjustedMarkets, "DOUBLE_CHANCE_X2")
     ) {
       return false;
     }
 
-    /* ===========================
-       🔴 5. ASSIMETRIA FORTE
-    ============================ */
-    const diff = Math.abs(data.lambdaHome - data.lambdaAway);
+    /* =========================
+       🔴 BTTS YES x jogo desequilibrado
+    ========================= */
 
-    if (diff > 1.5 && name.includes("BTTS_YES")) {
+    const diff = Math.abs(
+      (data.lambdaHome ?? 1) - (data.lambdaAway ?? 1)
+    );
+
+    if (
+      name === "BTTS_YES" &&
+      diff > 1.4
+    ) {
       return false;
     }
 
@@ -78,14 +86,17 @@ export function correlationPipeline(data: any) {
   return {
     ...data,
     markets: filteredMarkets,
-    rawMarkets: adjustedMarkets
+    rawMarkets: adjustedMarkets,
+    correlationApplied: true
   };
 }
 
 /* ===========================
-   🛠 HELPERS
+   🛠 HELPERS PRO
 =========================== */
 
-function hasMarket(markets: any[], keyword: string) {
-  return markets.some(m => m.market.includes(keyword));
+function hasExactMarket(markets: any[], target: string) {
+  return markets.some(
+    m => m.market.toUpperCase() === target
+  );
 }

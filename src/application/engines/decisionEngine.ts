@@ -1,4 +1,4 @@
-import { calculateRiskScore } from "../../domain/risk/riskScore";
+import { calculateRiskV2 } from "../../domain/analysis/riskEngine";
 import { classifyZone } from "./zoneClassifier";
 import { calibrateProbability } from "../../domain/calibration/probabilityCalibration";
 import { autoLearningEngine } from "../../domain/learning/autoLearningEngine";
@@ -27,28 +27,57 @@ function calibrateEV(ev: number) {
 export function decisionEngine(input: any) {
 
   /* ===========================
-     🔥 1. MONTE CARLO (BASE ABSOLUTA)
+     🔥 1. PROBABILIDADE BASE
   ============================ */
 
   let prob = safe(input?.monteCarlo?.mainProb, 0);
 
-  // 🚫 SEM PROB → SEM JOGO
   if (!prob || prob <= 0) {
-    return {
-      decision: "NO DATA",
-      mode: "NONE"
-    };
+    prob = safe(input?.probability, 0);
   }
 
   /* ===========================
-     🔥 2. CALIBRAÇÃO BASE
+     🔥 OUTPUT BASE (ANTI-ERRO TS)
+  ============================ */
+
+  function buildOutput(
+    decisionText: string,
+    mode: "ELITE" | "SCALPER" | "NONE" = "NONE",
+    zone: any = "RED"
+  ) {
+    return {
+      probability: prob,
+      bookmakerOdd,
+      fairOdd,
+      expectedValue,
+      kelly,
+      riskScore,
+      decision: decisionText,
+      mode,
+      zone,
+
+      meta: {
+        learningApplied: learning?.ready || false
+      },
+
+      signals: {
+        shotsPressure,
+        shotVolume,
+        cardsIntensity,
+        cornerPressure
+      }
+    };
+  }
+
+  if (!prob || prob <= 0) {
+    return buildOutput("NO DATA");
+  }
+
+  /* ===========================
+     🔥 2. CALIBRAÇÃO
   ============================ */
 
   prob = calibrateProbability(prob);
-
-  /* ===========================
-     🔥 3. AUTO LEARNING (CORE)
-  ============================ */
 
   const learning = autoLearningEngine();
 
@@ -56,15 +85,13 @@ export function decisionEngine(input: any) {
     prob += learning.probBias;
   }
 
-  // 🔒 CLAMP FINAL
   prob = Math.max(0.0001, Math.min(0.9999, prob));
 
   /* ===========================
-     🔹 ODDS / EV (SECUNDÁRIO)
+     🔹 ODDS / EV
   ============================ */
 
   const bookmakerOdd = safe(input.bookmakerOdd, 2);
-
   const fairOdd = 1 / prob;
 
   const rawEV = prob * bookmakerOdd - 1;
@@ -83,19 +110,19 @@ export function decisionEngine(input: any) {
   const kelly = Math.min(rawKelly * 0.35, 0.05);
 
   /* ===========================
-     🔹 RISK SCORE
+     🔥 RISK V2 (PRO)
   ============================ */
 
   const lambdaHome = safe(input.lambdaHome, 1.2);
   const lambdaAway = safe(input.lambdaAway, 1.0);
 
-  const riskScore = calculateRiskScore({
+  const riskScore = calculateRiskV2({
+    probability: prob,
+    ev: expectedValue,
+    kelly,
+    market: input.market || "UNKNOWN",
     lambdaHome,
-    lambdaAway,
-    leagueAvgGoals: safe(input.leagueAvgGoals, 1.3),
-    eventProbability: prob,
-    recentGoalStd: safe(input.recentGoalStd, 1),
-    seasonGoalAvg: safe(input.seasonGoalAvg, 1.2)
+    lambdaAway
   });
 
   const isAllowedByRisk = riskScore <= 0.55;
@@ -117,7 +144,7 @@ export function decisionEngine(input: any) {
     safe(input?.engines?.cornerData?.lambdaCorners, 9);
 
   /* ===========================
-     🧠 ESTRUTURA REAL
+     🧠 ESTRUTURA DO JOGO
   ============================ */
 
   const isHighProb = prob >= 0.60;
@@ -136,67 +163,19 @@ export function decisionEngine(input: any) {
     strongPressure && balancedGame;
 
   /* ===========================
-     🚫 BLOQUEIOS (PRIORIDADE)
+     🚫 BLOQUEIOS
   ============================ */
 
   if (!isAllowedByRisk) {
-    return {
-      probability: prob,
-      bookmakerOdd,
-      fairOdd,
-      expectedValue,
-      kelly,
-      riskScore,
-      decision: "BLOCKED BY RISK",
-      mode: "NONE",
-      zone: "RISK_BLOCK",
-      signals: {
-        shotsPressure,
-        shotVolume,
-        cardsIntensity,
-        cornerPressure
-      }
-    };
+    return buildOutput("BLOCKED BY RISK");
   }
 
   if (!strongStructure) {
-    return {
-      probability: prob,
-      bookmakerOdd,
-      fairOdd,
-      expectedValue,
-      kelly,
-      riskScore,
-      decision: "NO BET (WEAK STRUCTURE)",
-      mode: "NONE",
-      zone: "STRUCTURE_BLOCK",
-      signals: {
-        shotsPressure,
-        shotVolume,
-        cardsIntensity,
-        cornerPressure
-      }
-    };
+    return buildOutput("NO BET (WEAK STRUCTURE)");
   }
 
   if (prob < 0.60) {
-    return {
-      probability: prob,
-      bookmakerOdd,
-      fairOdd,
-      expectedValue,
-      kelly,
-      riskScore,
-      decision: "NO BET (LOW PROBABILITY)",
-      mode: "NONE",
-      zone: "PROB_BLOCK",
-      signals: {
-        shotsPressure,
-        shotVolume,
-        cardsIntensity,
-        cornerPressure
-      }
-    };
+    return buildOutput("NO BET (LOW PROBABILITY)");
   }
 
   /* ===========================
@@ -206,24 +185,14 @@ export function decisionEngine(input: any) {
   let decision = "NO BET";
   let mode: "ELITE" | "SCALPER" | "NONE" = "NONE";
 
-  // ⚡ SCALPER (PURO — SEM EV)
-  if (
-    isVeryHighProb &&
-    stableGame
-  ) {
+  if (isVeryHighProb && stableGame) {
     decision = "SCALPER";
     mode = "SCALPER";
   }
-
-  // 🔥 ELITE (SEM DEPENDER DE EV)
   else if (isHighProb) {
     decision = "BET";
     mode = "ELITE";
   }
-
-  /* ===========================
-     📊 ZONE (INFO ONLY)
-  ============================ */
 
   const zone = classifyZone({
     expectedValue,
@@ -232,31 +201,5 @@ export function decisionEngine(input: any) {
     probability: prob
   });
 
-  /* ===========================
-     🏁 OUTPUT FINAL
-  ============================ */
-
-  return {
-    probability: prob,
-    bookmakerOdd,
-    fairOdd,
-    expectedValue,
-    kelly,
-    riskScore,
-    decision,
-    mode,
-    zone,
-
-    // 🔥 DEBUG PRO
-    meta: {
-      learningApplied: learning?.ready || false
-    },
-
-    signals: {
-      shotsPressure,
-      shotVolume,
-      cardsIntensity,
-      cornerPressure
-    }
-  };
+  return buildOutput(decision, mode, zone);
 }
