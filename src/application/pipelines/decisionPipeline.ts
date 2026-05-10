@@ -887,39 +887,43 @@ export function decisionPipeline(data: any) {
       getMarketBoost(type);
 
 let valueScore =
-  (ev * 0.65) +          // 🔥 MAIS PESO EM VALOR REAL
-  (signalScore * 0.20) +
-  (probability * 0.05) + // ⚠️ reduz impacto
-  ((1 - risk) * 0.10);   // 🧠 mais controle de risco
+  (ev * 0.45) +
+  (signalScore * 0.25) +
+  (probability * 0.15) +
+  ((1 - risk) * 0.15);
 
-  let finalScore = valueScore;
+let finalScore = valueScore;
 
 /* ===============================
-   BOOST POR EDGE REAL
-=============================== */
+   EDGE QUALITY CONTROL
+================================ */
 
-if (ev > 0.15) {
-  finalScore *= 1.15;
+if (ev > 0.15 && probability >= 0.62 && risk <= 0.55) {
+  finalScore *= 1.08;
 }
 
-if (ev > 0.25) {
-  finalScore *= 1.25;
+if (ev > 0.25 && probability >= 0.68 && risk <= 0.50) {
+  finalScore *= 1.12;
 }
 
 /* ===============================
    PENALIDADE ODDS BAIXAS
-=============================== */
+================================ */
 
 if (odd < 1.40) {
-  finalScore *= 0.85;
+  finalScore *= 0.88;
 }
 
 /* ===============================
-   BOOST LONGSHOT
-=============================== */
+   LONGSHOT PROTECTION
+================================ */
 
-if (odd > 3.0 && ev > 0.20) {
-  finalScore *= 1.20;
+if (odd > 3.0) {
+  finalScore *= 0.90;
+}
+
+if (odd > 4.5) {
+  finalScore *= 0.82;
 }
 
 const classification = classifyDecision({
@@ -1081,32 +1085,24 @@ const noBet = !finalBest;
   /* ===============================
      TRACKING
   ================================ */
-
-  if (best) {
-    registerBet({
-      id: generateId(),
-      match:
-        data.match ||
-        "Unknown Match",
-      market: best.market,
-      category:
-        best.category ||
-        "GENERAL",
-      odd: best.odd,
-      probability:
-        best.probability,
-      ev: best.ev,
-      kelly: best.kelly,
-      stake:
-        calculateStakePro(best),
-      createdAt: Date.now(),
-      type:
-        best.classification as
-          | "SCALPER"
-          | "ELITE"
-          | "WATCHLIST"
-    });
-  }
+if (finalBest) {
+  registerBet({
+    id: generateId(),
+    match: data.match || "Unknown Match",
+    market: finalBest.market,
+    category: finalBest.category || "GENERAL",
+    odd: finalBest.odd,
+    probability: finalBest.probability,
+    ev: finalBest.ev,
+    kelly: finalBest.kelly,
+    stake: calculateStakePro(finalBest),
+    createdAt: Date.now(),
+    type: finalBest.classification as
+      | "SCALPER"
+      | "ELITE"
+      | "WATCHLIST"
+  });
+}
 
   /* ===============================
      COMBO BUILD

@@ -107,14 +107,51 @@ export function calculateRiskV2({
     if (ev < 0.06) risk += 0.08;
   }
 
-  /* =========================
-     📉 7. AJUSTES GLOBAIS
-  ========================= */
+/* =========================
+   📉 AJUSTES GLOBAIS
+========================= */
 
-  if (probability > 0.78) risk -= 0.08;
-  if (ev > 0.15) risk -= 0.10;
-  if (kelly > 0.12) risk -= 0.08;
+// probabilidade realmente forte
+if (probability > 0.78) {
+  risk -= 0.08;
+}
 
+// EV só reduz risco se existir
+// sustentação probabilística
+if (
+  ev > 0.15 &&
+  probability >= 0.62
+) {
+  risk -= 0.06;
+}
+
+// edge muito forte E consistente
+if (
+  ev > 0.22 &&
+  probability >= 0.68
+) {
+  risk -= 0.04;
+}
+
+// Kelly saudável
+if (
+  kelly > 0.12 &&
+  probability >= 0.60
+) {
+  risk -= 0.05;
+}
+
+/* =========================
+   🚨 ANTI FALSE EDGE
+========================= */
+
+// odds altas naturalmente carregam variância
+if (
+  ev > 0.20 &&
+  probability < 0.58
+) {
+  risk += 0.08;
+}
   /* =========================
      🔒 NORMALIZAÇÃO
   ========================= */

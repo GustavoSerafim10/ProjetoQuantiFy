@@ -64,14 +64,48 @@ export function calculateEdgeScore({
   expectedValue: number;
   risk: number;
 }) {
-  const ev = Math.max(-1, Math.min(Number(expectedValue ?? 0), 1));
-  const prob = Math.max(0, Math.min(Number(probability ?? 0), 1));
-  const safeRisk = Math.max(0, Math.min(Number(risk ?? 1), 1));
+
+  const ev = Math.max(
+    -1,
+    Math.min(Number(expectedValue ?? 0), 1)
+  );
+
+  const prob = Math.max(
+    0,
+    Math.min(Number(probability ?? 0), 1)
+  );
+
+  const safeRisk = Math.max(
+    0,
+    Math.min(Number(risk ?? 1), 1)
+  );
+
+  /* =========================================
+     🧠 EV QUALITY CONTROL
+  ========================================= */
+
+  let adjustedEV = ev;
+
+  // EV muito alto com baixa probabilidade
+  // normalmente é edge artificial
+  if (prob < 0.60 && ev > 0.12) {
+    adjustedEV *= 0.85;
+  }
+
+  // probabilidade muito forte
+  // merece sustentação estrutural
+  if (prob >= 0.72 && ev > 0) {
+    adjustedEV *= 1.05;
+  }
+
+  /* =========================================
+     🔥 SCORE PROFISSIONAL
+  ========================================= */
 
   const score =
-    (ev * 0.70) +
-    (prob * 0.20) +
-    ((1 - safeRisk) * 0.10);
+    (adjustedEV * 0.55) +
+    (prob * 0.30) +
+    ((1 - safeRisk) * 0.15);
 
   return Number(score.toFixed(4));
 }

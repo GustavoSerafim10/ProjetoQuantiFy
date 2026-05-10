@@ -6,6 +6,7 @@ export function applyContextAdjustments(
     intensity?: number;
   }
 ) {
+
   let adjusted = Number(baseProb ?? 0.5);
 
   const homeAdv = Number(context?.homeAdvantage ?? 1);
@@ -16,32 +17,54 @@ export function applyContextAdjustments(
      🔧 AJUSTES SUAVES
   ============================ */
 
-  // transforma multiplicador em ajuste percentual pequeno
+  // ajustes individuais
   const homeAdj = (homeAdv - 1) * 0.25;
   const formAdj = (form - 1) * 0.20;
   const intensityAdj = (intensity - 1) * 0.15;
 
-  adjusted += homeAdj;
-  adjusted += formAdj;
-  adjusted += intensityAdj;
+  /* ===========================
+     🧠 DECAY CONTEXTUAL
+  ============================ */
+
+  // reduz exagero quando múltiplos fatores
+  // positivos aparecem juntos
+
+  const totalRaw =
+    homeAdj +
+    formAdj +
+    intensityAdj;
+
+  // decay institucional
+  const decayFactor =
+    Math.abs(totalRaw) > 0.08
+      ? 0.85
+      : 1;
+
+  adjusted += totalRaw * decayFactor;
 
   /* ===========================
      🔒 LIMITES DE SEGURANÇA
   ============================ */
 
-  // limite de variação total (não deixar contexto dominar)
+  // contexto nunca domina o modelo
   const maxShift = 0.12;
 
   const delta = adjusted - baseProb;
 
-  if (delta > maxShift) adjusted = baseProb + maxShift;
-  if (delta < -maxShift) adjusted = baseProb - maxShift;
+  if (delta > maxShift)
+    adjusted = baseProb + maxShift;
+
+  if (delta < -maxShift)
+    adjusted = baseProb - maxShift;
 
   /* ===========================
      🎯 CLAMP FINAL
   ============================ */
 
-  adjusted = Math.max(0.05, Math.min(adjusted, 0.95));
+  adjusted = Math.max(
+    0.05,
+    Math.min(adjusted, 0.95)
+  );
 
   return Number(adjusted.toFixed(4));
 }

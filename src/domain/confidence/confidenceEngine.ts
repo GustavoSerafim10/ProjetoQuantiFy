@@ -67,7 +67,39 @@ export function calculateGlobalConfidence(input: ConfidenceInput): number {
     structureFactor += 0.05;
   }
 
+/* ===========================
+   🧠 QUALIDADE ESTRUTURAL
+============================ */
+
+const minLambda = Math.min(
+  safeLambdaHome,
+  safeLambdaAway
+);
+
+// jogo ofensivo bilateral saudável
+if (
+  totalLambda >= 2.8 &&
+  minLambda >= 1.0
+) {
+  structureFactor += 0.05;
+}
+
+// jogo ofensivo fake
+if (
+  totalLambda >= 2.8 &&
+  minLambda < 0.70
+) {
+  structureFactor -= 0.06;
+}
+
+// jogo extremamente desequilibrado
+if (lambdaDiff > 1.8) {
+  structureFactor -= 0.05;
+}
+
   structureFactor = Math.max(0, Math.min(structureFactor, 1));
+
+  
 
   /* ===========================
      4️⃣ CONFIDENCE FINAL

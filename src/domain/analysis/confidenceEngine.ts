@@ -23,17 +23,40 @@ export function calculateConfidence({
 
   let confidence = safeProbability;
 
-  /* ===========================
-     2. EDGE
-  ============================ */
+/* ===========================
+   2. EDGE QUALITY
+============================ */
 
-  confidence += (safeEv - 0.03) * 0.35;
+// edge saudável
+if (
+  safeEv > 0 &&
+  safeProbability >= 0.58
+) {
+  confidence += (safeEv - 0.03) * 0.22;
+}
 
-  /* ===========================
-     3. KELLY
-  ============================ */
+// edge realmente forte
+if (
+  safeEv > 0.15 &&
+  safeProbability >= 0.65
+) {
+  confidence += 0.025;
+}
 
-  confidence += (safeKelly - 0.02) * 0.45;
+/* ===========================
+   3. KELLY CONTROL
+============================ */
+
+// Kelly só ajuda se existir
+// sustentação probabilística
+if (
+  safeKelly > 0 &&
+  safeProbability >= 0.60
+) {
+  confidence += (safeKelly - 0.02) * 0.28;
+}
+
+
 
   /* ===========================
      4. LAMBDA / ESTRUTURA
@@ -82,6 +105,38 @@ export function calculateConfidence({
     confidence -= 0.03;
   }
 
+  /* ===========================
+   🚨 ANTI FALSE CONFIDENCE
+============================ */
+
+// odds altas naturalmente carregam
+// mais variância estrutural
+
+if (
+  safeOdds > 3.5 &&
+  safeProbability < 0.60
+) {
+  confidence -= 0.05;
+}
+
+// BTTS muito assimétrico
+if (
+  marketName.includes("BTTS") &&
+  Math.min(
+    safeLambdaHome,
+    safeLambdaAway
+  ) < 0.80
+) {
+  confidence -= 0.06;
+}
+
+// OVER 2.5 fake
+if (
+  marketName.includes("OVER_2_5") &&
+  totalLambda < 2.5
+) {
+  confidence -= 0.05;
+}
   /* ===========================
      8. NORMALIZAÇÃO FINAL
   ============================ */

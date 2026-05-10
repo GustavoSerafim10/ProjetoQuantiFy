@@ -116,6 +116,61 @@ export function applyCorrelationAdjustments(
     }
 
     /* =========================
+   🧠 QUALIDADE ESTRUTURAL
+========================= */
+
+const minLambda = Math.min(
+  lambdaHome ?? 0,
+  lambdaAway ?? 0
+);
+
+/* =========================
+   BTTS YES FRÁGIL
+========================= */
+
+if (
+  name === "BTTS_YES" &&
+  minLambda < 0.85
+) {
+  penalty += 0.08;
+}
+
+/* =========================
+   OVER 2.5 ASSIMÉTRICO
+========================= */
+
+if (
+  name === "OVER_2_5" &&
+  diffLambda > 1.6
+) {
+  penalty += 0.07;
+}
+
+/* =========================
+   BTTS + OVER SINERGIA REAL
+========================= */
+
+if (
+  ["BTTS_YES", "OVER_2_5"].includes(name)
+) {
+
+  // jogo ofensivo bilateral
+  if (
+    minLambda >= 1.0 &&
+    totalLambda >= 2.8
+  ) {
+    boost += 0.04;
+  }
+
+  // jogo ofensivo fake
+  if (
+    minLambda < 0.75
+  ) {
+    penalty += 0.05;
+  }
+}
+
+    /* =========================
        🎯 APLICAÇÃO FINAL
     ========================= */
 
