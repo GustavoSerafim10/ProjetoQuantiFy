@@ -5,10 +5,10 @@ const EV_THRESHOLDS: Record<string, { elite: number; operational: number }> = {
   DRAW: { elite: 0.18, operational: 0.12 },
   AWAY: { elite: 0.12, operational: 0.08 },
 
-  OVER_1_5: { elite: 0.08, operational: 0.05 },
+  OVER_1_5: { elite: 0.15, operational: 0.10 },
   OVER_2_5: { elite: 0.12, operational: 0.08 },
 
-  BTTS_YES: { elite: 0.12, operational: 0.08 },
+  BTTS_YES: { elite: 0.18, operational: 0.12 },
   BTTS_NO: { elite: 0.12, operational: 0.08 },
 
   DOUBLE_CHANCE_1X: { elite: 0.07, operational: 0.04 },

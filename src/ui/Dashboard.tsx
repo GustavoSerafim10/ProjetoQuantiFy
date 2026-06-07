@@ -101,7 +101,7 @@ export default function Dashboard({ data }: any) {
 const best = data?.best ?? null;
 
   const fullHistory = getHistory();
-  const history = fullHistory.slice(-6).reverse();
+ const history = [...fullHistory].reverse();
 
   const stats = calculateStats(fullHistory);
 
@@ -264,66 +264,64 @@ registerBet({
 <Card>
   <h2 className="mb-3">📜 Execuções</h2>
 
+<div className="max-h-[320px] overflow-y-scroll overflow-x-hidden pr-2">
   {history.map((b: any, i: number) => (
-    <div
-      key={i}
-      className="border-b border-zinc-800 py-2 flex justify-between items-center"
-    >
-      {/* INFO */}
-      <div className="flex flex-col text-xs">
-
-        <span className="font-semibold text-white">
-          {b.match || "Jogo"}
-        </span>
-
-        <span className="text-zinc-400">
-          {b.market}
-        </span>
-
-        <span className="text-[10px] text-blue-400">
-          {b.type}
-        </span>
-
-        <span className="text-zinc-500 text-[10px]">
-          Odd {b.odd} | Prob {Math.round(b.probability * 100)}% | EV {b.ev?.toFixed(2)}
-        </span>
-
-      </div>
-
-      {/* RESULT / ACTIONS */}
-      <div className="flex items-center gap-3">
-
-        {b.result ? (
-          <span
-            className={
-              b.result === "win"
-                ? "text-green-400 text-xs"
-                : "text-red-400 text-xs"
-            }
-          >
-            {b.result.toUpperCase()}
+      <div
+        key={i}
+        className="border-b border-zinc-800 py-2 flex justify-between items-center"
+      >
+        {/* INFO */}
+        <div className="flex flex-col text-xs">
+          <span className="font-semibold text-white">
+            {b.match || "Jogo"}
           </span>
-        ) : (
-          <div className="flex gap-2">
-            <button
-              onClick={() => settleBet(b.id, "win")}
-              className="text-green-400 text-[10px]"
-            >
-              WIN
-            </button>
 
-            <button
-              onClick={() => settleBet(b.id, "loss")}
-              className="text-red-400 text-[10px]"
-            >
-              LOSS
-            </button>
-          </div>
-        )}
+          <span className="text-zinc-400">
+            {b.market}
+          </span>
 
+          <span className="text-[10px] text-blue-400">
+            {b.type}
+          </span>
+
+          <span className="text-zinc-500 text-[10px]">
+            Odd {b.odd} | Prob {Math.round(b.probability * 100)}% | EV {b.ev?.toFixed(2)}
+          </span>
+        </div>
+
+        {/* RESULT / ACTIONS */}
+        <div className="flex items-center gap-3">
+          {b.result ? (
+            <span
+              className={
+                b.result === "win"
+                  ? "text-green-400 text-xs"
+                  : "text-red-400 text-xs"
+              }
+            >
+              {b.result.toUpperCase()}
+            </span>
+          ) : (
+            <div className="flex gap-2">
+              <button
+                onClick={() => settleBet(b.id, "win")}
+                className="text-green-400 text-[10px]"
+              >
+                WIN
+              </button>
+
+              <button
+                onClick={() => settleBet(b.id, "loss")}
+                className="text-red-400 text-[10px]"
+              >
+                LOSS
+              </button>
             </div>
-    </div>
-  ))}
+          )}
+        </div>
+      </div>
+    ))}
+  </div>
 </Card>
 
       {/* CONTROLES */}

@@ -1015,48 +1015,57 @@ const valid = enriched.filter((m: any) =>
     }
   }
 
-  /* ===============================
-     CLASSIFICATION BUCKETS
-  ================================ */
 
-  let elite: any | null = null;
-  let scalper: any | null = null;
-  const watchlist: any[] = [];
+function passesDecisionGuards(m: any) {
+  if (!m) return false;
 
-  for (const m of diversified) {
-    if (
-      m.classification === "SCALPER" &&
-      !scalper
-    ) {
-      scalper = m;
-    }
-
-    else if (
-      m.classification === "ELITE" &&
-      !elite
-    ) {
-      elite = m;
-    }
-
-    else if (
-      m.classification === "WATCHLIST"
-    ) {
-      watchlist.push(m);
-    }
+  // Endurecer BTTS
+  if (m.market?.includes("BTTS")) {
+    if (m.ev < 0.20) return false;
+    if (m.probability < 0.66) return false;
   }
 
-  /* ===============================
-     CONTEXT REORDER
-  ================================ */
+  // Evitar Over 1.5 com odd murcha + EV fraco
+  if (m.market === "OVER_1_5") {
+    if (m.odd < 1.40 && m.ev < 0.18) return false;
+    if (m.probability < 0.78) return false;
+  }
 
-  const sorted =
-    selectBestMarketByContext(
-      diversified,
-      {
-        ...data,
-        marketContext
-      }
-    );
+  return true;
+}
+
+/* ===============================
+   CLASSIFICATION BUCKETS
+================================ */
+
+let elite: any | null = null;
+let scalper: any | null = null;
+const watchlist: any[] = [];
+
+const guardedMarkets = diversified.filter(passesDecisionGuards);
+
+for (const m of guardedMarkets) {
+  if (m.classification === "SCALPER" && !scalper) {
+    scalper = m;
+  } else if (m.classification === "ELITE" && !elite) {
+    elite = m;
+  } else if (m.classification === "WATCHLIST") {
+    watchlist.push(m);
+  }
+}
+
+/* ===============================
+   CONTEXT REORDER
+================================ */
+
+const sorted =
+  selectBestMarketByContext(
+    guardedMarkets,
+    {
+      ...data,
+      marketContext
+    }
+  );
 
   /* ===============================
      FINAL PICK
