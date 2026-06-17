@@ -94,7 +94,7 @@ export function calculateRiskScore(input: RiskInput): number {
     Math.min(0.9999, safe(input.eventProbability, 0.5))
   );
 
-  const leagueAvgGoals = safe(input.leagueAvgGoals, 1.3);
+  const leagueAvgGoals = safe(input.leagueAvgGoals, 2.4);
   const recentStd = safe(input.recentGoalStd, 1.0);
   const seasonAvg = safe(input.seasonGoalAvg, 1.2);
 
@@ -179,7 +179,7 @@ export function calculateRiskScore(input: RiskInput): number {
      🔥 NORMALIZAÇÃO FINAL
   ============================ */
 
-  risk *= 0.88;
+  risk *= 0.94;
 
   /* ===========================
      🎯 CLAMP FINAL

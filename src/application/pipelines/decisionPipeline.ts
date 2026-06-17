@@ -24,7 +24,7 @@ function sniperFilter(
   m: any,
   data: any
 ) {
-  const market = m.market.toUpperCase();
+  const market = String(m.market ?? "").toUpperCase();
 
   const {
     probability,
@@ -34,6 +34,15 @@ function sniperFilter(
     trapScore,
     structureValid
   } = m;
+
+  const odd = Number(
+    m.odd ??
+    m.odds ??
+    getOddFromInput(market, data.odds) ??
+    data.odds?.[market] ??
+    data.marketOdds?.[market] ??
+    0
+  );
 
   /* =========================================
      HARD CUTS (QUALIDADE FINAL)
@@ -63,15 +72,15 @@ function sniperFilter(
      COERÊNCIA ODDS x PROB
   ========================================= */
 
-  if (m.odd) {
-    const implied = 1 / m.odd;
+  if (odd > 1) {
+    const implied = 1 / odd;
     if (probability < implied) {
       return false;
     }
   }
 
   /* =========================================
-     HARD STRUCTURAL CUTS (SEU CORE)
+     HARD STRUCTURAL CUTS
   ========================================= */
 
   if (trapScore > 0.50) {
@@ -98,7 +107,8 @@ function sniperFilter(
     if (
       lambdaDiff < 0.35 ||
       ev < 0.10 ||
-      probability < 0.40
+      probability < 0.40 ||
+      risk > 0.62
     ) {
       return false;
     }
@@ -120,10 +130,11 @@ function sniperFilter(
     );
 
     if (
+      odd < 1.35 ||
       lambdaDiff < 0.20 ||
-      probability < 0.65 ||
-      ev < 0.06 ||
-      risk > 0.58
+      probability < 0.66 ||
+      ev < 0.07 ||
+      risk > 0.56
     ) {
       return false;
     }
@@ -139,9 +150,11 @@ function sniperFilter(
     if (data.isLowGoalGame) return false;
 
     if (
-      data.goalExpectationScore < 0.45 ||
-      probability < 0.72 ||
-      ev < 0.05
+      odd < 1.45 ||
+      data.goalExpectationScore < 0.50 ||
+      probability < 0.78 ||
+      ev < 0.16 ||
+      risk > 0.52
     ) {
       return false;
     }
@@ -150,20 +163,21 @@ function sniperFilter(
   }
 
   /* =========================================
-     OVER 2.5 (SEU PONTO CRÍTICO)
+     OVER 2.5
   ========================================= */
 
   if (market === "OVER_2_5") {
     if (data.isLowGoalGame) return false;
 
- if (
-  data.goalExpectationScore < 0.62 ||
-  probability < 0.65 ||
-  ev < 0.13 ||
-  risk > 0.55
-) {
-  return false;
-}
+    if (
+      odd < 1.60 ||
+      data.goalExpectationScore < 0.68 ||
+      probability < 0.62 ||
+      ev < 0.13 ||
+      risk > 0.55
+    ) {
+      return false;
+    }
 
     return true;
   }
@@ -173,11 +187,18 @@ function sniperFilter(
   ========================================= */
 
   if (market === "BTTS_YES") {
+    const minLambda = Math.min(
+      data.lambdaHome ?? 1,
+      data.lambdaAway ?? 1
+    );
+
     if (
+      odd < 1.60 ||
       data.marketContext?.isBadBTTSGame ||
-      probability < 0.60 ||
-      ev < 0.07 ||
-      risk > 0.62
+      minLambda < 0.85 ||
+      probability < 0.62 ||
+      ev < 0.10 ||
+      risk > 0.60
     ) {
       return false;
     }
@@ -190,11 +211,18 @@ function sniperFilter(
   ========================================= */
 
   if (market === "BTTS_NO") {
+    const minLambda = Math.min(
+      data.lambdaHome ?? 1,
+      data.lambdaAway ?? 1
+    );
+
     if (
-      data.goalExpectationScore > 0.65 ||
-      probability < 0.60 ||
-      ev < 0.07 ||
-      risk > 0.62
+      odd < 1.55 ||
+      data.goalExpectationScore > 0.62 ||
+      minLambda > 1.10 ||
+      probability < 0.62 ||
+      ev < 0.09 ||
+      risk > 0.60
     ) {
       return false;
     }
@@ -420,10 +448,11 @@ function classifyDecision(
     odd
   } = market;
 
-  const m = marketName.toUpperCase();
+  const m = String(marketName ?? "").toUpperCase();
+  const safeOdd = Number(odd ?? 0);
 
   /* =========================
-     HARD CUTS GLOBAIS (BASE)
+     HARD CUTS GLOBAIS
   ========================= */
 
   if (
@@ -435,7 +464,7 @@ function classifyDecision(
   }
 
   /* =========================
-     ANTI MARGINAL (EV + PROB FRACOS)
+     ANTI MARGINAL
   ========================= */
 
   if (
@@ -449,8 +478,8 @@ function classifyDecision(
      COERÊNCIA ODDS x PROB
   ========================= */
 
-  if (odd) {
-    const impliedProb = 1 / odd;
+  if (safeOdd > 1) {
+    const impliedProb = 1 / safeOdd;
 
     if (probability < impliedProb) {
       return "NO BET";
@@ -458,65 +487,108 @@ function classifyDecision(
   }
 
   /* =========================
-     BLOQUEIOS ESPECÍFICOS (ANTI-TRAP)
+     BLOQUEIO DE ODD ESMAGADA
   ========================= */
 
-  // 🔻 Over fraco (seu maior problema atual)
-if (
-  m === "OVER_2_5" &&
-  (
-    probability < 0.65 ||
-    ev < 0.13 ||
-    risk > 0.55
-  )
-) {
-  return "NO BET";
-}
+  if (safeOdd > 0 && safeOdd < 1.30) {
+    return "NO BET";
+  }
 
-  // 🔻 BTTS muito borderline
-if (
-  ["BTTS_YES", "BTTS_NO"].includes(m) &&
-  (
-    probability < 0.60 ||
-    ev < 0.07 ||
-    risk > 0.62
-  )
-) {
-  return "NO BET";
-}
+  if (
+    probability >= 0.82 &&
+    safeOdd > 0 &&
+    safeOdd < 1.45
+  ) {
+    return "NO BET";
+  }
 
-/* =========================
-   SCALPER UNIVERSAL
-========================= */
+  /* =========================
+     BLOQUEIOS ESPECÍFICOS
+  ========================= */
 
-if (
-  probability >= 0.72 &&
-  ev >= 0.04 &&
-  risk <= 0.50
-) {
-  return "SCALPER";
-}
+  if (
+    m === "OVER_1_5" &&
+    (
+      safeOdd < 1.45 ||
+      probability < 0.78 ||
+      ev < 0.16 ||
+      risk > 0.52
+    )
+  ) {
+    return "NO BET";
+  }
 
-/* =========================
-   ⚖️ MID VALUE (CONTROLADO)
-========================= */
+  if (
+    m === "OVER_2_5" &&
+    (
+      safeOdd < 1.60 ||
+      probability < 0.65 ||
+      ev < 0.13 ||
+      risk > 0.55
+    )
+  ) {
+    return "NO BET";
+  }
 
-if (
-  ["HOME_WIN", "AWAY_WIN"].includes(m) &&
-  probability >= 0.45 &&
-  ev >= 0.10 &&
-  risk <= 0.62
-) {
-  return "ELITE";
-}
+  if (
+    m === "BTTS_YES" &&
+    (
+      safeOdd < 1.60 ||
+      probability < 0.62 ||
+      ev < 0.10 ||
+      risk > 0.60
+    )
+  ) {
+    return "NO BET";
+  }
 
-/* =========================
-   ELITE — RESULTADOS
-========================= */
+  if (
+    m === "BTTS_NO" &&
+    (
+      safeOdd < 1.55 ||
+      probability < 0.62 ||
+      ev < 0.09 ||
+      risk > 0.60
+    )
+  ) {
+    return "NO BET";
+  }
+
+  if (
+    [
+      "DOUBLE_CHANCE_1X",
+      "DOUBLE_CHANCE_X2"
+    ].includes(m) &&
+    (
+      safeOdd < 1.35 ||
+      probability < 0.66 ||
+      ev < 0.07 ||
+      risk > 0.56
+    )
+  ) {
+    return "NO BET";
+  }
+
+  /* =========================
+     SCALPER CONTROLADO
+  ========================= */
+
+  if (
+    probability >= 0.74 &&
+    ev >= 0.08 &&
+    risk <= 0.50 &&
+    safeOdd >= 1.45
+  ) {
+    return "SCALPER";
+  }
+
+  /* =========================
+     ELITE — RESULTADOS
+  ========================= */
 
   if (
     ["HOME_WIN", "AWAY_WIN"].includes(m) &&
-    probability >= 0.40 &&
+    probability >= 0.45 &&
     ev >= 0.10 &&
     risk <= 0.62
   ) {
@@ -527,37 +599,50 @@ if (
      ELITE — OVER 1.5
   ========================= */
 
-if (
-  m === "OVER_1_5" &&
-  probability >= 0.75 &&
-  ev >= 0.15 &&
-  risk <= 0.55
-) {
-  return "ELITE";
-}
+  if (
+    m === "OVER_1_5" &&
+    probability >= 0.78 &&
+    ev >= 0.16 &&
+    risk <= 0.52 &&
+    safeOdd >= 1.45
+  ) {
+    return "ELITE";
+  }
 
   /* =========================
      ELITE — OVER 2.5
   ========================= */
 
-if (
-  m === "OVER_2_5" &&
-  probability >= 0.65 &&
-  ev >= 0.13 &&
-  risk <= 0.55
-) {
-  return "ELITE";
-}
+  if (
+    m === "OVER_2_5" &&
+    probability >= 0.65 &&
+    ev >= 0.13 &&
+    risk <= 0.55 &&
+    safeOdd >= 1.60
+  ) {
+    return "ELITE";
+  }
 
   /* =========================
      ELITE — BTTS
   ========================= */
 
   if (
-    ["BTTS_YES", "BTTS_NO"].includes(m) &&
+    m === "BTTS_YES" &&
     probability >= 0.62 &&
-    ev >= 0.07 &&
-    risk <= 0.62
+    ev >= 0.10 &&
+    risk <= 0.60 &&
+    safeOdd >= 1.60
+  ) {
+    return "ELITE";
+  }
+
+  if (
+    m === "BTTS_NO" &&
+    probability >= 0.62 &&
+    ev >= 0.09 &&
+    risk <= 0.60 &&
+    safeOdd >= 1.55
   ) {
     return "ELITE";
   }
@@ -571,9 +656,10 @@ if (
       "DOUBLE_CHANCE_1X",
       "DOUBLE_CHANCE_X2"
     ].includes(m) &&
-    probability >= 0.65 &&
-    ev >= 0.06 &&
-    risk <= 0.58
+    probability >= 0.66 &&
+    ev >= 0.07 &&
+    risk <= 0.56 &&
+    safeOdd >= 1.35
   ) {
     return "ELITE";
   }
@@ -910,8 +996,12 @@ if (ev > 0.25 && probability >= 0.68 && risk <= 0.50) {
    PENALIDADE ODDS BAIXAS
 ================================ */
 
-if (odd < 1.40) {
-  finalScore *= 0.88;
+if (odd < 1.35) {
+  finalScore *= 0.65;
+} else if (odd < 1.45) {
+  finalScore *= 0.78;
+} else if (odd < 1.50 && probability >= 0.82) {
+  finalScore *= 0.85;
 }
 
 /* ===============================
@@ -930,7 +1020,8 @@ const classification = classifyDecision({
   market: m.market,
   probability,
   ev,
-  risk
+  risk,
+  odd
 });
 
 return {
@@ -1019,16 +1110,51 @@ const valid = enriched.filter((m: any) =>
 function passesDecisionGuards(m: any) {
   if (!m) return false;
 
-  // Endurecer BTTS
-  if (m.market?.includes("BTTS")) {
-    if (m.ev < 0.20) return false;
-    if (m.probability < 0.66) return false;
+  const market = String(m.market ?? "").toUpperCase();
+  const odd = Number(m.odd ?? m.odds ?? 0);
+  const ev = Number(m.ev ?? m.expectedValue ?? 0);
+  const probability = Number(m.probability ?? 0);
+  const risk = Number(m.risk ?? m.riskScore ?? 1);
+
+  if (ev <= 0) return false;
+  if (odd > 0 && odd < 1.30) return false;
+
+  if (market === "OVER_1_5") {
+    if (odd < 1.45) return false;
+    if (ev < 0.16) return false;
+    if (probability < 0.78) return false;
+    if (risk > 0.52) return false;
   }
 
-  // Evitar Over 1.5 com odd murcha + EV fraco
-  if (m.market === "OVER_1_5") {
-    if (m.odd < 1.40 && m.ev < 0.18) return false;
-    if (m.probability < 0.78) return false;
+  if (market === "OVER_2_5") {
+    if (odd < 1.60) return false;
+    if (ev < 0.13) return false;
+    if (probability < 0.65) return false;
+    if (risk > 0.55) return false;
+  }
+
+  if (market === "BTTS_YES") {
+    if (odd < 1.60) return false;
+    if (ev < 0.10) return false;
+    if (probability < 0.62) return false;
+    if (risk > 0.60) return false;
+  }
+
+  if (market === "BTTS_NO") {
+    if (odd < 1.55) return false;
+    if (ev < 0.09) return false;
+    if (probability < 0.62) return false;
+    if (risk > 0.60) return false;
+  }
+
+  if (
+    market === "DOUBLE_CHANCE_1X" ||
+    market === "DOUBLE_CHANCE_X2"
+  ) {
+    if (odd < 1.35) return false;
+    if (ev < 0.07) return false;
+    if (probability < 0.66) return false;
+    if (risk > 0.56) return false;
   }
 
   return true;

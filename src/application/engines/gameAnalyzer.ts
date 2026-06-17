@@ -14,15 +14,35 @@ import { correlationPipeline } from "../pipelines/correlationPipeline";
 export interface MarketDecision {
   market: string;
   category: MarketCategory;
+
   probability: number;
   bookmakerOdd: number;
   fairOdd: number;
   expectedValue: number;
   kelly: number;
   riskScore: number;
+
   decision: string;
   isAllowedByRisk: boolean;
   zone: "GREEN" | "YELLOW" | "RED";
+
+  confidence?: number;
+  signalScore?: number;
+  edgeScore?: number;
+  marketWeight?: number;
+
+  ev?: number;
+  odd?: number;
+  odds?: number;
+  risk?: number;
+
+  source?: string;
+  structureScore?: number;
+  pressureIndex?: number;
+
+  correlationPenalty?: number;
+  correlationBoost?: number;
+  correlationAdjusted?: boolean;
 }
 
 export interface GameAnalysis {
@@ -139,20 +159,20 @@ export function eliteAnalyzer(
      🧠 STEP 3 — AJUSTE DE PROB
   ============================ */
 
-  const markets = (correlated.markets as MarketDecision[]).map(m => {
+const markets = (correlated.markets as MarketDecision[]).map(m => {
 
-    const factor = (m as any).correlationFactor ?? 1;
+  const factor = (m as any).correlationFactor ?? 1;
 
-    const adjustedProb = Math.max(
-      0,
-      Math.min(1, m.probability * (0.9 + factor * 0.1))
-    );
+  const adjustedProb = Math.max(
+    0,
+    Math.min(1, m.probability * (0.9 + factor * 0.1))
+  );
 
-    return {
-      ...m,
-      probability: Number(adjustedProb.toFixed(4))
-    };
-  });
+  return {
+    ...m,
+    probability: Number(adjustedProb.toFixed(4))
+  };
+});
 
   /* ===========================
      🛡️ STEP 4 — FILTRO FINAL

@@ -5,18 +5,30 @@ import { calculateDynamicRhoAdvanced } from "../model/rhoCalculator";
 
 import { autoLearningEngine } from "../learning/autoLearningEngine";
 
-/* ===============================
-   SAFE
-=============================== */
-
 function safe(n: any, fallback = 0) {
   const num = Number(n);
   return isNaN(num) ? fallback : num;
 }
 
-/* ===============================
-   GOALS MODEL (FINAL)
-=============================== */
+function normalizeMatrix(matrix: number[][]): number[][] {
+  const total = matrix.reduce(
+    (acc, row) => acc + row.reduce((s, v) => s + v, 0),
+    0
+  );
+
+  if (!isFinite(total) || total <= 0) return matrix;
+
+  return matrix.map(row =>
+    row.map(v => v / total)
+  );
+}
+
+function compressHighProbability(p: number): number {
+  if (p >= 0.88) return 0.84 + (p - 0.88) * 0.45;
+  if (p >= 0.82) return 0.79 + (p - 0.82) * 0.65;
+  if (p >= 0.78) return 0.76 + (p - 0.78) * 0.70;
+  return p;
+}
 
 export function goalsModel(
   lambdaHome: number,
@@ -24,15 +36,10 @@ export function goalsModel(
   homeStats?: any,
   awayStats?: any
 ) {
-
   const maxGoals = 10;
 
   const lambdaH = safe(lambdaHome, 1.2);
   const lambdaA = safe(lambdaAway, 1.0);
-
-  /* ===========================
-     🔥 POISSON BASE
-  ============================ */
 
   const homeDist = poissonTable(lambdaH, maxGoals);
   const awayDist = poissonTable(lambdaA, maxGoals);
@@ -48,31 +55,21 @@ export function goalsModel(
     }
   }
 
-  /* ===========================
-     🔥 RHO DINÂMICO (CORE)
-  ============================ */
+  let rho = calculateDynamicRhoAdvanced({
+    lambdaHome,
+    lambdaAway,
+    shotsPressure: homeStats?.pressure,
+    shotVolume: homeStats?.shots,
+    cardsIntensity: homeStats?.cards
+  });
 
-let rho = calculateDynamicRhoAdvanced({
-  lambdaHome,
-  lambdaAway,
-  shotsPressure: homeStats?.pressure,
-  shotVolume: homeStats?.shots,
-  cardsIntensity: homeStats?.cards
-});
+  const learning = autoLearningEngine();
 
-// 🔥 AUTO LEARNING (AJUSTE DINÂMICO)
-const learning = autoLearningEngine();
+  if (learning?.ready && learning.rhoShift) {
+    rho += learning.rhoShift;
+  }
 
-if (learning?.ready && learning.rhoShift) {
-  rho += learning.rhoShift;
-}
-
-// 🔒 CLAMP FINAL (CRÍTICO)
-rho = Math.max(-0.15, Math.min(-0.02, rho));
-
-  /* ===========================
-     🔥 DIXON-COLES
-  ============================ */
+  rho = Math.max(-0.15, Math.min(-0.02, rho));
 
   matrix = applyDixonColesMatrix(
     matrix,
@@ -81,9 +78,7 @@ rho = Math.max(-0.15, Math.min(-0.02, rho));
     rho
   );
 
-  /* ===========================
-     📊 MERCADOS
-  ============================ */
+  matrix = normalizeMatrix(matrix);
 
   let over15 = 0;
   let over25 = 0;
@@ -91,7 +86,6 @@ rho = Math.max(-0.15, Math.min(-0.02, rho));
 
   for (let i = 0; i <= maxGoals; i++) {
     for (let j = 0; j <= maxGoals; j++) {
-
       const prob = matrix[i][j] ?? 0;
       const total = i + j;
 
@@ -101,44 +95,52 @@ rho = Math.max(-0.15, Math.min(-0.02, rho));
     }
   }
 
-  /* ===========================
-     🔧 SAMPLE ADJUSTMENT
-  ============================ */
-
+  let adjustedOver15 = over15;
   let adjustedOver25 = over25;
+  let adjustedOver35 = over35;
 
   if (homeStats?.matches && awayStats?.matches) {
-
     const sampleSize = Math.min(
       safe(homeStats.matches, 0),
       safe(awayStats.matches, 0)
     );
 
     if (sampleSize > 0) {
+      adjustedOver15 = applySampleAdjustment(
+        over15,
+        sampleSize,
+        0.72
+      );
+
       adjustedOver25 = applySampleAdjustment(
         over25,
         sampleSize,
-        0.5
+        0.50
+      );
+
+      adjustedOver35 = applySampleAdjustment(
+        over35,
+        sampleSize,
+        0.32
       );
     }
   }
 
-  /* ===========================
-     🏁 OUTPUT
-  ============================ */
+  adjustedOver15 = compressHighProbability(adjustedOver15);
+  adjustedOver25 = Math.max(0.05, Math.min(0.85, adjustedOver25));
+  adjustedOver35 = Math.max(0.02, Math.min(0.70, adjustedOver35));
 
   return {
     matrix,
 
-    over15,
+    over15: adjustedOver15,
     over25: adjustedOver25,
-    over35,
+    over35: adjustedOver35,
 
-    under15: 1 - over15,
+    under15: 1 - adjustedOver15,
     under25: 1 - adjustedOver25,
-    under35: 1 - over35,
+    under35: 1 - adjustedOver35,
 
-    // 🔥 DEBUG / CONTROLE (NÍVEL PRO)
     meta: {
       rho,
       lambdaHome: lambdaH,

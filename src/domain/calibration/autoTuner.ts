@@ -15,25 +15,23 @@ export function autoTune() {
 
   const results: TuneResult[] = [];
 
-  for (const ev of evOptions) {
-    for (const kelly of kellyOptions) {
+for (const ev of evOptions) {
+  for (const kelly of kellyOptions) {
 
-      // 🔥 AJUSTADO PARA O NOVO BACKTEST
-      const bt = runBacktest(
-        2000,   // simulações
-        1000,   // banca inicial
-        kelly   // fração Kelly dinâmica
-      );
+    const bt = runBacktest(
+      2000,
+      1000
+    );
 
-      results.push({
-        ev,
-        kelly,
-        roi: bt.roi,
-        drawdown: bt.maxDrawdown,
-        bets: bt.totalBets
-      });
-    }
+    results.push({
+      ev,
+      kelly,
+      roi: bt.roi,
+      drawdown: bt.maxDrawdown,
+      bets: bt.totalBets
+    });
   }
+}
 
   results.sort((a, b) => b.roi - a.roi);
 

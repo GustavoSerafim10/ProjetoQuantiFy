@@ -7,8 +7,8 @@ export function simulationPipeline(model: any) {
   const clamp = (n: number, min: number, max: number) =>
     Math.max(min, Math.min(n, max));
 
-  let lambdaHome = clamp(safe(model?.lambdaHome, 1.2), 0.35, 3.4);
-  let lambdaAway = clamp(safe(model?.lambdaAway, 1.0), 0.35, 3.4);
+let lambdaHome = clamp(safe(model?.lambdaHome, 1.2), 0.35, 2.15);
+let lambdaAway = clamp(safe(model?.lambdaAway, 1.0), 0.35, 2.15);
 
   const simulations = 10000;
   const scoreMap: Record<string, number> = {};
@@ -69,13 +69,14 @@ export function simulationPipeline(model: any) {
      🔥 PROB PRINCIPAL (CORE)
   ============================ */
 
-  const marketCandidates = [
-    { market: "OVER_2.5", prob: over25Prob },
-    { market: "BTTS_YES", prob: bttsProb },
-    { market: "HOME_WIN", prob: homeWinProb },
-    { market: "DRAW", prob: drawProb },
-    { market: "AWAY_WIN", prob: awayWinProb }
-  ].sort((a, b) => b.prob - a.prob);
+const marketCandidates = [
+  { market: "OVER_1.5", prob: over15Prob },
+  { market: "OVER_2.5", prob: over25Prob },
+  { market: "BTTS_YES", prob: bttsProb },
+  { market: "HOME_WIN", prob: homeWinProb },
+  { market: "DRAW", prob: drawProb },
+  { market: "AWAY_WIN", prob: awayWinProb }
+].sort((a, b) => b.prob - a.prob);
 
   const mainMarket = marketCandidates[0]?.market || null;
   const mainProb = marketCandidates[0]?.prob || 0;

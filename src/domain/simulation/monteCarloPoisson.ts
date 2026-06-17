@@ -21,7 +21,7 @@ function clamp(n: number, min: number, max: number) {
 }
 
 function sanitizeLambda(lambda: number, fallback = 1.2) {
-  return clamp(safe(lambda, fallback), 0.35, 3.4);
+  return clamp(safe(lambda, fallback), 0.35, 2.15);
 }
 
 function samplePoisson(lambda: number): number {
@@ -40,7 +40,7 @@ function samplePoisson(lambda: number): number {
 export function monteCarloPoisson(
   lambdaHome: number,
   lambdaAway: number,
-  simulations: number = 100000
+  simulations: number = 50000
 ): MonteCarloMatchResult {
   const safeLambdaHome = sanitizeLambda(lambdaHome, 1.2);
   const safeLambdaAway = sanitizeLambda(lambdaAway, 1.0);

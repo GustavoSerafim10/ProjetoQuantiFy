@@ -40,37 +40,39 @@ export function calculateStakePro(
   const baseKelly =
     Math.max(m.kelly ?? 0, 0);
 
+  if (baseKelly <= 0) return 0;
+
   let evFactor = 1;
 
-  if (m.ev > 0.15) evFactor = 1.40;
-  else if (m.ev > 0.10) evFactor = 1.20;
-  else if (m.ev > 0.07) evFactor = 1.10;
-  else evFactor = 0.90;
+  if (m.ev > 0.20) evFactor = 1.20;
+  else if (m.ev > 0.12) evFactor = 1.10;
+  else if (m.ev > 0.08) evFactor = 1.00;
+  else evFactor = 0.70;
 
   let probFactor = 1;
 
-  if (m.probability > 0.75)
-    probFactor = 1.25;
+  if (m.probability > 0.78)
+    probFactor = 1.05;
   else if (m.probability > 0.68)
-    probFactor = 1.10;
+    probFactor = 1.00;
   else
-    probFactor = 0.95;
+    probFactor = 0.85;
 
   let riskFactor = 1;
 
   if (m.risk > 0.70)
-    riskFactor = 0.60;
-  else if (m.risk > 0.50)
-    riskFactor = 0.75;
-  else if (m.risk > 0.40)
-    riskFactor = 0.90;
+    riskFactor = 0.50;
+  else if (m.risk > 0.55)
+    riskFactor = 0.70;
+  else if (m.risk > 0.45)
+    riskFactor = 0.85;
 
   let confidenceFactor = 1;
 
   if (m.confidence > 0.75)
-    confidenceFactor = 1.20;
-  else if (m.confidence < 0.55)
-    confidenceFactor = 0.80;
+    confidenceFactor = 1.05;
+  else if (m.confidence < 0.58)
+    confidenceFactor = 0.75;
 
   let stake =
     baseKelly *
@@ -79,13 +81,8 @@ export function calculateStakePro(
     riskFactor *
     confidenceFactor;
 
-  /* ===========================
-     LIMITES DE SEGURANÇA
-  ============================ */
-  stake = Math.max(0.005, stake);
-  stake = Math.min(0.05, stake);
+  stake = Math.max(0, stake);
+  stake = Math.min(0.03, stake);
 
-  return Number(
-    stake.toFixed(4)
-  );
+  return Number(stake.toFixed(4));
 }

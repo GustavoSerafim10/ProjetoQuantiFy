@@ -1,9 +1,5 @@
 import { logFactorial } from "./distributions/factorial";
 
-/**
- * Poisson Probability Mass Function (PMF)
- * Stable implementation using log-space computation
- */
 export function poissonPMF(lambda: number, k: number): number {
   if (lambda <= 0) {
     throw new Error("Lambda must be positive");
@@ -21,9 +17,6 @@ export function poissonPMF(lambda: number, k: number): number {
   return Math.exp(logProbability);
 }
 
-/**
- * Poisson Cumulative Distribution Function (CDF)
- */
 export function poissonCDF(lambda: number, k: number): number {
   let sum = 0;
 
@@ -31,12 +24,9 @@ export function poissonCDF(lambda: number, k: number): number {
     sum += poissonPMF(lambda, i);
   }
 
-  return sum;
+  return Math.max(0, Math.min(sum, 1));
 }
 
-/**
- * Generate probability table up to maxGoals
- */
 export function poissonTable(lambda: number, maxGoals: number = 10): number[] {
   const probabilities: number[] = [];
 
@@ -44,5 +34,11 @@ export function poissonTable(lambda: number, maxGoals: number = 10): number[] {
     probabilities.push(poissonPMF(lambda, k));
   }
 
-  return probabilities;
+  const total = probabilities.reduce((acc, p) => acc + p, 0);
+
+  if (!Number.isFinite(total) || total <= 0) {
+    return probabilities;
+  }
+
+  return probabilities.map(p => p / total);
 }

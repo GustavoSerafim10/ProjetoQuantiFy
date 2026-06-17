@@ -6,16 +6,16 @@ import { calculateXGProxy } from "../math/xgProxy";
    PARÂMETROS ESTRUTURAIS
 ========================================== */
 
-const LEAGUE_AVG_GOALS = 2.7;
-const BASE_HOME_ADVANTAGE = 1.07;
+const LEAGUE_AVG_GOALS = 2.55;
+const BASE_HOME_ADVANTAGE = 1.06;
 
-const ATTACK_ELASTICITY = 0.90;
-const DEFENSE_ELASTICITY = 0.85;
+const ATTACK_ELASTICITY = 0.82;
+const DEFENSE_ELASTICITY = 0.78;
 
-const SHRINK_FACTOR = 8;
+const SHRINK_FACTOR = 10;
 
 const MIN_LAMBDA = 0.30;
-const MAX_LAMBDA = 3.80;
+const MAX_LAMBDA = 3.20;
 
 /* ==========================================
    UTIL
@@ -180,18 +180,32 @@ export function buildLambda(
   const balanced = applyBalanceAdjustment(lambdaHome, lambdaAway);
   lambdaHome = balanced.home;
   lambdaAway = balanced.away;
+/* ==========================================
+   NORMALIZAÇÃO GLOBAL PARCIAL
+   Evita forçar todo jogo para 2.7 gols
+========================================== */
 
-  /* ==========================================
-     NORMALIZAÇÃO GLOBAL
-  ========================================== */
+const total = lambdaHome + lambdaAway;
 
-  const total = lambdaHome + lambdaAway;
+if (isFinite(total) && total > 0.1) {
+  const targetTotal = LEAGUE_AVG_GOALS;
 
-  if (isFinite(total) && total > 0.1) {
-    const scale = LEAGUE_AVG_GOALS / total;
-    lambdaHome *= scale;
-    lambdaAway *= scale;
-  }
+  const normalizedHome =
+    lambdaHome * (targetTotal / total);
+
+  const normalizedAway =
+    lambdaAway * (targetTotal / total);
+
+  const NORMALIZATION_WEIGHT = 0.35;
+
+  lambdaHome =
+    lambdaHome * (1 - NORMALIZATION_WEIGHT) +
+    normalizedHome * NORMALIZATION_WEIGHT;
+
+  lambdaAway =
+    lambdaAway * (1 - NORMALIZATION_WEIGHT) +
+    normalizedAway * NORMALIZATION_WEIGHT;
+}
 
   /* ==========================================
      LIMITES

@@ -74,7 +74,7 @@ function clampLambda(n: number) {
   if (isNaN(n)) return 1.2;
 
   // limite individual saudável
-  return Math.max(0.35, Math.min(n, 2.45));
+  return Math.max(0.35, Math.min(n, 2.15));
 }
 
 
@@ -86,7 +86,7 @@ function normalizeLambdas(home: number, away: number) {
   const total = home + away;
 
   const MIN_TOTAL = 1.4;
-  const MAX_TOTAL = 3.35;
+  const MAX_TOTAL = 3.05;
 
   if (total <= 0) {
     return { home: 1.2, away: 1.0 };
@@ -172,11 +172,10 @@ function balanceLambdas(home: number, away: number) {
 =========================== */
 
 function calculateGoalExpectationScore(lambdaHome: number, lambdaAway: number) {
-
   const total = lambdaHome + lambdaAway;
   const balance = 1 - Math.abs(lambdaHome - lambdaAway);
 
-  const totalNorm = Math.min(total / 3.2, 1);
+  const totalNorm = Math.min(total / 3.0, 1);
   const balanceNorm = Math.max(0, Math.min(balance, 1));
 
   const score =
@@ -185,7 +184,6 @@ function calculateGoalExpectationScore(lambdaHome: number, lambdaAway: number) {
 
   return Number(score.toFixed(4));
 }
-
 /* ===========================
    PIPELINE
 =========================== */

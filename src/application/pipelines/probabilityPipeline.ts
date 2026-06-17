@@ -1,51 +1,43 @@
 import { calibrateProbability } from "../../domain/calibration/probabilityCalibration";
 
-/* ===========================
-   🎯 BASELINES POR MERCADO
-=========================== */
 const MARKET_BASELINES: Record<string, number> = {
-  HOME: 0.45,
-  DRAW: 0.27,
-  AWAY: 0.28,
+  HOME: 0.42,
+  DRAW: 0.28,
+  AWAY: 0.30,
 
-  OVER_1_5: 0.72,
-  OVER_2_5: 0.52,
+  OVER_1_5: 0.68,
+  OVER_2_5: 0.48,
 
-  BTTS_YES: 0.50,
-  BTTS_NO: 0.50,
+  BTTS_YES: 0.48,
+  BTTS_NO: 0.52,
 
-  DOUBLE_CHANCE_1X: 0.72,
-  DOUBLE_CHANCE_X2: 0.72,
+  DOUBLE_CHANCE_1X: 0.68,
+  DOUBLE_CHANCE_X2: 0.68,
 };
 
-/* ===========================
-   🔧 SAMPLE ADJUSTMENT
-=========================== */
 function applySampleAdjustment(
   probability: number,
   sampleSize: number,
   baseline: number
 ) {
-  const weight = sampleSize / (sampleSize + 8);
+  const safeProbability = Math.max(0.01, Math.min(Number(probability ?? baseline), 0.99));
+  const safeSample = Math.max(0, Number(sampleSize ?? 0));
+
+  const weight = safeSample / (safeSample + 12);
 
   return (
-    probability * weight +
+    safeProbability * weight +
     baseline * (1 - weight)
   );
 }
 
-/* ===========================
-   🔥 AJUSTE + CALIBRAÇÃO
-=========================== */
 function adjustAndCalibrate(
   market: string,
   probability: number,
   sampleSize: number
 ) {
-  const safeProb = probability ?? 0;
-
   const adjusted = applySampleAdjustment(
-    safeProb,
+    probability,
     sampleSize,
     MARKET_BASELINES[market] ?? 0.5
   );
@@ -53,9 +45,6 @@ function adjustAndCalibrate(
   return calibrateProbability(adjusted);
 }
 
-/* ===========================
-   🚀 PIPELINE
-=========================== */
 export function probabilityPipeline(data: any) {
   const {
     goals,
