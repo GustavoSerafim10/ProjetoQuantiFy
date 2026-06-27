@@ -69,11 +69,19 @@ export function gameSelectionPipeline(context: any) {
      🚀 BOOST (IMPORTANTE)
   ============================ */
 
-  let confidenceBoost = 1;
+let confidenceBoost = 1;
 
-  if (qualityScore >= 5) confidenceBoost = 1.08;
-  else if (qualityScore >= 3) confidenceBoost = 1.03;
+if (qualityScore >= 6) confidenceBoost = 1.12;
+else if (qualityScore >= 5) confidenceBoost = 1.08;
+else if (qualityScore >= 3) confidenceBoost = 1.04;
 
+// bônus extra para jogo bom de gols
+if (totalGoals >= 2.6 && totalShots >= 18) {
+  confidenceBoost += 0.03;
+}
+
+// trava de segurança
+confidenceBoost = Math.min(confidenceBoost, 1.15);
   /* ===========================
      ✅ PASSOU
   ============================ */

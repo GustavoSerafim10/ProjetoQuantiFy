@@ -46,19 +46,44 @@ export function gameSelector(context: any) {
     warnings.push("LOW_PRODUCTION_TEAM");
   }
 
-  const strongGame =
-    totalShots >= 20 ||
-    totalBigChances >= 3;
+const strongGame =
+  totalShots >= 20 ||
+  totalBigChances >= 3;
 
-  let confidenceBoost = 1;
+let confidenceBoost = 1;
 
-  if (strongGame) {
-    confidenceBoost = 1.05;
-  }
+// jogo ofensivamente bom
+if (strongGame) {
+  confidenceBoost = 1.08;
+}
 
-  if (warnings.length >= 2) {
-    confidenceBoost = 0.95;
-  }
+// jogo com volume equilibrado e boas chances
+if (totalShots >= 18 && totalBigChances >= 2.5) {
+  confidenceBoost = 1.10;
+}
+
+// jogo muito forte ofensivamente
+if (totalShots >= 22 && totalBigChances >= 3.2) {
+  confidenceBoost = 1.12;
+}
+
+// penalização por baixa intensidade
+if (warnings.includes("LOW_INTENSITY")) {
+  confidenceBoost -= 0.04;
+}
+
+// penalização por time morto
+if (warnings.includes("LOW_PRODUCTION_TEAM")) {
+  confidenceBoost -= 0.05;
+}
+
+// penalização por jogo assimétrico
+if (warnings.includes("ASYMMETRIC_GAME")) {
+  confidenceBoost -= 0.03;
+}
+
+// trava final de segurança
+confidenceBoost = Math.max(0.90, Math.min(confidenceBoost, 1.12));
 
   return {
     /*
