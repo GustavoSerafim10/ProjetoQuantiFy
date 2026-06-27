@@ -1,136 +1,153 @@
+
 import { calculateRiskScore } from "../../domain/risk/riskScore";
 
-/* ===============================
-   🔥 HELPERS
-=============================== */
+function clamp(n: number, min = 0.05, max = 0.95) {
+  return Math.max(min, Math.min(Number(n), max));
+}
+
+function safe(n: any, fallback = 0) {
+  const num = Number(n);
+  return Number.isFinite(num) ? num : fallback;
+}
 
 function getMarketType(market: string) {
-  const m = market.toLowerCase();
+  const m = String(market ?? "").toLowerCase();
 
+  if (m.includes("double") || m.includes("1x") || m.includes("x2")) return "DOUBLE";
   if (m.includes("over")) return "OVER";
-
   if (m === "btts_yes") return "BTTS_YES";
   if (m === "btts_no") return "BTTS_NO";
-
-  if (
-    m.includes("home") ||
-    m.includes("away") ||
-    m.includes("draw")
-  ) {
-    return "RESULT";
-  }
-
-  if (m.includes("1x") || m.includes("x2")) {
-    return "DOUBLE";
-  }
+  if (m.includes("home") || m.includes("away") || m.includes("draw")) return "RESULT";
 
   return "OTHER";
 }
 
-/* ===============================
-   PIPELINE
-=============================== */
-
 export function riskPipeline(data: any) {
-  const totalLambda =
-    (data.lambdaHome ?? 1) +
-    (data.lambdaAway ?? 1);
+  const lambdaHome = safe(data.lambdaHome, 1.2);
+  const lambdaAway = safe(data.lambdaAway, 1.0);
 
-  const balance = Math.abs(
-    (data.lambdaHome ?? 1) -
-    (data.lambdaAway ?? 1)
-  );
+  const totalLambda = lambdaHome + lambdaAway;
+  const balance = Math.abs(lambdaHome - lambdaAway);
 
-  const markets = data.markets.map((m: any) => {
-    let risk = calculateRiskScore({
-      lambdaHome: data.lambdaHome,
-      lambdaAway: data.lambdaAway,
+  const markets = (data.markets ?? []).map((m: any) => {
+    const type = getMarketType(m.market);
+
+    const baseRisk = calculateRiskScore({
+      lambdaHome,
+      lambdaAway,
       leagueAvgGoals: data.leagueAvgGoals ?? 1.3,
       eventProbability: m.probability ?? 0.5,
       recentGoalStd: data.recentGoalStd ?? 1,
-      seasonGoalAvg: data.seasonGoalAvg ?? 1.2
+      seasonGoalAvg: data.seasonGoalAvg ?? 1.2,
     });
 
-    const type = getMarketType(m.market);
+    let riskAdjustment = 0;
+    const warnings: string[] = [...((m.warnings as string[]) ?? [])];
 
-    /* =========================================
-       🔥 AJUSTES CONTEXTUAIS
-    ========================================= */
-
-    // 1️⃣ JOGO FRACO → OVER mais arriscado
     if (data?.isLowGoalGame && type === "OVER") {
-      risk *= 1.25;
+      riskAdjustment += 0.07;
+      warnings.push("LOW_GOAL_GAME_OVER_RISK");
     }
 
-    // 2️⃣ SCORE DE GOLS / EXPECTATIVA
     if (data?.goalExpectationScore !== undefined) {
-      const score = data.goalExpectationScore;
+      const score = safe(data.goalExpectationScore, 0.5);
 
       if (type === "OVER") {
-        if (score < 0.45) risk *= 1.30;
-        else if (score < 0.55) risk *= 1.15;
+        if (score < 0.45) {
+          riskAdjustment += 0.08;
+          warnings.push("LOW_GOAL_SCORE_OVER_RISK");
+        } else if (score < 0.55) {
+          riskAdjustment += 0.04;
+          warnings.push("MODERATE_GOAL_SCORE_OVER_RISK");
+        }
       }
 
-      if (type === "BTTS_YES") {
-        if (score < 0.50) risk *= 1.15;
+      if (type === "BTTS_YES" && score < 0.50) {
+        riskAdjustment += 0.04;
+        warnings.push("LOW_GOAL_SCORE_BTTS_YES_RISK");
       }
 
-      if (type === "BTTS_NO") {
-        if (score > 0.65) risk *= 1.15;
+      if (type === "BTTS_NO" && score > 0.65) {
+        riskAdjustment += 0.04;
+        warnings.push("HIGH_GOAL_SCORE_BTTS_NO_RISK");
       }
     }
 
-    // 3️⃣ JOGO EQUILIBRADO
     if (balance < 0.25) {
-
       if (type === "RESULT") {
-        risk *= 1.20;
+        riskAdjustment += 0.06;
+        warnings.push("BALANCED_GAME_RESULT_RISK");
       }
 
       if (type === "DOUBLE") {
-        risk *= 1.15;
+        riskAdjustment += 0.035;
+        warnings.push("BALANCED_GAME_DOUBLE_RISK");
       }
 
       if (type === "BTTS_NO") {
-        risk *= 1.10;
+        riskAdjustment += 0.035;
+        warnings.push("BALANCED_GAME_BTTS_NO_RISK");
       }
 
       if (type === "OVER") {
-        risk *= 1.03;
+        riskAdjustment += 0.015;
+        warnings.push("BALANCED_GAME_OVER_MINOR_RISK");
       }
     }
 
-    // 4️⃣ MUITOS GOLS ESPERADOS
     if (totalLambda > 3.2) {
-
       if (type === "OVER") {
-        risk *= 0.90;
+        riskAdjustment -= 0.04;
+        warnings.push("HIGH_TOTAL_LAMBDA_SUPPORTS_OVER");
       }
 
       if (type === "BTTS_NO") {
-        risk *= 1.15;
+        riskAdjustment += 0.05;
+        warnings.push("HIGH_TOTAL_LAMBDA_BTTS_NO_RISK");
       }
     }
 
-    // 5️⃣ PROBABILIDADE EXTREMA
-    if (m.probability > 0.80) {
-      risk *= 1.10;
+    if (m.probability > 0.84 && m.odd < 1.45) {
+      riskAdjustment += 0.035;
+      warnings.push("HIGH_PROB_LOW_ODD_RISK");
     }
 
-    /* =========================================
-       🔒 LIMITES
-    ========================================= */
-
-    risk = Math.max(0.05, Math.min(risk, 0.95));
+    const finalRisk = clamp(baseRisk + riskAdjustment);
 
     return {
       ...m,
-      risk
+      risk: Number(finalRisk.toFixed(4)),
+      riskScore: Number(finalRisk.toFixed(4)),
+      warnings,
+
+      debug: {
+        ...(m.debug || {}),
+        riskPipeline: {
+          type,
+          baseRisk: Number(baseRisk.toFixed(4)),
+          riskAdjustment: Number(riskAdjustment.toFixed(4)),
+          finalRisk: Number(finalRisk.toFixed(4)),
+          totalLambda: Number(totalLambda.toFixed(4)),
+          balance: Number(balance.toFixed(4)),
+          warnings,
+        },
+      },
     };
   });
 
   return {
     ...data,
-    markets
+    markets,
+
+    debug: {
+      ...(data.debug || {}),
+      riskPipeline: {
+        inputMarkets: data.markets?.length ?? 0,
+        outputMarkets: markets.length,
+        totalLambda: Number(totalLambda.toFixed(4)),
+        balance: Number(balance.toFixed(4)),
+        note: "Risk now uses additive adjustments instead of aggressive multiplicative cascade.",
+      },
+    },
   };
 }

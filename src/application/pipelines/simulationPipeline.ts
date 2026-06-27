@@ -1,16 +1,16 @@
 export function simulationPipeline(model: any) {
   const safe = (n: any, fallback = 0) => {
     const num = Number(n);
-    return isNaN(num) ? fallback : num;
+    return Number.isFinite(num) ? num : fallback;
   };
 
   const clamp = (n: number, min: number, max: number) =>
     Math.max(min, Math.min(n, max));
 
-let lambdaHome = clamp(safe(model?.lambdaHome, 1.2), 0.35, 2.15);
-let lambdaAway = clamp(safe(model?.lambdaAway, 1.0), 0.35, 2.15);
+  const lambdaHome = clamp(safe(model?.lambdaHome, 1.2), 0.35, 2.25);
+  const lambdaAway = clamp(safe(model?.lambdaAway, 1.0), 0.35, 2.25);
 
-  const simulations = 10000;
+  const simulations = 20000;
   const scoreMap: Record<string, number> = {};
 
   let over25Hits = 0;
@@ -23,33 +23,19 @@ let lambdaAway = clamp(safe(model?.lambdaAway, 1.0), 0.35, 2.15);
   for (let i = 0; i < simulations; i++) {
     const homeGoals = samplePoisson(lambdaHome);
     const awayGoals = samplePoisson(lambdaAway);
-
     const totalGoals = homeGoals + awayGoals;
-
-    /* ===========================
-       🎯 MERCADOS
-    ============================ */
 
     if (totalGoals >= 3) over25Hits++;
     if (totalGoals >= 2) over15Hits++;
-
     if (homeGoals > 0 && awayGoals > 0) bttsHits++;
 
     if (homeGoals > awayGoals) homeWinHits++;
     else if (homeGoals === awayGoals) drawHits++;
     else awayWinHits++;
 
-    /* ===========================
-       📊 SCORE MAP
-    ============================ */
-
     const key = `${homeGoals}-${awayGoals}`;
     scoreMap[key] = (scoreMap[key] || 0) + 1;
   }
-
-  /* ===========================
-     📊 PROBABILIDADES
-  ============================ */
 
   const over25Prob = over25Hits / simulations;
   const over15Prob = over15Hits / simulations;
@@ -65,30 +51,57 @@ let lambdaAway = clamp(safe(model?.lambdaAway, 1.0), 0.35, 2.15);
 
   const totalLambda = Number((lambdaHome + lambdaAway).toFixed(4));
 
-  /* ===========================
-     🔥 PROB PRINCIPAL (CORE)
-  ============================ */
+  const modelComparison = {
+    OVER_1_5: {
+      model: model?.goals?.over15 ?? null,
+      monteCarlo: over15Prob,
+      diff: diff(model?.goals?.over15, over15Prob),
+    },
+    OVER_2_5: {
+      model: model?.goals?.over25 ?? null,
+      monteCarlo: over25Prob,
+      diff: diff(model?.goals?.over25, over25Prob),
+    },
+    BTTS_YES: {
+      model: model?.btts?.yes ?? null,
+      monteCarlo: bttsProb,
+      diff: diff(model?.btts?.yes, bttsProb),
+    },
+    HOME_WIN: {
+      model: model?.result?.homeWin ?? null,
+      monteCarlo: homeWinProb,
+      diff: diff(model?.result?.homeWin, homeWinProb),
+    },
+    DRAW: {
+      model: model?.result?.draw ?? null,
+      monteCarlo: drawProb,
+      diff: diff(model?.result?.draw, drawProb),
+    },
+    AWAY_WIN: {
+      model: model?.result?.awayWin ?? null,
+      monteCarlo: awayWinProb,
+      diff: diff(model?.result?.awayWin, awayWinProb),
+    },
+  };
 
-const marketCandidates = [
-  { market: "OVER_1.5", prob: over15Prob },
-  { market: "OVER_2.5", prob: over25Prob },
-  { market: "BTTS_YES", prob: bttsProb },
-  { market: "HOME_WIN", prob: homeWinProb },
-  { market: "DRAW", prob: drawProb },
-  { market: "AWAY_WIN", prob: awayWinProb }
-].sort((a, b) => b.prob - a.prob);
+  const marketCandidates = [
+    { market: "OVER_1_5", prob: over15Prob },
+    { market: "OVER_2_5", prob: over25Prob },
+    { market: "BTTS_YES", prob: bttsProb },
+    { market: "HOME_WIN", prob: homeWinProb },
+    { market: "DRAW", prob: drawProb },
+    { market: "AWAY_WIN", prob: awayWinProb },
+    { market: "DOUBLE_CHANCE_1X", prob: doubleChance1X },
+    { market: "DOUBLE_CHANCE_X2", prob: doubleChanceX2 },
+  ].sort((a, b) => b.prob - a.prob);
 
   const mainMarket = marketCandidates[0]?.market || null;
   const mainProb = marketCandidates[0]?.prob || 0;
 
-  /* ===========================
-     🔥 TOP SCORES
-  ============================ */
-
   const topScores = Object.entries(scoreMap)
     .map(([score, count]) => ({
       score,
-      prob: count / simulations
+      prob: count / simulations,
     }))
     .sort((a, b) => b.prob - a.prob)
     .slice(0, 5);
@@ -118,20 +131,40 @@ const marketCandidates = [
       mainMarket,
       mainProb,
       topScores,
+      modelComparison,
 
       debug: {
         source: "simulationPipeline",
         lambdaHome,
         lambdaAway,
-        totalLambda
-      }
-    }
+        totalLambda,
+        modelComparison,
+      },
+    },
+
+    debug: {
+      ...(model.debug || {}),
+      simulationPipeline: {
+        iterations: simulations,
+        lambdaHome,
+        lambdaAway,
+        totalLambda,
+        mainMarket,
+        mainProb,
+        topScores,
+        modelComparison,
+      },
+    },
   };
 }
 
-/* ===========================
-   🎲 POISSON RANDOM
-=========================== */
+function diff(modelProb: any, monteCarloProb: number) {
+  const modelNumber = Number(modelProb);
+
+  if (!Number.isFinite(modelNumber)) return null;
+
+  return Number(Math.abs(modelNumber - monteCarloProb).toFixed(4));
+}
 
 function samplePoisson(lambda: number): number {
   const L = Math.exp(-lambda);

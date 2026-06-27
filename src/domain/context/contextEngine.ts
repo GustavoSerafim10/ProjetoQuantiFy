@@ -1,3 +1,24 @@
+
+function safe(n: any, fallback = 1) {
+  const num = Number(n);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(n, max));
+}
+
+function recentGoalsFactor(value: any) {
+  const raw = safe(value, 1);
+
+  const avg =
+    raw > 5
+      ? raw / 5
+      : raw;
+
+  return avg;
+}
+
 export function contextEngine(data: any) {
   const {
     homeStats,
@@ -7,70 +28,53 @@ export function contextEngine(data: any) {
     leagueData
   } = data;
 
-  const safeBaseHome = Number(baseLambdaHome ?? 1.2);
-  const safeBaseAway = Number(baseLambdaAway ?? 1.0);
+  const safeBaseHome = clamp(safe(baseLambdaHome, 1.2), 0.35, 2.25);
+  const safeBaseAway = clamp(safe(baseLambdaAway, 1.0), 0.35, 2.25);
 
-  /* ===========================
-     📊 FORMA RECENTE
-  ============================ */
+  const homeForm = recentGoalsFactor(homeStats?.last5GoalsFor ?? homeStats?.goalsFor);
+  const awayForm = recentGoalsFactor(awayStats?.last5GoalsFor ?? awayStats?.goalsFor);
 
-const homeForm = Number(homeStats?.last5GoalsFor ?? 0) / 5;
-const awayForm = Number(awayStats?.last5GoalsFor ?? 0) / 5;
+  const homeTempo =
+    safe(homeStats?.shots, 8) +
+    safe(homeStats?.cornersAvg, 4);
 
-  /* ===========================
-     ⚡ RITMO DE JOGO
-  ============================ */
-
- const homeTempo =
-  Number(homeStats?.shots ?? 0) +
-  Number(homeStats?.cornersAvg ?? 0);
-
-const awayTempo =
-  Number(awayStats?.shots ?? 0) +
-  Number(awayStats?.cornersAvg ?? 0);
+  const awayTempo =
+    safe(awayStats?.shots, 8) +
+    safe(awayStats?.cornersAvg, 4);
 
   const rawTempoFactor =
-    ((homeTempo + awayTempo) / 20) *
-    Number(leagueData?.tempo ?? 1);
+    ((homeTempo + awayTempo) / 24) *
+    safe(leagueData?.tempo, 1);
 
-  // ajuste suave
-  const tempoFactor = Math.max(0.92, Math.min(rawTempoFactor, 1.08));
+  const tempoFactor = clamp(rawTempoFactor, 0.94, 1.08);
 
-  /* ===========================
-     🔥 PRESSÃO OFENSIVA
-  ============================ */
+  const homePressure =
+    safe(homeStats?.shotsOnTarget, 3) +
+    safe(homeStats?.cornersAvg, 4);
 
-const homePressure =
-  Number(homeStats?.shotsOnTarget ?? 0) +
-  Number(homeStats?.cornersAvg ?? 0);
+  const awayPressure =
+    safe(awayStats?.shotsOnTarget, 3) +
+    safe(awayStats?.cornersAvg, 4);
 
-const awayPressure =
-  Number(awayStats?.shotsOnTarget ?? 0) +
-  Number(awayStats?.cornersAvg ?? 0);
-  
   const rawPressureFactor =
-    ((homePressure + awayPressure) / 15) *
-    Number(leagueData?.pressure ?? 1);
+    ((homePressure + awayPressure) / 14) *
+    safe(leagueData?.pressure, 1);
 
-  // ajuste suave
-  const pressureFactor = Math.max(0.92, Math.min(rawPressureFactor, 1.10));
+  const pressureFactor = clamp(rawPressureFactor, 0.94, 1.10);
 
-  /* ===========================
-     🏠 HOME ADVANTAGE
-  ============================ */
+  const homeAdvantage = safe(leagueData?.homeAdvantage, 1.05);
 
-  const homeAdvantage = 1.05;
+  const homeFormFactor = clamp(
+    1 + ((homeForm - 1.2) * 0.08),
+    0.92,
+    1.08
+  );
 
-  /* ===========================
-     🔧 AJUSTE DE FORMA (SUAVE)
-  ============================ */
-
-  const homeFormFactor = 1 + ((homeForm - 1) * 0.12);
-  const awayFormFactor = 1 + ((awayForm - 1) * 0.12);
-
-  /* ===========================
-     🔥 AJUSTE FINAL CONTROLADO
-  ============================ */
+  const awayFormFactor = clamp(
+    1 + ((awayForm - 1.1) * 0.08),
+    0.92,
+    1.08
+  );
 
   let lambdaHome =
     safeBaseHome *
@@ -85,34 +89,60 @@ const awayPressure =
     tempoFactor *
     pressureFactor;
 
-  /* ===========================
-     🛡️ LIMITAR DISTORÇÃO DE CONTEXTO
-  ============================ */
+  const maxHomeShift = safeBaseHome * 0.18;
+  const maxAwayShift = safeBaseAway * 0.18;
 
-  const maxHomeShift = safeBaseHome * 0.22;
-  const maxAwayShift = safeBaseAway * 0.22;
-
-  lambdaHome = Math.max(
+  lambdaHome = clamp(
+    lambdaHome,
     safeBaseHome - maxHomeShift,
-    Math.min(safeBaseHome + maxHomeShift, lambdaHome)
+    safeBaseHome + maxHomeShift
   );
 
-  lambdaAway = Math.max(
+  lambdaAway = clamp(
+    lambdaAway,
     safeBaseAway - maxAwayShift,
-    Math.min(safeBaseAway + maxAwayShift, lambdaAway)
+    safeBaseAway + maxAwayShift
   );
 
-  /* ===========================
-     🔒 CLAMP FINAL
-  ============================ */
-
-  lambdaHome = Math.max(0.25, Math.min(4, lambdaHome));
-  lambdaAway = Math.max(0.25, Math.min(4, lambdaAway));
+  lambdaHome = clamp(lambdaHome, 0.35, 2.25);
+  lambdaAway = clamp(lambdaAway, 0.35, 2.25);
 
   return {
     lambdaHome: Number(lambdaHome.toFixed(4)),
     lambdaAway: Number(lambdaAway.toFixed(4)),
     tempoFactor: Number(tempoFactor.toFixed(4)),
-    pressureFactor: Number(pressureFactor.toFixed(4))
+    pressureFactor: Number(pressureFactor.toFixed(4)),
+
+    debug: {
+      contextEngine: {
+        base: {
+          home: safeBaseHome,
+          away: safeBaseAway
+        },
+        form: {
+          homeForm,
+          awayForm,
+          homeFormFactor,
+          awayFormFactor
+        },
+        tempo: {
+          homeTempo,
+          awayTempo,
+          rawTempoFactor,
+          tempoFactor
+        },
+        pressure: {
+          homePressure,
+          awayPressure,
+          rawPressureFactor,
+          pressureFactor
+        },
+        homeAdvantage,
+        final: {
+          lambdaHome: Number(lambdaHome.toFixed(4)),
+          lambdaAway: Number(lambdaAway.toFixed(4))
+        }
+      }
+    }
   };
 }

@@ -9,78 +9,104 @@ export interface MatrixCell {
 export interface DerivedMarket {
   name: string;
   probability: number;
+  category?: string;
+  source?: string;
 }
 
-/* =========================================
-   UTIL
-========================================= */
+function clamp(prob: number) {
+  const num = Number(prob);
+  if (!Number.isFinite(num)) return 0;
+  return Math.max(0, Math.min(1, num));
+}
+
+function normalizeMatrix(matrix: MatrixCell[]) {
+  const total = matrix.reduce(
+    (acc, cell) => acc + clamp(cell.probability),
+    0
+  );
+
+  if (total <= 0) return matrix;
+
+  return matrix.map(cell => ({
+    ...cell,
+    probability: clamp(cell.probability) / total
+  }));
+}
 
 function sumProb(
   matrix: MatrixCell[],
   condition: (cell: MatrixCell) => boolean
 ): number {
-  return matrix
-    .filter(condition)
-    .reduce((acc, cell) => acc + cell.probability, 0);
+  return clamp(
+    matrix
+      .filter(condition)
+      .reduce((acc, cell) => acc + clamp(cell.probability), 0)
+  );
 }
-
-function clamp(prob: number) {
-  return Math.max(0, Math.min(1, prob));
-}
-
-/* =========================================
-   RESULTADO BASE
-========================================= */
 
 function matchOutcome(matrix: MatrixCell[]) {
   const homeWin = sumProb(matrix, c => c.homeGoals > c.awayGoals);
   const draw = sumProb(matrix, c => c.homeGoals === c.awayGoals);
   const awayWin = sumProb(matrix, c => c.homeGoals < c.awayGoals);
 
-  return { homeWin, draw, awayWin };
-}
+  const total = homeWin + draw + awayWin;
 
-/* =========================================
-   OVER / UNDER GENÉRICO
-========================================= */
+  if (total <= 0) {
+    return {
+      homeWin: 0,
+      draw: 0,
+      awayWin: 0
+    };
+  }
+
+  return {
+    homeWin: clamp(homeWin / total),
+    draw: clamp(draw / total),
+    awayWin: clamp(awayWin / total)
+  };
+}
 
 export function overUnderLine(
   matrix: MatrixCell[],
   line: number
 ) {
+  const normalized = normalizeMatrix(matrix);
+
   const over = sumProb(
-    matrix,
+    normalized,
     cell => cell.homeGoals + cell.awayGoals > line
   );
 
   const under = 1 - over;
 
-  return { over: clamp(over), under: clamp(under) };
+  return {
+    over: clamp(over),
+    under: clamp(under)
+  };
 }
-
-/* =========================================
-   ASIAN OVER (linhas quebradas)
-========================================= */
 
 function asianOver(
   matrix: MatrixCell[],
   line: number
 ) {
-  const fullOver = overUnderLine(matrix, Math.floor(line + 0.01)).over;
-  const halfOver = overUnderLine(matrix, line).over;
+  const normalized = normalizeMatrix(matrix);
 
-  return clamp((fullOver + halfOver) / 2);
+  const lowerLine = Math.floor(line);
+  const upperLine = lowerLine + 0.5;
+
+  const lowerOver = overUnderLine(normalized, lowerLine).over;
+  const upperOver = overUnderLine(normalized, upperLine).over;
+
+  return clamp((lowerOver + upperOver) / 2);
 }
-
-/* =========================================
-   ASIAN HANDICAP -0.25 / +0.25
-========================================= */
 
 function asianHandicap025(
   matrix: MatrixCell[],
   side: "home" | "away"
 ) {
-  const { homeWin, draw, awayWin } = matchOutcome(matrix);
+  const { homeWin, draw, awayWin } = matchOutcome(
+    normalizeMatrix(matrix)
+  );
 
   if (side === "home") {
     return clamp(homeWin + draw * 0.5);
@@ -89,12 +115,10 @@ function asianHandicap025(
   return clamp(awayWin + draw * 0.5);
 }
 
-/* =========================================
-   DOUBLE CHANCE
-========================================= */
-
 export function doubleChance(matrix: MatrixCell[]) {
-  const { homeWin, draw, awayWin } = matchOutcome(matrix);
+  const { homeWin, draw, awayWin } = matchOutcome(
+    normalizeMatrix(matrix)
+  );
 
   return {
     "1X": clamp(homeWin + draw),
@@ -103,12 +127,10 @@ export function doubleChance(matrix: MatrixCell[]) {
   };
 }
 
-/* =========================================
-   DRAW NO BET
-========================================= */
-
 export function drawNoBet(matrix: MatrixCell[]) {
-  const { homeWin, draw, awayWin } = matchOutcome(matrix);
+  const { homeWin, draw, awayWin } = matchOutcome(
+    normalizeMatrix(matrix)
+  );
 
   const denominator = 1 - draw;
 
@@ -118,171 +140,119 @@ export function drawNoBet(matrix: MatrixCell[]) {
   };
 }
 
-/* =========================================
-   TEAM TOTALS
-========================================= */
-
 export function teamTotalOver(
   matrix: MatrixCell[],
   team: "home" | "away",
   line: number
 ) {
-  return clamp(
-    sumProb(
-      matrix,
-      cell =>
-        team === "home"
-          ? cell.homeGoals > line
-          : cell.awayGoals > line
-    )
+  const normalized = normalizeMatrix(matrix);
+
+  return sumProb(
+    normalized,
+    cell =>
+      team === "home"
+        ? cell.homeGoals > line
+        : cell.awayGoals > line
   );
 }
-
-/* =========================================
-   CORRECT SCORE TOP N
-========================================= */
 
 export function correctScoreTopN(
   matrix: MatrixCell[],
   topN: number = 5
 ) {
-  return [...matrix]
+  return [...normalizeMatrix(matrix)]
     .sort((a, b) => b.probability - a.probability)
     .slice(0, topN)
     .map(cell => ({
       score: `${cell.homeGoals} x ${cell.awayGoals}`,
-      probability: cell.probability
+      probability: clamp(cell.probability)
     }));
 }
-
-/* =========================================
-   FIRST HALF GOAL (Poisson approx)
-========================================= */
 
 export function firstHalfGoalProbability(
   lambdaHome: number,
   lambdaAway: number
 ) {
-  const firstHalfLambda = (lambdaHome + lambdaAway) / 2;
+  const totalLambda = Math.max(0, Number(lambdaHome) + Number(lambdaAway));
+
+  /*
+    Aproximação profissional:
+    Em média, o 1º tempo concentra cerca de 44% a 46% dos gols.
+    Usar 50% tende a inflar demais o mercado de gol no 1º tempo.
+  */
+  const firstHalfLambda = totalLambda * 0.45;
+
   const probNoGoal = Math.exp(-firstHalfLambda);
+
   return clamp(1 - probNoGoal);
 }
-
-/* =========================================
-   GERADOR PRINCIPAL EXPANDIDO
-========================================= */
 
 export function generateDerivedMarkets(
   matrix: MatrixCell[],
   lambdaHome: number,
   lambdaAway: number
 ): DerivedMarket[] {
+  const normalized = normalizeMatrix(matrix);
 
   const markets: DerivedMarket[] = [];
 
-  /* ---------- Over/Under Clássico ---------- */
-
-  [1.5, 2.5, 3.5].forEach(line => {
-    const { over, under } = overUnderLine(matrix, line);
-
-    markets.push({ name: `OVER ${line}`, probability: over });
-    markets.push({ name: `UNDER ${line}`, probability: under });
-  });
-
-  /* ---------- Asian Totals ---------- */
-
-  markets.push({
-    name: "OVER 2.25",
-    probability: asianOver(matrix, 2.25)
-  });
-
-  markets.push({
-    name: "OVER 2.75",
-    probability: asianOver(matrix, 2.75)
-  });
-
-  markets.push({
-    name: "UNDER 2.75",
-    probability: 1 - asianOver(matrix, 2.75)
-  });
-
-  /* ---------- Asian Handicap ---------- */
-
-  markets.push({
-    name: "HOME -0.25",
-    probability: asianHandicap025(matrix, "home")
-  });
-
-  markets.push({
-    name: "AWAY +0.25",
-    probability: asianHandicap025(matrix, "away")
-  });
-
-  /* ---------- Double Chance ---------- */
-
-  const dc = doubleChance(matrix);
-  Object.entries(dc).forEach(([name, prob]) => {
+  const add = (
+    name: string,
+    probability: number,
+    category: string
+  ) => {
     markets.push({
-      name: `DOUBLE CHANCE ${name}`,
-      probability: prob
+      name,
+      probability: clamp(probability),
+      category,
+      source: "marketDerivatives"
     });
-  });
+  };
 
-  /* ---------- Draw No Bet ---------- */
+  const over15 = overUnderLine(normalized, 1.5);
+  const over25 = overUnderLine(normalized, 2.5);
+  const over35 = overUnderLine(normalized, 3.5);
 
-  const dnb = drawNoBet(matrix);
+  add("OVER_1_5", over15.over, "GOALS");
+  add("UNDER_1_5", over15.under, "GOALS");
 
-  markets.push({
-    name: "HOME DNB",
-    probability: dnb.homeDNB
-  });
+  add("OVER_2_5", over25.over, "GOALS");
+  add("UNDER_2_5", over25.under, "GOALS");
 
-  markets.push({
-    name: "AWAY DNB",
-    probability: dnb.awayDNB
-  });
+  add("OVER_3_5", over35.over, "GOALS");
+  add("UNDER_3_5", over35.under, "GOALS");
 
-  /* ---------- Team Totals ---------- */
+  add("OVER_2_25", asianOver(normalized, 2.25), "GOALS");
+  add("OVER_2_75", asianOver(normalized, 2.75), "GOALS");
+  add("UNDER_2_75", 1 - asianOver(normalized, 2.75), "GOALS");
 
-  markets.push({
-    name: "HOME OVER 0.5",
-    probability: teamTotalOver(matrix, "home", 0.5)
-  });
+  add("HOME_MINUS_0_25", asianHandicap025(normalized, "home"), "HANDICAP");
+  add("AWAY_PLUS_0_25", asianHandicap025(normalized, "away"), "HANDICAP");
 
-  markets.push({
-    name: "HOME OVER 1.5",
-    probability: teamTotalOver(matrix, "home", 1.5)
-  });
+  const dc = doubleChance(normalized);
 
-  markets.push({
-    name: "HOME OVER 2.5",
-    probability: teamTotalOver(matrix, "home", 2.5)
-  });
+  add("DOUBLE_CHANCE_1X", dc["1X"], "DOUBLE_CHANCE");
+  add("DOUBLE_CHANCE_X2", dc["X2"], "DOUBLE_CHANCE");
+  add("DOUBLE_CHANCE_12", dc["12"], "DOUBLE_CHANCE");
 
-  markets.push({
-    name: "AWAY OVER 0.5",
-    probability: teamTotalOver(matrix, "away", 0.5)
-  });
+  const dnb = drawNoBet(normalized);
 
-  markets.push({
-    name: "AWAY OVER 1.5",
-    probability: teamTotalOver(matrix, "away", 1.5)
-  });
+  add("HOME_DNB", dnb.homeDNB, "RESULT");
+  add("AWAY_DNB", dnb.awayDNB, "RESULT");
 
-  markets.push({
-    name: "AWAY OVER 2.5",
-    probability: teamTotalOver(matrix, "away", 2.5)
-  });
+  add("HOME_OVER_0_5", teamTotalOver(normalized, "home", 0.5), "TEAM_TOTAL");
+  add("HOME_OVER_1_5", teamTotalOver(normalized, "home", 1.5), "TEAM_TOTAL");
+  add("HOME_OVER_2_5", teamTotalOver(normalized, "home", 2.5), "TEAM_TOTAL");
 
-  /* ---------- First Half ---------- */
+  add("AWAY_OVER_0_5", teamTotalOver(normalized, "away", 0.5), "TEAM_TOTAL");
+  add("AWAY_OVER_1_5", teamTotalOver(normalized, "away", 1.5), "TEAM_TOTAL");
+  add("AWAY_OVER_2_5", teamTotalOver(normalized, "away", 2.5), "TEAM_TOTAL");
 
-  markets.push({
-    name: "1ST HALF GOAL",
-    probability: firstHalfGoalProbability(
-      lambdaHome,
-      lambdaAway
-    )
-  });
+  add(
+    "FIRST_HALF_GOAL",
+    firstHalfGoalProbability(lambdaHome, lambdaAway),
+    "GOALS"
+  );
 
   return markets;
 }

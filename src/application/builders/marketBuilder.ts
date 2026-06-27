@@ -1,57 +1,61 @@
 import type { MarketItem } from "../../shared/types/MarketItem";
 
-export function marketBuilder(
-  data: any
-): MarketItem[] {
+type MarketCategory = "RESULT" | "DOUBLE_CHANCE" | "GOALS" | "BTTS";
 
-  const odds = data.odds || {};
+type MarketConfig = {
+  market: string;
+  odd: number | undefined;
+  category: MarketCategory;
+};
+
+export function marketBuilder(data: any): MarketItem[] {
+  const odds = data?.odds || {};
 
   const markets: MarketItem[] = [];
 
-  function add(
-    market: string,
-    odd: number | undefined
-  ) {
-    if (!odd || odd <= 1) return;
+  function add(config: MarketConfig) {
+    const { market, odd, category } = config;
+
+    if (
+      odd == null ||
+      !Number.isFinite(odd) ||
+      odd <= 1.01
+    ) {
+      return;
+    }
 
     markets.push({
       market,
       odd,
-      source: "input"
-    });
+      source: "pre-live-input",
+      category,
+      enabled: true,
+      createdAt: Date.now(),
+      pipelineHistory: ["marketBuilder"],
+      debug: {},
+    } as MarketItem);
   }
 
-  /* ===========================
-     MATCH RESULT
-  ============================ */
-  add("HOME_WIN", odds.home);
-  add("DRAW", odds.draw);
-  add("AWAY_WIN", odds.away);
+  const marketMap: MarketConfig[] = [
+    // MATCH RESULT
+    { market: "HOME_WIN", odd: odds.home, category: "RESULT" },
+    { market: "DRAW", odd: odds.draw, category: "RESULT" },
+    { market: "AWAY_WIN", odd: odds.away, category: "RESULT" },
 
-  /* ===========================
-     DOUBLE CHANCE
-  ============================ */
-  add(
-    "DOUBLE_CHANCE_1X",
-    odds.homeOrDraw
-  );
+    // DOUBLE CHANCE
+    { market: "DOUBLE_CHANCE_1X", odd: odds.homeOrDraw, category: "DOUBLE_CHANCE" },
+    { market: "DOUBLE_CHANCE_X2", odd: odds.awayOrDraw, category: "DOUBLE_CHANCE" },
 
-  add(
-    "DOUBLE_CHANCE_X2",
-    odds.awayOrDraw
-  );
+    // GOALS
+    { market: "OVER_1_5", odd: odds.over15, category: "GOALS" },
+    { market: "OVER_2_5", odd: odds.over25, category: "GOALS" },
 
-  /* ===========================
-     GOALS
-  ============================ */
-  add("OVER_1_5", odds.over15);
-  add("OVER_2_5", odds.over25);
+    // BTTS
+    { market: "BTTS_YES", odd: odds.bttsYes, category: "BTTS" },
+    { market: "BTTS_NO", odd: odds.bttsNo, category: "BTTS" },
+  ];
 
-  /* ===========================
-     BTTS
-  ============================ */
-  add("BTTS_YES", odds.bttsYes);
-  add("BTTS_NO", odds.bttsNo);
+  marketMap.forEach(add);
 
   return markets;
 }

@@ -18,7 +18,7 @@ export type Bet = {
 
   createdAt: number;
 
-  type: "SCALPER" | "ELITE" | "WATCHLIST";
+ type: "SCALPER" | "ELITE" | "BET" | "WATCHLIST";
 };
 
 /* ===========================

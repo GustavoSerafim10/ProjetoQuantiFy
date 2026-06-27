@@ -2,31 +2,27 @@ export function expectedValue(
   probability: number,
   odd: number
 ): number {
-  if (probability <= 0 || odd <= 0) {
-    throw new Error("Probability and odd must be greater than zero");
+  const p = Number(probability);
+  const o = Number(odd);
+
+  if (!Number.isFinite(p) || !Number.isFinite(o)) {
+    return -1;
   }
 
-  return (probability * odd) - 1;
+  if (p <= 0 || p >= 1 || o <= 1) {
+    return -1;
+  }
+
+  return (p * o) - 1;
 }
 
 export function classifyBet(ev: number): string {
-  if (ev >= 0.12) {
-    return "STRONG VALUE";
-  }
+  if (ev >= 0.12) return "STRONG_VALUE";
+  if (ev >= 0.05) return "VALUE";
+  if (ev > 0) return "MARGINAL_VALUE";
+  if (ev === 0) return "BREAKEVEN";
 
-  if (ev >= 0.05) {
-    return "VALUE";
-  }
-
-  if (ev > 0) {
-    return "MARGINAL VALUE";
-  }
-
-  if (ev === 0) {
-    return "BREAKEVEN";
-  }
-
-  return "NO VALUE";
+  return "NO_VALUE";
 }
 
 export function classifyOperationalValue(
@@ -35,19 +31,23 @@ export function classifyOperationalValue(
 ): string {
   const ev = expectedValue(probability, odd);
 
-  if (odd < 1.45 && ev < 0.18) {
-    return "LOW_ODD_FAKE_VALUE";
+  if (ev <= 0) {
+    return "NO_VALUE";
   }
 
-  if (odd < 1.35) {
+  if (odd < 1.30) {
     return "ODD_TOO_COMPRESSED";
   }
 
-  if (probability >= 0.82 && odd < 1.50) {
+  if (odd < 1.40 && ev < 0.16) {
+    return "LOW_ODD_FAKE_VALUE";
+  }
+
+  if (probability >= 0.84 && odd < 1.42) {
     return "OVERCONFIDENCE_RISK";
   }
 
-  if (ev >= 0.15 && odd >= 1.50) {
+  if (ev >= 0.15 && odd >= 1.45) {
     return "STRONG_VALUE";
   }
 
@@ -55,9 +55,9 @@ export function classifyOperationalValue(
     return "VALUE";
   }
 
-  if (ev > 0) {
-    return "MARGINAL_VALUE";
+  if (ev >= 0.035) {
+    return "WATCHLIST_VALUE";
   }
 
-  return "NO_VALUE";
+  return "MARGINAL_VALUE";
 }

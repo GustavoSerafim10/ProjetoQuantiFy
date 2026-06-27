@@ -1,23 +1,19 @@
-export function gameSelector(context: any) {
+function safe(n: any, fallback = 0) {
+  const num = Number(n);
+  return Number.isFinite(num) ? num : fallback;
+}
 
+export function gameSelector(context: any) {
   const { homeStats, awayStats } = context;
 
-  /* ===========================
-     MÉTRICAS BASE
-  ============================ */
+  const shotsHome = safe(homeStats?.shots, 8);
+  const shotsAway = safe(awayStats?.shots, 8);
 
-  const shotsHome = homeStats?.shots ?? 0;
-  const shotsAway = awayStats?.shots ?? 0;
+  const cornersHome = safe(homeStats?.cornersAvg, 4);
+  const cornersAway = safe(awayStats?.cornersAvg, 4);
 
-  const cornersHome = homeStats?.cornersAvg ?? 0;
-  const cornersAway = awayStats?.cornersAvg ?? 0;
-
-  const bigChancesHome = homeStats?.bigChances ?? 0;
-  const bigChancesAway = awayStats?.bigChances ?? 0;
-
-  /* ===========================
-     DERIVADOS
-  ============================ */
+  const bigChancesHome = safe(homeStats?.bigChances, 1);
+  const bigChancesAway = safe(awayStats?.bigChances, 1);
 
   const totalShots = shotsHome + shotsAway;
   const totalCorners = cornersHome + cornersAway;
@@ -25,65 +21,70 @@ export function gameSelector(context: any) {
 
   const shotDiff = Math.abs(shotsHome - shotsAway);
 
-  /* ===========================
-     🚫 REGRAS AJUSTADAS
-  ============================ */
+  const warnings: string[] = [];
 
-  // 🔴 1. BAIXA INTENSIDADE (menos rígido)
   const lowIntensity =
-    totalShots < 14 &&
-    totalCorners < 6 &&
-    totalBigChances < 1.5;
+    totalShots < 13 &&
+    totalCorners < 5.5 &&
+    totalBigChances < 1.2;
 
   if (lowIntensity) {
-    return {
-      allowed: false,
-      reason: "LOW_INTENSITY"
-    };
+    warnings.push("LOW_INTENSITY");
   }
 
-  // 🔴 2. ASSIMETRIA EXTREMA (menos agressivo)
-  const asymmetry = shotDiff > 10;
+  const asymmetry = shotDiff > 11;
 
   if (asymmetry) {
-    return {
-      allowed: false,
-      reason: "ASYMMETRIC_GAME"
-    };
+    warnings.push("ASYMMETRIC_GAME");
   }
 
-  // 🔴 3. TIME COMPLETAMENTE MORTO (ajustado)
   const deadTeam =
-    (shotsHome < 4 && bigChancesHome < 0.5) ||
-    (shotsAway < 4 && bigChancesAway < 0.5);
+    (shotsHome < 3.5 && bigChancesHome < 0.4) ||
+    (shotsAway < 3.5 && bigChancesAway < 0.4);
 
   if (deadTeam) {
-    return {
-      allowed: false,
-      reason: "LOW_PRODUCTION"
-    };
+    warnings.push("LOW_PRODUCTION_TEAM");
   }
-
-  /* ===========================
-     🧠 BOOST POSITIVO (NOVO)
-  ============================ */
 
   const strongGame =
     totalShots >= 20 ||
     totalBigChances >= 3;
 
+  let confidenceBoost = 1;
+
   if (strongGame) {
-    return {
-      allowed: true,
-      confidenceBoost: 1.05
-    };
+    confidenceBoost = 1.05;
   }
 
-  /* ===========================
-     ✅ APROVADO
-  ============================ */
+  if (warnings.length >= 2) {
+    confidenceBoost = 0.95;
+  }
 
   return {
-    allowed: true
+    /*
+      Não bloqueia mais o jogo no modelPipeline.
+      Apenas classifica qualidade operacional.
+    */
+    allowed: true,
+    reason: warnings.length ? warnings.join("_") : "OK",
+    warnings,
+    confidenceBoost,
+
+    diagnostics: {
+      shotsHome,
+      shotsAway,
+      totalShots,
+      cornersHome,
+      cornersAway,
+      totalCorners,
+      bigChancesHome,
+      bigChancesAway,
+      totalBigChances,
+      shotDiff,
+      lowIntensity,
+      asymmetry,
+      deadTeam,
+      strongGame,
+    },
   };
 }

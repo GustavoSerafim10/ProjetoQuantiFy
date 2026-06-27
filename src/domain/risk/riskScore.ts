@@ -1,6 +1,3 @@
-/* ===============================
-   📊 TYPES
-=============================== */
 
 interface RiskInput {
   lambdaHome: number;
@@ -17,82 +14,45 @@ interface RiskInput {
   marketType?: string;
 }
 
-/* ===============================
-   🛡️ SAFE
-=============================== */
-
-const safe = (v: any, fallback: number) =>
-  v === undefined || v === null || isNaN(v) ? fallback : v;
-
-/* ===============================
-   🎲 POISSON SAMPLE
-=============================== */
-
-function poissonSample(lambda: number): number {
-  const L = Math.exp(-lambda);
-  let p = 1;
-  let k = 0;
-
-  do {
-    k++;
-    p *= Math.random();
-  } while (p > L);
-
-  return k - 1;
+function safe(v: any, fallback: number) {
+  const num = Number(v);
+  return Number.isFinite(num) ? num : fallback;
 }
 
-/* ===============================
-   🎯 MONTE CARLO SIMULATION
-=============================== */
+function clamp(n: number, min = 0.05, max = 0.95) {
+  return Math.max(min, Math.min(n, max));
+}
 
-function simulateMatch(lambdaHome: number, lambdaAway: number, iterations = 4000) {
+function normalizeMarketName(market: string) {
+  return String(market ?? "")
+    .toUpperCase()
+    .replace(/\s+/g, "_")
+    .replace(/\./g, "_");
+}
 
-  let totalGoals = 0;
-  let extremeGames = 0;
+function resolveMarketGroup(market: string) {
+  const m = normalizeMarketName(market);
 
-  const results: number[] = [];
-
-  for (let i = 0; i < iterations; i++) {
-
-    const homeGoals = poissonSample(lambdaHome);
-    const awayGoals = poissonSample(lambdaAway);
-
-    const total = homeGoals + awayGoals;
-
-    totalGoals += total;
-    results.push(total);
-
-    if (total >= 5) extremeGames++;
+  if (m.includes("OVER")) return "OVER";
+  if (m.includes("BTTS")) return "BTTS";
+  if (m.includes("DOUBLE_CHANCE") || m.includes("1X") || m.includes("X2")) return "DOUBLE";
+  if (
+    m.includes("HOME") ||
+    m.includes("AWAY") ||
+    m === "DRAW" ||
+    m === "RESULT"
+  ) {
+    return "RESULT";
   }
 
-  const avgGoals = totalGoals / iterations;
-
-  const variance =
-    results.reduce((acc, g) => acc + Math.pow(g - avgGoals, 2), 0) / iterations;
-
-  const stdDev = Math.sqrt(variance);
-  const extremeRate = extremeGames / iterations;
-
-  return {
-    avgGoals,
-    variance,
-    stdDev,
-    extremeRate
-  };
+  return "OTHER";
 }
-
-/* ===============================
-   🚀 RISK SCORE 4.3 (EDGE-BALANCED)
-=============================== */
 
 export function calculateRiskScore(input: RiskInput): number {
   const lambdaHome = safe(input.lambdaHome, 1.2);
   const lambdaAway = safe(input.lambdaAway, 1.0);
 
-  const prob = Math.max(
-    0.0001,
-    Math.min(0.9999, safe(input.eventProbability, 0.5))
-  );
+  const prob = clamp(safe(input.eventProbability, 0.5), 0.0001, 0.9999);
 
   const leagueAvgGoals = safe(input.leagueAvgGoals, 2.4);
   const recentStd = safe(input.recentGoalStd, 1.0);
@@ -100,92 +60,122 @@ export function calculateRiskScore(input: RiskInput): number {
 
   const goalScore = safe(input.goalExpectationScore, 0.5);
   const totalLambda = safe(input.totalLambda, lambdaHome + lambdaAway);
-  const marketType = String(input.marketType ?? "OTHER").toUpperCase();
 
-  /* ===========================
-     🎲 1. SIMULAÇÃO
-  ============================ */
+  const marketName = normalizeMarketName(input.marketType ?? "OTHER");
+  const marketGroup = resolveMarketGroup(marketName);
 
-  const sim = simulateMatch(lambdaHome, lambdaAway);
+  const lambdaDiff = Math.abs(lambdaHome - lambdaAway);
+  const minLambda = Math.min(lambdaHome, lambdaAway);
 
-  /* ===========================
-     📊 2. COMPONENTES BASE
-  ============================ */
-
-  const varianceRisk = Math.min(1, sim.stdDev / 2.8);
-  const tailRisk = Math.min(1, sim.extremeRate * 1.15);
-
-  // quanto menor a probabilidade do evento, maior o risco
   const probabilityRisk = 1 - prob;
 
-  const volatility = recentStd / (seasonAvg || 1);
-  const volatilityClamped = Math.min(1, volatility);
+  const lambdaVarianceRisk = clamp(
+    Math.sqrt(totalLambda) / 2.25,
+    0,
+    1
+  );
 
-  const leagueFactor =
-    leagueAvgGoals > 3 ? 0.95 :
-    leagueAvgGoals < 2 ? 0.78 :
-    0.86;
+  const volatilityRatio = recentStd / Math.max(seasonAvg, 0.5);
 
-  /* ===========================
-     🧠 3. BASE RISK
-  ============================ */
+  const volatilityRisk = clamp(
+    Math.abs(volatilityRatio - 1) * 0.55,
+    0,
+    1
+  );
+
+  const leagueRisk = clamp(
+    Math.abs(leagueAvgGoals - 2.55) * 0.12,
+    0,
+    0.18
+  );
 
   let risk =
-    (varianceRisk * 0.24) +
-    (tailRisk * 0.10) +
-    (probabilityRisk * 0.22) +
-    (volatilityClamped * 0.24) +
-    (leagueFactor * 0.20);
+    probabilityRisk * 0.42 +
+    lambdaVarianceRisk * 0.24 +
+    volatilityRisk * 0.18 +
+    leagueRisk * 0.16;
 
-  /* ===========================
-     🔥 4. AJUSTES INTELIGENTES
-  ============================ */
+  /*
+    Ajustes por mercado exato.
+  */
 
-  const balance = Math.abs(lambdaHome - lambdaAway);
+  if (marketGroup === "OVER") {
+    if (marketName.includes("OVER_1_5")) {
+      if (totalLambda >= 2.35) risk -= 0.025;
+      if (goalScore >= 0.58) risk -= 0.020;
 
-  // jogo muito equilibrado gera um leve aumento de incerteza
-  if (balance < 0.25) {
-    risk *= 1.06;
+      if (totalLambda < 2.00) risk += 0.055;
+      if (goalScore < 0.45) risk += 0.045;
+    }
+
+    else if (marketName.includes("OVER_2_5")) {
+      if (totalLambda >= 2.85) risk -= 0.035;
+      if (goalScore >= 0.65) risk -= 0.030;
+
+      if (totalLambda < 2.35) risk += 0.065;
+      if (goalScore < 0.52) risk += 0.055;
+    }
+
+    else {
+      if (goalScore > 0.65) risk -= 0.035;
+      if (totalLambda > 2.85) risk -= 0.025;
+
+      if (goalScore < 0.50) risk += 0.045;
+      if (totalLambda < 2.25) risk += 0.055;
+    }
   }
 
-  /* ===== OVER ===== */
-  if (marketType === "OVER") {
-    if (goalScore < 0.45) risk *= 1.12;
-    else if (goalScore < 0.55) risk *= 1.05;
-    else if (goalScore > 0.65) risk *= 0.96;
+  if (marketGroup === "BTTS") {
+    if (marketName.includes("BTTS_YES")) {
+      if (minLambda >= 1.0 && goalScore >= 0.55) risk -= 0.035;
 
-    if (totalLambda < 2.2) risk *= 1.08;
-    if (totalLambda > 3.3) risk *= 0.96;
+      if (minLambda < 0.85) risk += 0.055;
+      if (lambdaDiff > 1.15) risk += 0.045;
+      if (totalLambda < 2.15) risk += 0.040;
+    }
+
+    else if (marketName.includes("BTTS_NO")) {
+      if (goalScore <= 0.48) risk -= 0.030;
+      if (minLambda < 0.90) risk -= 0.020;
+
+      if (totalLambda > 2.90) risk += 0.060;
+      if (minLambda >= 1.05 && goalScore >= 0.58) risk += 0.045;
+    }
+
+    else {
+      if (minLambda >= 1.0 && goalScore >= 0.55) risk -= 0.030;
+      if (minLambda < 0.85) risk += 0.050;
+      if (lambdaDiff > 1.15) risk += 0.040;
+    }
   }
 
-  /* ===== BTTS ===== */
-  if (marketType === "BTTS") {
-    if (goalScore < 0.50) risk *= 1.06;
-    if (balance > 0.9) risk *= 1.04;
+  if (marketGroup === "RESULT") {
+    if (marketName === "DRAW") {
+      risk += 0.070;
+
+      if (lambdaDiff < 0.25) risk -= 0.030;
+      if (lambdaDiff > 0.70) risk += 0.055;
+    }
+
+    else {
+      if (lambdaDiff >= 0.55) risk -= 0.030;
+      if (lambdaDiff < 0.30) risk += 0.055;
+
+      if (prob < 0.42) risk += 0.040;
+    }
   }
 
-  /* ===== RESULT ===== */
-  if (marketType === "RESULT") {
-    risk *= 1.02;
+  if (marketGroup === "DOUBLE") {
+    if (prob >= 0.66) risk -= 0.040;
+    if (lambdaDiff >= 0.45) risk -= 0.018;
+
+    if (prob < 0.60) risk += 0.040;
   }
 
-  /* ===== DOUBLE CHANCE ===== */
-  if (marketType === "DOUBLE") {
-    if (prob > 0.68) risk *= 0.95;
-    if (balance > 0.8) risk *= 0.97;
-  }
+  if (prob >= 0.70) risk -= 0.025;
+  if (prob < 0.52) risk += 0.040;
 
-  /* ===========================
-     🔥 NORMALIZAÇÃO FINAL
-  ============================ */
-
-  risk *= 0.94;
-
-  /* ===========================
-     🎯 CLAMP FINAL
-  ============================ */
-
-  risk = Math.max(0.05, Math.min(risk, 0.95));
+  risk = clamp(risk);
 
   return Number(risk.toFixed(4));
 }

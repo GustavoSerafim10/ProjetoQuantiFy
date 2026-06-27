@@ -4,67 +4,46 @@ export function applyContextAdjustments(
     homeAdvantage?: number;
     form?: number;
     intensity?: number;
-  }
+  } = {}
 ) {
+  const safeBase = Number.isFinite(Number(baseProb))
+    ? Number(baseProb)
+    : 0.5;
 
-  let adjusted = Number(baseProb ?? 0.5);
+  let adjusted = safeBase;
 
-  const homeAdv = Number(context?.homeAdvantage ?? 1);
-  const form = Number(context?.form ?? 1);
-  const intensity = Number(context?.intensity ?? 1);
+  const homeAdv = Number.isFinite(Number(context.homeAdvantage))
+    ? Number(context.homeAdvantage)
+    : 1;
 
-  /* ===========================
-     🔧 AJUSTES SUAVES
-  ============================ */
+  const form = Number.isFinite(Number(context.form))
+    ? Number(context.form)
+    : 1;
 
-  // ajustes individuais
+  const intensity = Number.isFinite(Number(context.intensity))
+    ? Number(context.intensity)
+    : 1;
+
   const homeAdj = (homeAdv - 1) * 0.25;
   const formAdj = (form - 1) * 0.20;
   const intensityAdj = (intensity - 1) * 0.15;
 
-  /* ===========================
-     🧠 DECAY CONTEXTUAL
-  ============================ */
+  const totalRaw = homeAdj + formAdj + intensityAdj;
 
-  // reduz exagero quando múltiplos fatores
-  // positivos aparecem juntos
+  const decayFactor = Math.abs(totalRaw) > 0.08 ? 0.85 : 1;
 
-  const totalRaw =
-    homeAdj +
-    formAdj +
-    intensityAdj;
+  const totalAdjusted = totalRaw * decayFactor;
 
-  // decay institucional
-  const decayFactor =
-    Math.abs(totalRaw) > 0.08
-      ? 0.85
-      : 1;
+  adjusted += totalAdjusted;
 
-  adjusted += totalRaw * decayFactor;
-
-  /* ===========================
-     🔒 LIMITES DE SEGURANÇA
-  ============================ */
-
-  // contexto nunca domina o modelo
   const maxShift = 0.12;
 
-  const delta = adjusted - baseProb;
+  const delta = adjusted - safeBase;
 
-  if (delta > maxShift)
-    adjusted = baseProb + maxShift;
+  if (delta > maxShift) adjusted = safeBase + maxShift;
+  if (delta < -maxShift) adjusted = safeBase - maxShift;
 
-  if (delta < -maxShift)
-    adjusted = baseProb - maxShift;
-
-  /* ===========================
-     🎯 CLAMP FINAL
-  ============================ */
-
-  adjusted = Math.max(
-    0.05,
-    Math.min(adjusted, 0.95)
-  );
+  adjusted = Math.max(0.05, Math.min(adjusted, 0.95));
 
   return Number(adjusted.toFixed(4));
 }
