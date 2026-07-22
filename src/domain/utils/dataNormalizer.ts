@@ -1,24 +1,111 @@
-export function normalizeStats(stats: any) {
-  const safeNumber = (
-    value: any,
-    fallback = 0
-  ) => {
-    const num = Number(value);
-    return isNaN(num) ? fallback : num;
-  };
+type RawTeamStats = {
+  matches?: unknown;
+  avgGoals?: unknown;
+  avgGoalsAgainst?: unknown;
+  avgShots?: unknown;
+  avgShotsOnTarget?: unknown;
+  last5Goals?: unknown;
 
-  const matches = Math.max(
-    safeNumber(stats.matches, 10),
-    1
+  [key: string]: unknown;
+};
+
+const clamp = (
+  value: number,
+  min: number,
+  max: number
+): number => {
+  return Math.min(Math.max(value, min), max);
+};
+
+const safeNumber = (
+  value: unknown,
+  fallback = 0
+): number => {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    typeof value === "boolean"
+  ) {
+    return fallback;
+  }
+
+  const normalizedValue =
+    typeof value === "string"
+      ? value.replace(",", ".").trim()
+      : value;
+
+  const parsed = Number(normalizedValue);
+
+  return Number.isFinite(parsed)
+    ? parsed
+    : fallback;
+};
+
+export function normalizeStats(
+  stats: RawTeamStats = {}
+) {
+  /*
+   * Os limites abaixo não representam previsões.
+   * Eles funcionam somente como proteção contra:
+   *
+   * - erros de digitação;
+   * - valores negativos;
+   * - Infinity;
+   * - escalas absurdas;
+   * - contaminação dos modelos posteriores.
+   */
+
+  const matches = Math.round(
+    clamp(
+      safeNumber(stats.matches, 10),
+      1,
+      100
+    )
   );
 
-  const avgGoals = safeNumber(stats.avgGoals);
-  const avgGoalsAgainst = safeNumber(stats.avgGoalsAgainst);
+  const avgGoals = clamp(
+    safeNumber(stats.avgGoals, 0),
+    0,
+    6
+  );
 
-  const avgShots = safeNumber(stats.avgShots);
-  const avgShotsOnTarget = safeNumber(stats.avgShotsOnTarget);
+  const avgGoalsAgainst = clamp(
+    safeNumber(stats.avgGoalsAgainst, 0),
+    0,
+    6
+  );
 
-  const last5Goals = safeNumber(stats.last5Goals);
+  const avgShots = clamp(
+    safeNumber(stats.avgShots, 0),
+    0,
+    40
+  );
+
+  const rawShotsOnTarget = clamp(
+    safeNumber(stats.avgShotsOnTarget, 0),
+    0,
+    25
+  );
+
+  /*
+   * Finalizações no alvo não podem ultrapassar
+   * o total de finalizações.
+   */
+  const avgShotsOnTarget = Math.min(
+    rawShotsOnTarget,
+    avgShots
+  );
+
+  /*
+   * Consideramos last5Goals como o total de gols
+   * marcados nos últimos cinco jogos.
+   */
+  const last5Goals = clamp(
+    safeNumber(stats.last5Goals, 0),
+    0,
+    30
+  );
 
   /* ===============================
      DERIVED FEATURES
@@ -26,19 +113,73 @@ export function normalizeStats(stats: any) {
 
   const shotAccuracy =
     avgShots > 0
-      ? avgShotsOnTarget / avgShots
+      ? clamp(
+          avgShotsOnTarget / avgShots,
+          0,
+          1
+        )
       : 0;
 
-  const offensiveEfficiency =
+  /*
+   * Gols por finalização no alvo.
+   *
+   * O cap evita que amostras pequenas ou dados
+   * inconsistentes criem eficiências extremas.
+   *
+   * Esse valor não deve ser utilizado sozinho
+   * para aumentar lambda ou probabilidade.
+   */
+  const rawOffensiveEfficiency =
     avgShotsOnTarget > 0
       ? avgGoals / avgShotsOnTarget
       : 0;
 
-  const defensiveFragility =
-    avgGoalsAgainst / Math.max(avgGoals, 0.5);
+  const offensiveEfficiency = clamp(
+    rawOffensiveEfficiency,
+    0,
+    0.75
+  );
 
-  const recentGoalTrend =
-    last5Goals / 5;
+  /*
+   * Não dividimos gols sofridos por gols marcados.
+   * Isso misturaria ataque e defesa.
+   *
+   * A escala 1.35 é uma referência neutra provisória
+   * por equipe e deverá futuramente vir da configuração
+   * específica da liga.
+   *
+   * Valor:
+   * < 1 = defesa melhor que a referência
+   * = 1 = defesa próxima da referência
+   * > 1 = defesa mais vulnerável
+   */
+  const referenceGoalsAgainst = 1.35;
+
+  const defensiveFragility = clamp(
+    avgGoalsAgainst / referenceGoalsAgainst,
+    0,
+    3
+  );
+
+  const recentGoalTrend = clamp(
+    last5Goals / 5,
+    0,
+    6
+  );
+
+  /*
+   * Feature de confiabilidade da amostra.
+   *
+   * Cresce de forma conservadora e atinge 1
+   * a partir de 10 partidas.
+   *
+   * Não altera a probabilidade diretamente.
+   */
+  const sampleReliability = clamp(
+    matches / 10,
+    0.1,
+    1
+  );
 
   return {
     ...stats,
@@ -59,20 +200,11 @@ export function normalizeStats(stats: any) {
     shotsPerGame: avgShots,
     shotsOnTargetPerGame: avgShotsOnTarget,
 
-    shotAccuracy: Number(
-      shotAccuracy.toFixed(3)
-    ),
+    shotAccuracy,
+    offensiveEfficiency,
+    defensiveFragility,
+    recentGoalTrend,
 
-    offensiveEfficiency: Number(
-      offensiveEfficiency.toFixed(3)
-    ),
-
-    defensiveFragility: Number(
-      defensiveFragility.toFixed(3)
-    ),
-
-    recentGoalTrend: Number(
-      recentGoalTrend.toFixed(3)
-    )
+    sampleReliability
   };
 }

@@ -1,150 +1,630 @@
 import { poissonTable } from "../math/poisson";
 import { applyDixonColesMatrix } from "../math/dixonColesMatrix";
-import { applySampleAdjustment } from "../model/sampleAdjust";
 import { calculateDynamicRhoAdvanced } from "../model/rhoCalculator";
-
 import { autoLearningEngine } from "../learning/autoLearningEngine";
 
-function safe(n: any, fallback = 0) {
-  const num = Number(n);
-  return isNaN(num) ? fallback : num;
+/* ==========================================
+   PARÂMETROS ESTRUTURAIS
+========================================== */
+
+/*
+ * Limites compatíveis com as proteções atuais
+ * do lambdaBuilder.
+ */
+const MIN_LAMBDA = 0.20;
+const MAX_LAMBDA = 3.20;
+
+/*
+ * Envelope operacional do parâmetro rho.
+ *
+ * Os limites matemáticos específicos da partida
+ * serão calculados posteriormente com base nos
+ * lambdas.
+ *
+ * Esses valores devem ser calibrados futuramente
+ * por máxima verossimilhança e validação
+ * fora da amostra.
+ */
+const MIN_OPERATIONAL_RHO = -0.15;
+const MAX_OPERATIONAL_RHO = 0.10;
+
+/*
+ * Proteção para evitar fatores Dixon-Coles
+ * exatamente iguais a zero.
+ */
+const RHO_EPSILON = 1e-8;
+
+/*
+ * Limites da dimensão da matriz.
+ */
+const MIN_MAX_GOALS = 10;
+const MAX_MAX_GOALS = 20;
+
+/* ==========================================
+   TIPOS
+========================================== */
+
+export interface GoalsModelStats {
+  /*
+   * Mantidos para compatibilidade da assinatura.
+   *
+   * Neste estágio eles não alteram diretamente
+   * a matriz, evitando dupla contagem com os lambdas.
+   */
+  matches?: number;
+  pressure?: number;
+  shots?: number;
+  cards?: number;
+
+  [key: string]: unknown;
 }
 
-function normalizeMatrix(matrix: number[][]): number[][] {
-  const total = matrix.reduce(
-    (acc, row) => acc + row.reduce((s, v) => s + v, 0),
+export interface GoalsModelResult {
+  matrix: number[][];
+
+  over15: number;
+  over25: number;
+
+  under15: number;
+  under25: number;
+
+  meta: {
+    lambdaHome: number;
+    lambdaAway: number;
+    totalLambda: number;
+
+    maxGoals: number;
+
+    baseRho: number;
+    learningRhoShift: number;
+    rho: number;
+
+    independentMatrixMass: number;
+    adjustedMatrixMass: number;
+  };
+}
+
+/* ==========================================
+   UTILITÁRIOS NUMÉRICOS
+========================================== */
+
+function clamp(
+  value: number,
+  min: number,
+  max: number
+): number {
+  return Math.max(
+    min,
+    Math.min(max, value)
+  );
+}
+
+function safeNumber(
+  value: unknown,
+  fallback: number
+): number {
+  const parsed = Number(value);
+
+  return Number.isFinite(parsed)
+    ? parsed
+    : fallback;
+}
+
+function sanitizeProbability(
+  value: unknown
+): number {
+  return clamp(
+    safeNumber(value, 0),
+    0,
+    1
+  );
+}
+
+/* ==========================================
+   DIMENSÃO DINÂMICA DA MATRIZ
+========================================== */
+
+function calculateMaxGoals(
+  lambdaHome: number,
+  lambdaAway: number
+): number {
+  const maximumLambda =
+    Math.max(
+      lambdaHome,
+      lambdaAway
+    );
+
+  /*
+   * Aproximação conservadora da cauda:
+   *
+   * média + 6 desvios-padrão
+   *
+   * Para Poisson:
+   * desvio-padrão = sqrt(lambda)
+   */
+  const estimatedLimit =
+    Math.ceil(
+      maximumLambda +
+      6 * Math.sqrt(maximumLambda)
+    );
+
+  return Math.round(
+    clamp(
+      estimatedLimit,
+      MIN_MAX_GOALS,
+      MAX_MAX_GOALS
+    )
+  );
+}
+
+/* ==========================================
+   MATRIZ POISSON INDEPENDENTE
+========================================== */
+
+function buildIndependentMatrix(
+  homeDistribution: number[],
+  awayDistribution: number[],
+  maxGoals: number
+): number[][] {
+  const matrix: number[][] = [];
+
+  for (
+    let homeGoals = 0;
+    homeGoals <= maxGoals;
+    homeGoals++
+  ) {
+    const row: number[] = [];
+
+    for (
+      let awayGoals = 0;
+      awayGoals <= maxGoals;
+      awayGoals++
+    ) {
+      const homeProbability =
+        sanitizeProbability(
+          homeDistribution[homeGoals]
+        );
+
+      const awayProbability =
+        sanitizeProbability(
+          awayDistribution[awayGoals]
+        );
+
+      const jointProbability =
+        homeProbability *
+        awayProbability;
+
+      row.push(
+        Number.isFinite(jointProbability)
+          ? Math.max(0, jointProbability)
+          : 0
+      );
+    }
+
+    matrix.push(row);
+  }
+
+  return matrix;
+}
+
+/* ==========================================
+   OPERAÇÕES DE MATRIZ
+========================================== */
+
+function calculateMatrixMass(
+  matrix: number[][]
+): number {
+  return matrix.reduce(
+    (total, row) => {
+      return total + row.reduce(
+        (rowTotal, value) => {
+          const safeValue =
+            safeNumber(value, 0);
+
+          return (
+            rowTotal +
+            Math.max(0, safeValue)
+          );
+        },
+        0
+      );
+    },
     0
   );
+}
 
-  if (!isFinite(total) || total <= 0) return matrix;
-
+function sanitizeMatrix(
+  matrix: number[][]
+): number[][] {
   return matrix.map(row =>
-    row.map(v => v / total)
+    row.map(value => {
+      const parsed =
+        safeNumber(value, 0);
+
+      return parsed > 0
+        ? parsed
+        : 0;
+    })
   );
 }
 
-function compressHighProbability(p: number): number {
-  if (p >= 0.88) return 0.84 + (p - 0.88) * 0.45;
-  if (p >= 0.82) return 0.79 + (p - 0.82) * 0.65;
-  if (p >= 0.78) return 0.76 + (p - 0.78) * 0.70;
-  return p;
+function normalizeMatrix(
+  matrix: number[][],
+  fallbackMatrix: number[][]
+): number[][] {
+  const sanitized =
+    sanitizeMatrix(matrix);
+
+  const total =
+    calculateMatrixMass(sanitized);
+
+  if (
+    !Number.isFinite(total) ||
+    total <= 0
+  ) {
+    const safeFallback =
+      sanitizeMatrix(fallbackMatrix);
+
+    const fallbackTotal =
+      calculateMatrixMass(safeFallback);
+
+    if (
+      !Number.isFinite(fallbackTotal) ||
+      fallbackTotal <= 0
+    ) {
+      /*
+       * Última proteção: distribuição totalmente
+       * concentrada em 0–0.
+       *
+       * Este cenário indica erro estrutural anterior,
+       * mas impede NaN e Infinity no restante
+       * do sistema.
+       */
+      return fallbackMatrix.map(
+        (row, rowIndex) =>
+          row.map(
+            (_, columnIndex) =>
+              rowIndex === 0 &&
+              columnIndex === 0
+                ? 1
+                : 0
+          )
+      );
+    }
+
+    return safeFallback.map(row =>
+      row.map(value =>
+        value / fallbackTotal
+      )
+    );
+  }
+
+  return sanitized.map(row =>
+    row.map(value =>
+      value / total
+    )
+  );
 }
+
+/* ==========================================
+   LIMITES MATEMÁTICOS DO RHO
+========================================== */
+
+function constrainRho(
+  rawRho: number,
+  lambdaHome: number,
+  lambdaAway: number
+): number {
+  /*
+   * Para impedir fatores negativos na correção
+   * Dixon-Coles dos placares:
+   *
+   * 0–0
+   * 0–1
+   * 1–0
+   * 1–1
+   *
+   * os limites dependem dos lambdas.
+   */
+
+  const mathematicalMinimum =
+    Math.max(
+      -1 / lambdaHome,
+      -1 / lambdaAway
+    ) + RHO_EPSILON;
+
+  const mathematicalMaximum =
+    Math.min(
+      1,
+      1 / (lambdaHome * lambdaAway)
+    ) - RHO_EPSILON;
+
+  const lowerBound =
+    Math.max(
+      MIN_OPERATIONAL_RHO,
+      mathematicalMinimum
+    );
+
+  const upperBound =
+    Math.min(
+      MAX_OPERATIONAL_RHO,
+      mathematicalMaximum
+    );
+
+  /*
+   * Caso os limites estejam inconsistentes,
+   * rho neutro preserva a matriz independente.
+   */
+  if (
+    !Number.isFinite(lowerBound) ||
+    !Number.isFinite(upperBound) ||
+    lowerBound > upperBound
+  ) {
+    return 0;
+  }
+
+  return clamp(
+    safeNumber(rawRho, 0),
+    lowerBound,
+    upperBound
+  );
+}
+
+/* ==========================================
+   CÁLCULO DO RHO
+========================================== */
+
+function calculateRho(
+  lambdaHome: number,
+  lambdaAway: number
+) {
+  /*
+   * Até a auditoria do rhoCalculator, não
+   * reinserimos finalizações, pressão ou cartões.
+   *
+   * Esses sinais já podem ter influenciado
+   * os lambdas e seriam potencialmente contados
+   * novamente.
+   */
+  const rawBaseRho =
+    calculateDynamicRhoAdvanced({
+      lambdaHome,
+      lambdaAway
+    });
+
+  const baseRho =
+    safeNumber(rawBaseRho, 0);
+
+  const learning =
+    autoLearningEngine();
+
+  const learningRhoShift =
+    learning?.ready
+      ? safeNumber(
+          learning.rhoShift,
+          0
+        )
+      : 0;
+
+  const combinedRho =
+    baseRho +
+    learningRhoShift;
+
+  const rho =
+    constrainRho(
+      combinedRho,
+      lambdaHome,
+      lambdaAway
+    );
+
+  return {
+    baseRho,
+    learningRhoShift,
+    rho
+  };
+}
+
+/* ==========================================
+   EXTRAÇÃO DOS MERCADOS DE GOLS
+========================================== */
+
+function calculateGoalMarkets(
+  matrix: number[][]
+) {
+  let over15 = 0;
+  let over25 = 0;
+
+  for (
+    let homeGoals = 0;
+    homeGoals < matrix.length;
+    homeGoals++
+  ) {
+    const row =
+      matrix[homeGoals] ?? [];
+
+    for (
+      let awayGoals = 0;
+      awayGoals < row.length;
+      awayGoals++
+    ) {
+      const probability =
+        sanitizeProbability(
+          row[awayGoals]
+        );
+
+      const totalGoals =
+        homeGoals + awayGoals;
+
+      if (totalGoals >= 2) {
+        over15 += probability;
+      }
+
+      if (totalGoals >= 3) {
+        over25 += probability;
+      }
+    }
+  }
+
+  const safeOver15 =
+    sanitizeProbability(over15);
+
+  const safeOver25 =
+    sanitizeProbability(over25);
+
+  return {
+    over15: safeOver15,
+    over25: safeOver25,
+
+    under15:
+      sanitizeProbability(
+        1 - safeOver15
+      ),
+
+    under25:
+      sanitizeProbability(
+        1 - safeOver25
+      )
+  };
+}
+
+/* ==========================================
+   GOALS MODEL 7.0
+========================================== */
 
 export function goalsModel(
   lambdaHome: number,
   lambdaAway: number,
-  homeStats?: any,
-  awayStats?: any
-) {
-  const maxGoals = 10;
-
-  const lambdaH = safe(lambdaHome, 1.2);
-  const lambdaA = safe(lambdaAway, 1.0);
-
-  const homeDist = poissonTable(lambdaH, maxGoals);
-  const awayDist = poissonTable(lambdaA, maxGoals);
-
-  let matrix: number[][] = [];
-
-  for (let i = 0; i <= maxGoals; i++) {
-    matrix[i] = [];
-
-    for (let j = 0; j <= maxGoals; j++) {
-      const value = (homeDist[i] ?? 0) * (awayDist[j] ?? 0);
-      matrix[i][j] = isFinite(value) ? value : 0;
-    }
-  }
-
-  let rho = calculateDynamicRhoAdvanced({
-    lambdaHome,
-    lambdaAway,
-    shotsPressure: homeStats?.pressure,
-    shotVolume: homeStats?.shots,
-    cardsIntensity: homeStats?.cards
-  });
-
-  const learning = autoLearningEngine();
-
-  if (learning?.ready && learning.rhoShift) {
-    rho += learning.rhoShift;
-  }
-
-  rho = Math.max(-0.15, Math.min(-0.02, rho));
-
-  matrix = applyDixonColesMatrix(
-    matrix,
-    lambdaH,
-    lambdaA,
-    rho
+  _homeStats?: GoalsModelStats,
+  _awayStats?: GoalsModelStats
+): GoalsModelResult {
+  /*
+   * Lambdas inválidos voltam para bases neutras.
+   *
+   * Normalmente essa proteção não deverá ser
+   * acionada, pois o lambdaBuilder já valida
+   * esses valores.
+   */
+  const lambdaH = clamp(
+    safeNumber(lambdaHome, 1.32),
+    MIN_LAMBDA,
+    MAX_LAMBDA
   );
 
-  matrix = normalizeMatrix(matrix);
+  const lambdaA = clamp(
+    safeNumber(lambdaAway, 1.23),
+    MIN_LAMBDA,
+    MAX_LAMBDA
+  );
 
-  let over15 = 0;
-  let over25 = 0;
-  let over35 = 0;
-
-  for (let i = 0; i <= maxGoals; i++) {
-    for (let j = 0; j <= maxGoals; j++) {
-      const prob = matrix[i][j] ?? 0;
-      const total = i + j;
-
-      if (total > 1) over15 += prob;
-      if (total > 2) over25 += prob;
-      if (total > 3) over35 += prob;
-    }
-  }
-
-  let adjustedOver15 = over15;
-  let adjustedOver25 = over25;
-  let adjustedOver35 = over35;
-
-  if (homeStats?.matches && awayStats?.matches) {
-    const sampleSize = Math.min(
-      safe(homeStats.matches, 0),
-      safe(awayStats.matches, 0)
+  const maxGoals =
+    calculateMaxGoals(
+      lambdaH,
+      lambdaA
     );
 
-    if (sampleSize > 0) {
-      adjustedOver15 = applySampleAdjustment(
-        over15,
-        sampleSize,
-        0.72
-      );
+  /* ==========================================
+     DISTRIBUIÇÕES POISSON
+  ========================================== */
 
-      adjustedOver25 = applySampleAdjustment(
-        over25,
-        sampleSize,
-        0.50
-      );
+  const homeDistribution =
+    poissonTable(
+      lambdaH,
+      maxGoals
+    );
 
-      adjustedOver35 = applySampleAdjustment(
-        over35,
-        sampleSize,
-        0.32
-      );
-    }
-  }
+  const awayDistribution =
+    poissonTable(
+      lambdaA,
+      maxGoals
+    );
 
-  adjustedOver15 = compressHighProbability(adjustedOver15);
-  adjustedOver25 = Math.max(0.05, Math.min(0.85, adjustedOver25));
-  adjustedOver35 = Math.max(0.02, Math.min(0.70, adjustedOver35));
+  const independentMatrix =
+    buildIndependentMatrix(
+      homeDistribution,
+      awayDistribution,
+      maxGoals
+    );
+
+  const independentMatrixMass =
+    calculateMatrixMass(
+      independentMatrix
+    );
+
+  /* ==========================================
+     DIXON-COLES
+  ========================================== */
+
+  const {
+    baseRho,
+    learningRhoShift,
+    rho
+  } = calculateRho(
+    lambdaH,
+    lambdaA
+  );
+
+  const dixonColesMatrix =
+    applyDixonColesMatrix(
+      independentMatrix,
+      lambdaH,
+      lambdaA,
+      rho
+    );
+
+  const sanitizedAdjustedMatrix =
+    sanitizeMatrix(
+      dixonColesMatrix
+    );
+
+  const adjustedMatrixMass =
+    calculateMatrixMass(
+      sanitizedAdjustedMatrix
+    );
+
+  const matrix =
+    normalizeMatrix(
+      sanitizedAdjustedMatrix,
+      independentMatrix
+    );
+
+  /* ==========================================
+     MERCADOS
+  ========================================== */
+
+  const {
+    over15,
+    over25,
+    under15,
+    under25
+  } = calculateGoalMarkets(matrix);
+
+  /* ==========================================
+     RESULTADO
+  ========================================== */
 
   return {
     matrix,
 
-    over15: adjustedOver15,
-    over25: adjustedOver25,
-    over35: adjustedOver35,
+    over15,
+    over25,
 
-    under15: 1 - adjustedOver15,
-    under25: 1 - adjustedOver25,
-    under35: 1 - adjustedOver35,
+    under15,
+    under25,
 
     meta: {
-      rho,
       lambdaHome: lambdaH,
-      lambdaAway: lambdaA
+      lambdaAway: lambdaA,
+      totalLambda:
+        lambdaH + lambdaA,
+
+      maxGoals,
+
+      baseRho,
+      learningRhoShift,
+      rho,
+
+      independentMatrixMass,
+      adjustedMatrixMass
     }
   };
 }

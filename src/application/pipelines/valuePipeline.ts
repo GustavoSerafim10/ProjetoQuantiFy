@@ -1,151 +1,747 @@
-import { expectedValue } from "../../domain/value/expectedValue";
+import {
+  expectedValue
+} from "../../domain/value/expectedValue";
 
-const EV_THRESHOLDS: Record<string, { elite: number; operational: number; watchlist: number }> = {
-  HOME: { elite: 0.12, operational: 0.08, watchlist: 0.04 },
-  DRAW: { elite: 0.18, operational: 0.12, watchlist: 0.06 },
-  AWAY: { elite: 0.12, operational: 0.08, watchlist: 0.04 },
+/* ==========================================
+   VALUE PIPELINE — QUANTIFY V7
+========================================== */
 
-  OVER_1_5: { elite: 0.14, operational: 0.09, watchlist: 0.04 },
-  OVER_2_5: { elite: 0.13, operational: 0.08, watchlist: 0.04 },
+/*
+ * Responsabilidade:
+ *
+ * - receber as probabilidades oficiais;
+ * - localizar a odd correspondente;
+ * - calcular odd justa;
+ * - calcular probabilidade implícita;
+ * - calcular expected value;
+ * - calcular edge probabilístico;
+ * - produzir diagnósticos de valor.
+ *
+ * Este arquivo não:
+ *
+ * - aplica odd mínima estratégica;
+ * - classifica entradas como ELITE;
+ * - modifica risco;
+ * - modifica confiança;
+ * - seleciona o melhor mercado;
+ * - toma decisão de aposta.
+ */
 
-  BTTS_YES: { elite: 0.14, operational: 0.08, watchlist: 0.04 },
-  BTTS_NO: { elite: 0.13, operational: 0.08, watchlist: 0.04 },
+/* ==========================================
+   MERCADOS
+========================================== */
 
-  DOUBLE_CHANCE_1X: { elite: 0.08, operational: 0.05, watchlist: 0.025 },
-  DOUBLE_CHANCE_X2: { elite: 0.08, operational: 0.05, watchlist: 0.025 },
-};
+export type ValueMarket =
+  | "HOME"
+  | "DRAW"
+  | "AWAY"
+  | "OVER_1_5"
+  | "OVER_2_5"
+  | "BTTS_YES"
+  | "BTTS_NO"
+  | "DOUBLE_CHANCE_1X"
+  | "DOUBLE_CHANCE_X2";
 
-const MIN_ODDS: Record<string, number> = {
-  HOME: 1.45,
-  DRAW: 2.80,
-  AWAY: 1.45,
+/* ==========================================
+   CONTRATOS
+========================================== */
 
-  OVER_1_5: 1.40,
-  OVER_2_5: 1.55,
+export type ValueStatus =
+  | "POSITIVE"
+  | "NEUTRAL"
+  | "NEGATIVE";
 
-  BTTS_YES: 1.55,
-  BTTS_NO: 1.50,
+export interface ValueMarketResult {
+  market: ValueMarket;
 
-  DOUBLE_CHANCE_1X: 1.30,
-  DOUBLE_CHANCE_X2: 1.30,
-};
+  probability: number;
+  impliedProbability: number;
 
-const ODDS_ALIASES: Record<string, string[]> = {
-  HOME: ["HOME", "home", "HOME_WIN"],
-  DRAW: ["DRAW", "draw"],
-  AWAY: ["AWAY", "away", "AWAY_WIN"],
+  odd: number;
+  fairOdd: number;
 
-  OVER_1_5: ["OVER_1_5", "over15", "OVER15", "over1_5"],
-  OVER_2_5: ["OVER_2_5", "over25", "OVER25", "over2_5"],
+  /*
+   * Expected return por unidade apostada:
+   *
+   * EV = probability × odd - 1
+   */
+  ev: number;
 
-  BTTS_YES: ["BTTS_YES", "bttsYes", "BTTSYES"],
-  BTTS_NO: ["BTTS_NO", "bttsNo", "BTTSNO"],
+  /*
+   * Diferença entre probabilidade do modelo
+   * e probabilidade implícita da odd.
+   */
+  probabilityEdge: number;
 
-  DOUBLE_CHANCE_1X: ["DOUBLE_CHANCE_1X", "homeOrDraw", "1X"],
-  DOUBLE_CHANCE_X2: ["DOUBLE_CHANCE_X2", "awayOrDraw", "X2"],
-};
+  /*
+   * Campo legado.
+   *
+   * A partir desta versão representa o edge
+   * probabilístico, e não uma cópia do EV.
+   */
+  edge: number;
 
-function safeNumber(n: any, fallback = 0) {
-  const num = Number(n);
-  return Number.isFinite(num) ? num : fallback;
+  hasValue: boolean;
+  valueStatus: ValueStatus;
+
+  debug: {
+    sourceProbability: number;
+    sourceOdd: number;
+
+    fairOddCalculation: number;
+    impliedProbabilityCalculation: number;
+
+    expectedValueCalculation: number;
+    probabilityEdgeCalculation: number;
+  };
 }
 
-function getOdd(market: string, odds: Record<string, number>) {
-  const aliases = ODDS_ALIASES[market] ?? [market];
+export interface RejectedValueMarket {
+  market: string;
 
-  for (const key of aliases) {
-    const odd = safeNumber(odds?.[key], 0);
-
-    if (odd > 1.01) return odd;
-  }
-
-  return null;
+  reason:
+    | "UNSUPPORTED_MARKET"
+    | "INVALID_PROBABILITY"
+    | "ODD_NOT_FOUND"
+    | "INVALID_ODD";
 }
 
-function getValueWarning(
-  market: string,
-  probability: number,
-  odd: number,
-  ev: number
-): string | null {
-  const minOdd = MIN_ODDS[market] ?? 1.45;
+export interface ValuePipelineDebug {
+  valid: boolean;
 
-  if (odd < minOdd) {
-    return "ODD_TOO_LOW";
-  }
+  probabilityValid: boolean;
 
-  if (probability >= 0.84 && odd < 1.42) {
-    return "OVERCONFIDENCE_RISK";
-  }
+  receivedMarkets: number;
+  generatedMarkets: number;
+  rejectedMarkets: number;
 
-  if (odd < 1.40 && ev < 0.16) {
-    return "LOW_ODD_FAKE_VALUE";
-  }
+  receivedOdds: Record<string, number>;
 
-  if (ev <= 0) {
-    return "NEGATIVE_EV";
-  }
+  rejected: RejectedValueMarket[];
 
-  return null;
+  error?: string;
 }
+
+/* ==========================================
+   ODDS ALIASES
+========================================== */
+
+/*
+ * Esta compatibilidade pode ser removida no
+ * futuro quando todas as entradas utilizarem
+ * um contrato canônico único.
+ */
+const ODDS_ALIASES:
+  Record<ValueMarket, string[]> = {
+    HOME: [
+      "HOME",
+      "home",
+      "HOME_WIN",
+      "homeWin"
+    ],
+
+    DRAW: [
+      "DRAW",
+      "draw"
+    ],
+
+    AWAY: [
+      "AWAY",
+      "away",
+      "AWAY_WIN",
+      "awayWin"
+    ],
+
+    OVER_1_5: [
+      "OVER_1_5",
+      "over15",
+      "OVER15",
+      "over1_5"
+    ],
+
+    OVER_2_5: [
+      "OVER_2_5",
+      "over25",
+      "OVER25",
+      "over2_5"
+    ],
+
+    BTTS_YES: [
+      "BTTS_YES",
+      "bttsYes",
+      "BTTSYES"
+    ],
+
+    BTTS_NO: [
+      "BTTS_NO",
+      "bttsNo",
+      "BTTSNO"
+    ],
+
+    DOUBLE_CHANCE_1X: [
+      "DOUBLE_CHANCE_1X",
+      "homeOrDraw",
+      "1X"
+    ],
+
+    DOUBLE_CHANCE_X2: [
+      "DOUBLE_CHANCE_X2",
+      "awayOrDraw",
+      "X2"
+    ]
+  };
+
+/* ==========================================
+   PIPELINE
+========================================== */
 
 export function valuePipeline(
   data: any,
   odds: Record<string, number>
 ) {
-  const probs = data?.probs || {};
+  const probabilityValid =
+    data?.probabilityValid !== false;
 
-  const markets = Object.entries(probs)
-    .map(([market, probability]) => {
-      const prob = safeNumber(probability, 0);
-      const odd = getOdd(market, odds);
+  const probabilityEntries =
+    getProbabilityEntries(
+      data?.probs
+    );
 
-      if (!odd || prob <= 0 || prob >= 1) {
-        return null;
-      }
+  const safeOdds =
+    isRecord(odds)
+      ? odds
+      : {};
 
-      const ev = expectedValue(prob, odd);
-      const fairOdd = 1 / prob;
-      const edge = odd / fairOdd - 1;
+  /*
+   * Caso o probabilityPipeline tenha declarado
+   * sua saída como inválida, nenhum valor deve
+   * ser calculado.
+   */
+  if (!probabilityValid) {
+    const debug:
+      ValuePipelineDebug = {
+        valid: false,
 
-      const thresholds =
-        EV_THRESHOLDS[market] ??
-        { elite: 0.15, operational: 0.10, watchlist: 0.04 };
+        probabilityValid:
+          false,
 
-      const warning = getValueWarning(market, prob, odd, ev);
+        receivedMarkets:
+          probabilityEntries.length,
 
-      let tier = "NO_VALUE";
+        generatedMarkets: 0,
+        rejectedMarkets:
+          probabilityEntries.length,
 
-      if (!warning || warning === "OVERCONFIDENCE_RISK") {
-        if (ev >= thresholds.elite) tier = "ELITE";
-        else if (ev >= thresholds.operational) tier = "OPERACIONAL";
-        else if (ev >= thresholds.watchlist) tier = "WATCHLIST";
-      }
+        receivedOdds:
+          safeOdds,
 
-      return {
-        market,
-        probability: Number(prob.toFixed(4)),
-        odd,
-        fairOdd: Number(fairOdd.toFixed(4)),
-        ev: Number(ev.toFixed(4)),
-        edge: Number(edge.toFixed(4)),
-        tier,
-        warning,
+        rejected:
+          probabilityEntries.map(
+            ([market]) => ({
+              market,
+
+              reason:
+                "INVALID_PROBABILITY"
+            })
+          ),
+
+        error:
+          "INVALID_PROBABILITY_PIPELINE"
       };
-    })
-    .filter(Boolean);
+
+    return {
+      ...data,
+
+      valueValid:
+        false,
+
+      markets: [],
+
+      debug: {
+        ...(data?.debug ?? {}),
+
+        valuePipeline:
+          debug
+      }
+    };
+  }
+
+  const markets:
+    ValueMarketResult[] = [];
+
+  const rejected:
+    RejectedValueMarket[] = [];
+
+  for (
+    const [
+      rawMarket,
+      rawProbability
+    ] of probabilityEntries
+  ) {
+    const market =
+      parseValueMarket(
+        rawMarket
+      );
+
+    if (!market) {
+      rejected.push({
+        market:
+          rawMarket,
+
+        reason:
+          "UNSUPPORTED_MARKET"
+      });
+
+      continue;
+    }
+
+    const probability =
+      parseProbability(
+        rawProbability
+      );
+
+    if (probability === null) {
+      rejected.push({
+        market,
+
+        reason:
+          "INVALID_PROBABILITY"
+      });
+
+      continue;
+    }
+
+    const oddLookup =
+      findOdd(
+        market,
+        safeOdds
+      );
+
+    if (!oddLookup.found) {
+      rejected.push({
+        market,
+
+        reason:
+          oddLookup.reason
+      });
+
+      continue;
+    }
+
+    const odd =
+      oddLookup.odd;
+
+    const impliedProbability =
+      1 / odd;
+
+    const fairOdd =
+      probability > 0
+        ? 1 / probability
+        : Number.POSITIVE_INFINITY;
+
+    const rawEv =
+      expectedValue(
+        probability,
+        odd
+      );
+
+    const ev =
+      parseFiniteNumber(
+        rawEv
+      );
+
+    if (ev === null) {
+      rejected.push({
+        market,
+
+        reason:
+          "INVALID_PROBABILITY"
+      });
+
+      continue;
+    }
+
+    const probabilityEdge =
+      probability -
+      impliedProbability;
+
+    const valueStatus =
+      classifyValueStatus(
+        ev
+      );
+
+    const roundedProbability =
+      roundNumber(
+        probability
+      );
+
+    const roundedOdd =
+      roundNumber(
+        odd
+      );
+
+    const roundedFairOdd =
+      roundNumber(
+        fairOdd
+      );
+
+    const roundedImpliedProbability =
+      roundNumber(
+        impliedProbability
+      );
+
+    const roundedEv =
+      roundNumber(
+        ev
+      );
+
+    const roundedProbabilityEdge =
+      roundNumber(
+        probabilityEdge
+      );
+
+    markets.push({
+      market,
+
+      probability:
+        roundedProbability,
+
+      impliedProbability:
+        roundedImpliedProbability,
+
+      odd:
+        roundedOdd,
+
+      fairOdd:
+        roundedFairOdd,
+
+      ev:
+        roundedEv,
+
+      probabilityEdge:
+        roundedProbabilityEdge,
+
+      /*
+       * Compatibilidade temporária.
+       */
+      edge:
+        roundedProbabilityEdge,
+
+      hasValue:
+        ev > 0,
+
+      valueStatus,
+
+      debug: {
+        sourceProbability:
+          probability,
+
+        sourceOdd:
+          odd,
+
+        fairOddCalculation:
+          fairOdd,
+
+        impliedProbabilityCalculation:
+          impliedProbability,
+
+        expectedValueCalculation:
+          ev,
+
+        probabilityEdgeCalculation:
+          probabilityEdge
+      }
+    });
+  }
+
+  const valueValid =
+    markets.length > 0;
+
+  const debug:
+    ValuePipelineDebug = {
+      valid:
+        valueValid,
+
+      probabilityValid:
+        true,
+
+      receivedMarkets:
+        probabilityEntries.length,
+
+      generatedMarkets:
+        markets.length,
+
+      rejectedMarkets:
+        rejected.length,
+
+      receivedOdds:
+        safeOdds,
+
+      rejected,
+
+      ...(
+        valueValid
+          ? {}
+          : {
+              error:
+                "NO_VALID_VALUE_MARKETS"
+            }
+      )
+    };
 
   return {
     ...data,
+
+    valueValid,
+
     markets,
 
     debug: {
-      ...(data.debug || {}),
+      ...(data?.debug ?? {}),
+
       valuePipeline: {
-        receivedOdds: odds,
-        generatedMarkets: markets.length,
-        markets,
-      },
-    },
+        ...debug,
+
+        markets
+      }
+    }
   };
+}
+
+/* ==========================================
+   LOCALIZAÇÃO DA ODD
+========================================== */
+
+function findOdd(
+  market: ValueMarket,
+  odds: Record<string, number>
+):
+  | {
+      found: true;
+      odd: number;
+      alias: string;
+    }
+  | {
+      found: false;
+      reason:
+        | "ODD_NOT_FOUND"
+        | "INVALID_ODD";
+    } {
+  const aliases =
+    ODDS_ALIASES[market];
+
+  let invalidOddFound =
+    false;
+
+  for (const alias of aliases) {
+    if (
+      !Object.prototype.hasOwnProperty.call(
+        odds,
+        alias
+      )
+    ) {
+      continue;
+    }
+
+    const odd =
+      parseOdd(
+        odds[alias]
+      );
+
+    if (odd !== null) {
+      return {
+        found: true,
+        odd,
+        alias
+      };
+    }
+
+    invalidOddFound =
+      true;
+  }
+
+  return {
+    found: false,
+
+    reason:
+      invalidOddFound
+        ? "INVALID_ODD"
+        : "ODD_NOT_FOUND"
+  };
+}
+
+/* ==========================================
+   CLASSIFICAÇÃO DESCRITIVA
+========================================== */
+
+/*
+ * Esta classificação apenas descreve o sinal
+ * matemático do EV.
+ *
+ * Não representa decisão operacional.
+ */
+function classifyValueStatus(
+  ev: number
+): ValueStatus {
+  const epsilon =
+    1e-9;
+
+  if (ev > epsilon) {
+    return "POSITIVE";
+  }
+
+  if (ev < -epsilon) {
+    return "NEGATIVE";
+  }
+
+  return "NEUTRAL";
+}
+
+/* ==========================================
+   MERCADOS SUPORTADOS
+========================================== */
+
+function parseValueMarket(
+  value: unknown
+): ValueMarket | null {
+  const market =
+    String(value ?? "")
+      .trim()
+      .toUpperCase();
+
+  switch (market) {
+    case "HOME":
+    case "DRAW":
+    case "AWAY":
+    case "OVER_1_5":
+    case "OVER_2_5":
+    case "BTTS_YES":
+    case "BTTS_NO":
+    case "DOUBLE_CHANCE_1X":
+    case "DOUBLE_CHANCE_X2":
+      return market;
+
+    default:
+      return null;
+  }
+}
+
+/* ==========================================
+   VALIDAÇÃO
+========================================== */
+
+function parseProbability(
+  value: unknown
+): number | null {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    typeof value === "boolean"
+  ) {
+    return null;
+  }
+
+  const parsed =
+    Number(value);
+
+  if (
+    !Number.isFinite(parsed) ||
+    parsed < 0 ||
+    parsed > 1
+  ) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function parseOdd(
+  value: unknown
+): number | null {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    typeof value === "boolean"
+  ) {
+    return null;
+  }
+
+  const parsed =
+    Number(value);
+
+  if (
+    !Number.isFinite(parsed) ||
+    parsed <= 1
+  ) {
+    return null;
+  }
+
+  return parsed;
+}
+function parseFiniteNumber(
+  value: unknown
+): number | null {
+  const parsed =
+    Number(value);
+
+  return Number.isFinite(parsed)
+    ? parsed
+    : null;
+}
+
+function getProbabilityEntries(
+  value: unknown
+): Array<[string, unknown]> {
+  if (!isRecord(value)) {
+    return [];
+  }
+
+  return Object.entries(
+    value
+  );
+}
+
+function isRecord(
+  value: unknown
+): value is Record<string, any> {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value)
+  );
+}
+
+/* ==========================================
+   ARREDONDAMENTO
+========================================== */
+
+function roundNumber(
+  value: number,
+  decimals = 6
+): number {
+  /*
+   * Infinity é preservado para representar
+   * corretamente fairOdd quando P = 0.
+   */
+  if (
+    value === Number.POSITIVE_INFINITY ||
+    value === Number.NEGATIVE_INFINITY
+  ) {
+    return value;
+  }
+
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  const factor =
+    10 ** decimals;
+
+  return (
+    Math.round(
+      value * factor
+    ) / factor
+  );
 }

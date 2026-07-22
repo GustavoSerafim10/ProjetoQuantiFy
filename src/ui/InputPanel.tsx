@@ -1,140 +1,448 @@
-import { useState, useEffect } from "react";
+import {
+  useEffect,
+  useState,
+  type ChangeEvent,
+  type ReactNode
+} from "react";
 
-/* ===========================
-   🔥 ROW (FORA DO COMPONENTE)
-=========================== */
+/* ==========================================
+   INPUT PANEL — QUANTIFY V7
+========================================== */
 
-function Row({ label, home, away, form, handleChange }: any) {
+/*
+ * Responsabilidade:
+ *
+ * - receber os dados manuais da partida;
+ * - incorporar dados do ComparisonPanel;
+ * - manter campos editáveis;
+ * - converter números apenas no envio;
+ * - montar o payload oficial da análise;
+ * - não executar cálculos quantitativos.
+ */
 
-  function getValue(name: string) {
-    return form[name] || "";
-  }
+/* ==========================================
+   CONTRATOS
+========================================== */
 
-  function parse(v: any) {
-    return parseFloat(v) || 0;
-  }
+type FormState =
+  Record<string, string>;
 
-  const h = parse(form[home]);
-  const a = parse(form[away]);
+type ExternalInputData =
+  Record<string, number>;
 
-  const homeBetter = h > a;
-  const awayBetter = a > h;
+type NumericStats =
+  Record<string, number>;
 
-  const diff = a !== 0 ? ((h - a) / a) * 100 : 0;
+export interface AnalysisPayload {
+  match: {
+    home: string;
+    away: string;
+    league: string;
+  };
+
+  stats: {
+    home: NumericStats;
+    away: NumericStats;
+  };
+
+  odds: Record<string, number>;
+}
+
+interface InputPanelProps {
+  onAnalyze: (
+    data: AnalysisPayload
+  ) => void | Promise<void>;
+
+  externalData?:
+    ExternalInputData | null;
+}
+
+interface RowProps {
+  label: string;
+
+  home: string;
+  away: string;
+
+  form: FormState;
+
+  handleChange: (
+    event:
+      ChangeEvent<HTMLInputElement>
+  ) => void;
+
+  integer?: boolean;
+  percentage?: boolean;
+}
+
+interface CardProps {
+  title: string;
+  children: ReactNode;
+}
+
+/* ==========================================
+   LINHA COMPARATIVA
+========================================== */
+
+function Row({
+  label,
+  home,
+  away,
+  form,
+  handleChange,
+  integer = false,
+  percentage = false
+}: RowProps) {
+  const homeValue =
+    parseOptionalNumber(
+      form[home]
+    );
+
+  const awayValue =
+    parseOptionalNumber(
+      form[away]
+    );
+
+  const bothValuesExist =
+    homeValue !== null &&
+    awayValue !== null;
+
+  const homeBetter =
+    bothValuesExist &&
+    homeValue >
+      awayValue;
+
+  const awayBetter =
+    bothValuesExist &&
+    awayValue >
+      homeValue;
+
+  const difference =
+    bothValuesExist &&
+    awayValue !== 0
+      ? (
+          (
+            homeValue -
+            awayValue
+          ) /
+          Math.abs(
+            awayValue
+          )
+        ) * 100
+      : 0;
 
   return (
     <div className="grid grid-cols-3 gap-4 items-center py-3 px-3 rounded-xl hover:bg-white/5">
 
       <input
+        type="number"
+        inputMode={
+          integer
+            ? "numeric"
+            : "decimal"
+        }
+        step={
+          integer
+            ? "1"
+            : "any"
+        }
+        min="0"
+        max={
+          percentage
+            ? "100"
+            : undefined
+        }
         name={home}
-        value={getValue(home)}
-        onChange={handleChange}
-        className={`inputElite ${homeBetter ? "border-green-500" : ""}`}
+        value={
+          form[home] ??
+          ""
+        }
+        onChange={
+          handleChange
+        }
+        aria-label={`${label} do mandante`}
+        className={
+          `inputElite ${
+            homeBetter
+              ? "border-green-500"
+              : ""
+          }`
+        }
       />
 
       <div className="text-center">
-        <div className="text-xs text-zinc-400">{label}</div>
+        <div className="text-xs text-zinc-400">
+          {label}
+        </div>
 
-        {diff !== 0 && (
-          <div className={`text-[11px] mt-1 font-semibold ${diff > 0 ? "text-green-400" : "text-red-400"}`}>
-            {diff > 0 ? "↑" : "↓"} {Math.abs(diff).toFixed(0)}%
-          </div>
-        )}
+        {bothValuesExist &&
+          Math.abs(
+            difference
+          ) > 0.01 && (
+            <div
+              className={
+                `text-[11px] mt-1 font-semibold ${
+                  difference > 0
+                    ? "text-green-400"
+                    : "text-red-400"
+                }`
+              }
+            >
+              {difference > 0
+                ? "↑"
+                : "↓"}{" "}
+
+              {Math.abs(
+                difference
+              ).toFixed(0)}
+              %
+            </div>
+          )}
       </div>
 
       <input
+        type="number"
+        inputMode={
+          integer
+            ? "numeric"
+            : "decimal"
+        }
+        step={
+          integer
+            ? "1"
+            : "any"
+        }
+        min="0"
+        max={
+          percentage
+            ? "100"
+            : undefined
+        }
         name={away}
-        value={getValue(away)}
-        onChange={handleChange}
-        className={`inputElite ${awayBetter ? "border-green-500" : ""}`}
+        value={
+          form[away] ??
+          ""
+        }
+        onChange={
+          handleChange
+        }
+        aria-label={`${label} do visitante`}
+        className={
+          `inputElite ${
+            awayBetter
+              ? "border-green-500"
+              : ""
+          }`
+        }
       />
 
     </div>
   );
 }
 
-/* ===========================
-   🔥 INPUT PANEL
-=========================== */
+/* ==========================================
+   COMPONENTE PRINCIPAL
+========================================== */
 
-export default function InputPanel({ onAnalyze, externalData }: any) {
+export default function InputPanel({
+  onAnalyze,
+  externalData
+}: InputPanelProps) {
+  const [
+    form,
+    setForm
+  ] = useState<FormState>({});
 
-  const [form, setForm] = useState<any>({});
+  const [
+    validationError,
+    setValidationError
+  ] = useState<
+    string | null
+  >(null);
 
-  useEffect(() => {
-    if (externalData) {
-      setForm((prev: any) => ({
-        ...prev,
-        ...externalData
-      }));
-    }
-  }, [externalData]);
+  const [
+    isSubmitting,
+    setIsSubmitting
+  ] = useState(false);
 
-  function handleChange(e: any) {
-    const { name, value } = e.target;
-    setForm((prev: any) => ({
-      ...prev,
-      [name]: value
-    }));
-  }
+  /* ==========================================
+     DADOS EXTERNOS
+  ========================================== */
 
-  function getValue(name: string) {
-    return form[name] || "";
-  }
-
-  function parse(v: any) {
-    return parseFloat(v) || 0;
-  }
-
-  /* ===========================
-     🚀 SUBMIT (AGORA CORRETO)
-  ============================ */
-
-  function handleSubmit() {
-
-    const data = {
-      match: {
-        home: form.homeTeam,
-        away: form.awayTeam,
-        league: form.league
-      },
-
-      stats: {
-        home: {
-          goalsFor: parse(form.homeGoals),
-          goalsAgainst: parse(form.homeConceded),
-          shotsOnTarget: parse(form.homeShotsOnTarget),
-          bigChances: parse(form.homeBigChances),
-          possession: parse(form.homePossession)
-        },
-        away: {
-          goalsFor: parse(form.awayGoals),
-          goalsAgainst: parse(form.awayConceded),
-          shotsOnTarget: parse(form.awayShotsOnTarget),
-          bigChances: parse(form.awayBigChances),
-          possession: parse(form.awayPossession)
-        }
-      },
-
-      odds: {
-        home: parse(form.oddHome),
-        draw: parse(form.oddDraw),
-        away: parse(form.oddAway),
-
-        over15: parse(form.oddOver15),
-        over25: parse(form.oddOver25),
-
-        bttsYes: parse(form.oddBTTSYes),
-        bttsNo: parse(form.oddBTTSNo),
-
-        homeOrDraw: parse(form.odd1X),
-        awayOrDraw: parse(form.oddX2)
+  useEffect(
+    () => {
+      if (!externalData) {
+        return;
       }
-    };
 
-    console.log("🔥 DATA FINAL:", data);
+      const convertedData:
+        FormState = {};
 
-    onAnalyze(data);
+      for (
+        const [
+          key,
+          value
+        ] of Object.entries(
+          externalData
+        )
+      ) {
+        convertedData[key] =
+          Number.isFinite(
+            Number(value)
+          )
+            ? String(value)
+            : "";
+      }
+
+      setForm(
+        previous => ({
+          ...previous,
+          ...convertedData
+        })
+      );
+    },
+    [
+      externalData
+    ]
+  );
+
+  /* ==========================================
+     ALTERAÇÃO DOS CAMPOS
+  ========================================== */
+
+  function handleChange(
+    event:
+      ChangeEvent<HTMLInputElement>
+  ) {
+    const {
+      name,
+      value
+    } = event.target;
+
+    setValidationError(
+      null
+    );
+
+    setForm(
+      previous => ({
+        ...previous,
+
+        [name]:
+          value
+      })
+    );
+  }
+
+  /* ==========================================
+     SUBMIT
+  ========================================== */
+
+  async function handleSubmit() {
+    const homeTeam =
+      String(
+        form.homeTeam ??
+        ""
+      ).trim();
+
+    const awayTeam =
+      String(
+        form.awayTeam ??
+        ""
+      ).trim();
+
+    const league =
+      String(
+        form.league ??
+        ""
+      ).trim();
+
+    if (
+      !homeTeam ||
+      !awayTeam
+    ) {
+      setValidationError(
+        "Informe os nomes do time mandante e do visitante."
+      );
+
+      return;
+    }
+
+    const odds =
+      buildOddsPayload(
+        form
+      );
+
+    if (
+      Object.keys(
+        odds
+      ).length === 0
+    ) {
+      setValidationError(
+        "Informe pelo menos uma odd válida para realizar a análise."
+      );
+
+      return;
+    }
+
+    const data:
+      AnalysisPayload = {
+        match: {
+          home:
+            homeTeam,
+
+          away:
+            awayTeam,
+
+          league
+        },
+
+        stats: {
+          home:
+            buildTeamStats(
+              form,
+              "home"
+            ),
+
+          away:
+            buildTeamStats(
+              form,
+              "away"
+            )
+        },
+
+        odds
+      };
+
+    console.log(
+      "🔥 DATA FINAL:",
+      data
+    );
+
+    setIsSubmitting(
+      true
+    );
+
+    try {
+      await Promise.resolve(
+        onAnalyze(
+          data
+        )
+      );
+    } catch (error) {
+      console.error(
+        "Falha ao encaminhar a análise:",
+        error
+      );
+
+      setValidationError(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível executar a análise."
+      );
+    } finally {
+      setIsSubmitting(
+        false
+      );
+    }
   }
 
   return (
@@ -143,83 +451,362 @@ export default function InputPanel({ onAnalyze, externalData }: any) {
       <div className="max-w-3xl mx-auto space-y-8">
 
         {/* HEADER */}
-        <div className="grid grid-cols-3 gap-4">
-          <input name="homeTeam" value={getValue("homeTeam")} onChange={handleChange} placeholder="🏠 Casa" className="inputElite" />
-          <input name="league" value={getValue("league")} onChange={handleChange} placeholder="🏆 Liga" className="inputElite" />
-          <input name="awayTeam" value={getValue("awayTeam")} onChange={handleChange} placeholder="🚀 Fora" className="inputElite" />
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <input
+            name="homeTeam"
+            value={
+              form.homeTeam ??
+              ""
+            }
+            onChange={
+              handleChange
+            }
+            placeholder="🏠 Casa"
+            className="inputElite"
+          />
+
+          <input
+            name="league"
+            value={
+              form.league ??
+              ""
+            }
+            onChange={
+              handleChange
+            }
+            placeholder="🏆 Liga"
+            className="inputElite"
+          />
+
+          <input
+            name="awayTeam"
+            value={
+              form.awayTeam ??
+              ""
+            }
+            onChange={
+              handleChange
+            }
+            placeholder="🚀 Fora"
+            className="inputElite"
+          />
         </div>
 
+        {/* GERAL */}
+
         <Card title="📊 Geral">
-          <Row label="Nota" home="homeRating" away="awayRating" form={form} handleChange={handleChange} />
-          <Row label="Partidas" home="homeMatches" away="awayMatches" form={form} handleChange={handleChange} />
-          <Row label="Gols" home="homeGoals" away="awayGoals" form={form} handleChange={handleChange} />
-          <Row label="Sofridos" home="homeConceded" away="awayConceded" form={form} handleChange={handleChange} />
-          <Row label="Assistências" home="homeAssists" away="awayAssists" form={form} handleChange={handleChange} />
+          <Row
+            label="Nota"
+            home="homeRating"
+            away="awayRating"
+            form={form}
+            handleChange={handleChange}
+          />
+
+          <Row
+            label="Partidas"
+            home="homeMatches"
+            away="awayMatches"
+            form={form}
+            handleChange={handleChange}
+            integer
+          />
+
+          <Row
+            label="Gols"
+            home="homeGoals"
+            away="awayGoals"
+            form={form}
+            handleChange={handleChange}
+          />
+
+          <Row
+            label="Sofridos"
+            home="homeConceded"
+            away="awayConceded"
+            form={form}
+            handleChange={handleChange}
+          />
+
+          <Row
+            label="Assistências"
+            home="homeAssists"
+            away="awayAssists"
+            form={form}
+            handleChange={handleChange}
+          />
         </Card>
+
+        {/* ATAQUE */}
 
         <Card title="⚔️ Ataque">
-          <Row label="Gols/jogo" home="homeGoalsPG" away="awayGoalsPG" form={form} handleChange={handleChange} />
-          <Row label="Chutes no gol" home="homeShotsOnTarget" away="awayShotsOnTarget" form={form} handleChange={handleChange} />
-          <Row label="Grandes chances" home="homeBigChances" away="awayBigChances" form={form} handleChange={handleChange} />
-          <Row label="Perdidas" home="homeBigChancesMissed" away="awayBigChancesMissed" form={form} handleChange={handleChange} />
+          <Row
+            label="Gols/jogo"
+            home="homeGoalsPG"
+            away="awayGoalsPG"
+            form={form}
+            handleChange={handleChange}
+          />
+
+          <Row
+            label="Chutes no gol"
+            home="homeShotsOnTarget"
+            away="awayShotsOnTarget"
+            form={form}
+            handleChange={handleChange}
+          />
+
+          <Row
+            label="Grandes chances"
+            home="homeBigChances"
+            away="awayBigChances"
+            form={form}
+            handleChange={handleChange}
+          />
+
+          <Row
+            label="Perdidas"
+            home="homeBigChancesMissed"
+            away="awayBigChancesMissed"
+            form={form}
+            handleChange={handleChange}
+          />
         </Card>
+
+        {/* PASSE */}
 
         <Card title="🎯 Passe">
-          <Row label="Posse %" home="homePossession" away="awayPossession" form={form} handleChange={handleChange} />
-          <Row label="Passes" home="homePasses" away="awayPasses" form={form} handleChange={handleChange} />
-          <Row label="Bolas longas" home="homeLongBalls" away="awayLongBalls" form={form} handleChange={handleChange} />
+          <Row
+            label="Posse %"
+            home="homePossession"
+            away="awayPossession"
+            form={form}
+            handleChange={handleChange}
+            percentage
+          />
+
+          <Row
+            label="Passes"
+            home="homePasses"
+            away="awayPasses"
+            form={form}
+            handleChange={handleChange}
+          />
+
+          <Row
+            label="Bolas longas"
+            home="homeLongBalls"
+            away="awayLongBalls"
+            form={form}
+            handleChange={handleChange}
+          />
         </Card>
+
+        {/* DEFESA */}
 
         <Card title="🛡 Defesa">
-          <Row label="Clean Sheets" home="homeCleanSheets" away="awayCleanSheets" form={form} handleChange={handleChange} />
-          <Row label="Gols sofridos/jogo" home="homeConcededPG" away="awayConcededPG" form={form} handleChange={handleChange} />
-          <Row label="Interceptações" home="homeInterceptions" away="awayInterceptions" form={form} handleChange={handleChange} />
-          <Row label="Desarmes" home="homeTackles" away="awayTackles" form={form} handleChange={handleChange} />
-          <Row label="Cortes" home="homeClearances" away="awayClearances" form={form} handleChange={handleChange} />
-          <Row label="Defesas" home="homeSaves" away="awaySaves" form={form} handleChange={handleChange} />
+          <Row
+            label="Clean Sheets"
+            home="homeCleanSheets"
+            away="awayCleanSheets"
+            form={form}
+            handleChange={handleChange}
+          />
+
+          <Row
+            label="Gols sofridos/jogo"
+            home="homeConcededPG"
+            away="awayConcededPG"
+            form={form}
+            handleChange={handleChange}
+          />
+
+          <Row
+            label="Interceptações"
+            home="homeInterceptions"
+            away="awayInterceptions"
+            form={form}
+            handleChange={handleChange}
+          />
+
+          <Row
+            label="Desarmes"
+            home="homeTackles"
+            away="awayTackles"
+            form={form}
+            handleChange={handleChange}
+          />
+
+          <Row
+            label="Cortes"
+            home="homeClearances"
+            away="awayClearances"
+            form={form}
+            handleChange={handleChange}
+          />
+
+          <Row
+            label="Defesas"
+            home="homeSaves"
+            away="awaySaves"
+            form={form}
+            handleChange={handleChange}
+          />
         </Card>
+
+        {/* OUTROS */}
 
         <Card title="📦 Outros">
-          <Row label="Faltas" home="homeFouls" away="awayFouls" form={form} handleChange={handleChange} />
-          <Row label="Impedimentos" home="homeOffsides" away="awayOffsides" form={form} handleChange={handleChange} />
-          <Row label="Laterais" home="homeThrowIns" away="awayThrowIns" form={form} handleChange={handleChange} />
-          <Row label="Amarelos" home="homeYellow" away="awayYellow" form={form} handleChange={handleChange} />
-          <Row label="Vermelhos" home="homeRed" away="awayRed" form={form} handleChange={handleChange} />
+          <Row
+            label="Faltas"
+            home="homeFouls"
+            away="awayFouls"
+            form={form}
+            handleChange={handleChange}
+          />
+
+          <Row
+            label="Impedimentos"
+            home="homeOffsides"
+            away="awayOffsides"
+            form={form}
+            handleChange={handleChange}
+          />
+
+          <Row
+            label="Laterais"
+            home="homeThrowIns"
+            away="awayThrowIns"
+            form={form}
+            handleChange={handleChange}
+          />
+
+          <Row
+            label="Amarelos"
+            home="homeYellow"
+            away="awayYellow"
+            form={form}
+            handleChange={handleChange}
+          />
+
+          <Row
+            label="Vermelhos"
+            home="homeRed"
+            away="awayRed"
+            form={form}
+            handleChange={handleChange}
+          />
         </Card>
 
-        {/* 💰 ODDS */}
+        {/* ODDS */}
+
         <Card title="💰 Odds">
 
-          <div className="grid grid-cols-3 gap-3">
-            <input name="oddHome" placeholder="Casa" onChange={handleChange} className="inputElite" />
-            <input name="oddDraw" placeholder="Empate" onChange={handleChange} className="inputElite" />
-            <input name="oddAway" placeholder="Fora" onChange={handleChange} className="inputElite" />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <OddInput
+              name="oddHome"
+              placeholder="Casa"
+              form={form}
+              onChange={handleChange}
+            />
+
+            <OddInput
+              name="oddDraw"
+              placeholder="Empate"
+              form={form}
+              onChange={handleChange}
+            />
+
+            <OddInput
+              name="oddAway"
+              placeholder="Fora"
+              form={form}
+              onChange={handleChange}
+            />
           </div>
 
-          <div className="grid grid-cols-2 gap-3 mt-4">
-            <input name="oddOver15" placeholder="Over 1.5" onChange={handleChange} className="inputElite" />
-            <input name="oddOver25" placeholder="Over 2.5" onChange={handleChange} className="inputElite" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+            <OddInput
+              name="oddOver15"
+              placeholder="Over 1.5"
+              form={form}
+              onChange={handleChange}
+            />
+
+            <OddInput
+              name="oddOver25"
+              placeholder="Over 2.5"
+              form={form}
+              onChange={handleChange}
+            />
           </div>
 
-          <div className="grid grid-cols-2 gap-3 mt-4">
-            <input name="oddBTTSYes" placeholder="BTTS Sim" onChange={handleChange} className="inputElite" />
-            <input name="oddBTTSNo" placeholder="BTTS Não" onChange={handleChange} className="inputElite" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+            <OddInput
+              name="oddBTTSYes"
+              placeholder="BTTS Sim"
+              form={form}
+              onChange={handleChange}
+            />
+
+            <OddInput
+              name="oddBTTSNo"
+              placeholder="BTTS Não"
+              form={form}
+              onChange={handleChange}
+            />
           </div>
 
-          <div className="grid grid-cols-2 gap-3 mt-4">
-            <input name="odd1X" placeholder="1X (Casa/Empate)" onChange={handleChange} className="inputElite" />
-            <input name="oddX2" placeholder="X2 (Fora/Empate)" onChange={handleChange} className="inputElite" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+            <OddInput
+              name="odd1X"
+              placeholder="1X (Casa/Empate)"
+              form={form}
+              onChange={handleChange}
+            />
+
+            <OddInput
+              name="oddX2"
+              placeholder="X2 (Fora/Empate)"
+              form={form}
+              onChange={handleChange}
+            />
           </div>
 
         </Card>
 
+        {/* ERRO */}
+
+        {validationError && (
+          <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-400">
+            ⚠️ {validationError}
+          </div>
+        )}
+
+        {/* SUBMIT */}
+
         <button
-          onClick={handleSubmit}
-          className="w-full py-4 rounded-xl font-bold text-white
-          bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500
-          hover:scale-[1.02] transition shadow-lg"
+          type="button"
+          onClick={
+            handleSubmit
+          }
+          disabled={
+            isSubmitting
+          }
+          className={
+            `w-full py-4 rounded-xl font-bold text-white
+             bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500
+             transition shadow-lg ${
+               isSubmitting
+                 ? "opacity-60 cursor-wait"
+                 : "hover:scale-[1.02]"
+             }`
+          }
         >
-          🚀 ANALISAR JOGO
+          {isSubmitting
+            ? "⏳ ANALISANDO..."
+            : "🚀 ANALISAR JOGO"}
         </button>
 
       </div>
@@ -227,18 +814,399 @@ export default function InputPanel({ onAnalyze, externalData }: any) {
   );
 }
 
-/* ===========================
-   CARD
-=========================== */
+/* ==========================================
+   ODD INPUT
+========================================== */
 
-function Card({ title, children }: any) {
+function OddInput({
+  name,
+  placeholder,
+  form,
+  onChange
+}: {
+  name: string;
+  placeholder: string;
+  form: FormState;
+
+  onChange: (
+    event:
+      ChangeEvent<HTMLInputElement>
+  ) => void;
+}) {
   return (
-    <div className="bg-gradient-to-br from-[#121826] to-[#0f172a] p-6 rounded-2xl border border-zinc-800 shadow-xl backdrop-blur">
-      <h2 className="text-sm text-zinc-400 mb-4 text-center font-semibold tracking-wide relative">
-        <span className="px-3 bg-[#121826] relative z-10">{title}</span>
-        <div className="absolute top-1/2 left-0 w-full h-[1px] bg-zinc-700 -z-0"></div>
-      </h2>
-      <div className="space-y-1">{children}</div>
-    </div>
+    <input
+      type="number"
+      inputMode="decimal"
+      step="0.01"
+      min="1.01"
+      name={name}
+      value={
+        form[name] ??
+        ""
+      }
+      placeholder={
+        placeholder
+      }
+      onChange={
+        onChange
+      }
+      className="inputElite"
+    />
   );
+}
+
+/* ==========================================
+   CARD
+========================================== */
+
+function Card({
+  title,
+  children
+}: CardProps) {
+  return (
+    <section className="bg-gradient-to-br from-[#121826] to-[#0f172a] p-6 rounded-2xl border border-zinc-800 shadow-xl backdrop-blur">
+      <h2 className="text-sm text-zinc-400 mb-4 text-center font-semibold tracking-wide relative">
+        <span className="px-3 bg-[#121826] relative z-10">
+          {title}
+        </span>
+
+        <div className="absolute top-1/2 left-0 w-full h-[1px] bg-zinc-700 -z-0" />
+      </h2>
+
+      <div className="space-y-1">
+        {children}
+      </div>
+    </section>
+  );
+}
+
+/* ==========================================
+   TEAM STATS PAYLOAD
+========================================== */
+
+function buildTeamStats(
+  form: FormState,
+  side:
+    | "home"
+    | "away"
+): NumericStats {
+  const prefix =
+    side === "home"
+      ? "home"
+      : "away";
+
+  /*
+   * Mantemos os aliases já utilizados pelo
+   * projeto e incluímos os campos completos
+   * preenchidos na interface.
+   */
+  return removeInvalidNumbers({
+    rating:
+      readNumber(
+        form,
+        `${prefix}Rating`
+      ),
+
+    matches:
+      readNumber(
+        form,
+        `${prefix}Matches`
+      ),
+
+    goalsFor:
+      readNumber(
+        form,
+        `${prefix}Goals`
+      ),
+
+    goalsAgainst:
+      readNumber(
+        form,
+        `${prefix}Conceded`
+      ),
+
+    goalsPerGame:
+      readNumber(
+        form,
+        `${prefix}GoalsPG`
+      ),
+
+    goalsConcededPerGame:
+      readNumber(
+        form,
+        `${prefix}ConcededPG`
+      ),
+
+    assists:
+      readNumber(
+        form,
+        `${prefix}Assists`
+      ),
+
+    shotsOnTarget:
+      readNumber(
+        form,
+        `${prefix}ShotsOnTarget`
+      ),
+
+    bigChances:
+      readNumber(
+        form,
+        `${prefix}BigChances`
+      ),
+
+    bigChancesMissed:
+      readNumber(
+        form,
+        `${prefix}BigChancesMissed`
+      ),
+
+    possession:
+      readNumber(
+        form,
+        `${prefix}Possession`
+      ),
+
+    passes:
+      readNumber(
+        form,
+        `${prefix}Passes`
+      ),
+
+    longBalls:
+      readNumber(
+        form,
+        `${prefix}LongBalls`
+      ),
+
+    cleanSheets:
+      readNumber(
+        form,
+        `${prefix}CleanSheets`
+      ),
+
+    interceptions:
+      readNumber(
+        form,
+        `${prefix}Interceptions`
+      ),
+
+    tackles:
+      readNumber(
+        form,
+        `${prefix}Tackles`
+      ),
+
+    clearances:
+      readNumber(
+        form,
+        `${prefix}Clearances`
+      ),
+
+    saves:
+      readNumber(
+        form,
+        `${prefix}Saves`
+      ),
+
+    fouls:
+      readNumber(
+        form,
+        `${prefix}Fouls`
+      ),
+
+    offsides:
+      readNumber(
+        form,
+        `${prefix}Offsides`
+      ),
+
+    throwIns:
+      readNumber(
+        form,
+        `${prefix}ThrowIns`
+      ),
+
+    yellowCards:
+      readNumber(
+        form,
+        `${prefix}Yellow`
+      ),
+
+    redCards:
+      readNumber(
+        form,
+        `${prefix}Red`
+      )
+  });
+}
+
+/* ==========================================
+   ODDS PAYLOAD
+========================================== */
+
+function buildOddsPayload(
+  form: FormState
+): Record<string, number> {
+  return removeInvalidOdds({
+    home:
+      readNumber(
+        form,
+        "oddHome"
+      ),
+
+    draw:
+      readNumber(
+        form,
+        "oddDraw"
+      ),
+
+    away:
+      readNumber(
+        form,
+        "oddAway"
+      ),
+
+    over15:
+      readNumber(
+        form,
+        "oddOver15"
+      ),
+
+    over25:
+      readNumber(
+        form,
+        "oddOver25"
+      ),
+
+    bttsYes:
+      readNumber(
+        form,
+        "oddBTTSYes"
+      ),
+
+    bttsNo:
+      readNumber(
+        form,
+        "oddBTTSNo"
+      ),
+
+    homeOrDraw:
+      readNumber(
+        form,
+        "odd1X"
+      ),
+
+    awayOrDraw:
+      readNumber(
+        form,
+        "oddX2"
+      )
+  });
+}
+
+/* ==========================================
+   HELPERS
+========================================== */
+
+function readNumber(
+  form: FormState,
+  key: string
+): number | null {
+  return parseOptionalNumber(
+    form[key]
+  );
+}
+
+function parseOptionalNumber(
+  value: unknown
+): number | null {
+  if (
+    value === "" ||
+    value === null ||
+    value === undefined
+  ) {
+    return null;
+  }
+
+  const parsed =
+    Number(
+      String(value)
+        .replace(
+          ",",
+          "."
+        )
+    );
+
+  return Number.isFinite(
+    parsed
+  )
+    ? parsed
+    : null;
+}
+
+function removeInvalidNumbers(
+  input:
+    Record<
+      string,
+      number | null
+    >
+): NumericStats {
+  const output:
+    NumericStats = {};
+
+  for (
+    const [
+      key,
+      value
+    ] of Object.entries(
+      input
+    )
+  ) {
+    if (
+      value !== null &&
+      Number.isFinite(
+        value
+      ) &&
+      value >= 0
+    ) {
+      output[key] =
+        value;
+    }
+  }
+
+  return output;
+}
+
+function removeInvalidOdds(
+  input:
+    Record<
+      string,
+      number | null
+    >
+): Record<string, number> {
+  const output:
+    Record<string, number> = {};
+
+  for (
+    const [
+      key,
+      value
+    ] of Object.entries(
+      input
+    )
+  ) {
+    if (
+      value !== null &&
+      Number.isFinite(
+        value
+      ) &&
+      value > 1
+    ) {
+      output[key] =
+        value;
+    }
+  }
+
+  return output;
 }

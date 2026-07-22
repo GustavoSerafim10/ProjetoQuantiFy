@@ -1,181 +1,451 @@
-import { monteCarloPoisson } from "../../domain/simulation/monteCarloPoisson";
+import {
+  monteCarloPoisson,
+  type MonteCarloMatchResult,
+  type MonteCarloOptions
+} from "../../domain/simulation/monteCarloPoisson";
 
-/* ===========================
-   HELPERS
-=========================== */
+/* ==========================================
+   MONTE CARLO ADAPTER — QUANTIFY V7
+========================================== */
 
-function clamp(n: number, min: number, max: number) {
-  return Math.max(min, Math.min(n, max));
+/*
+ * Responsabilidade:
+ *
+ * - receber os lambdas oficiais do pipeline;
+ * - validar a entrada;
+ * - executar o Monte Carlo;
+ * - adaptar o resultado para a aplicação;
+ * - preservar compatibilidade com consumidores antigos.
+ *
+ * Este arquivo não:
+ *
+ * - reconstrói lambdas;
+ * - recalcula forma ou pressão;
+ * - normaliza expectativa de gols;
+ * - calibra probabilidades;
+ * - escolhe mercado;
+ * - calcula EV;
+ * - toma decisão.
+ */
+
+/* ==========================================
+   CONTRATOS
+========================================== */
+
+export interface RunMonteCarloInput {
+  lambdaHome: number;
+  lambdaAway: number;
+
+  simulations?: number;
+
+  /*
+   * Gerador opcional para testes reproduzíveis.
+   */
+  random?: () => number;
 }
 
-function safe(n: any, fallback = 0) {
-  const num = Number(n);
-  return isNaN(num) ? fallback : num;
+export interface MonteCarloAdapterProbabilities {
+  homeWin: number;
+  draw: number;
+  awayWin: number;
+
+  over15: number;
+  over25: number;
+
+  bttsYes: number;
+  bttsNo: number;
+
+  doubleChance1X: number;
+  doubleChanceX2: number;
 }
 
-/* 🔥 ANTI-PROB IRREAL */
-function calibrateProbability(p: number) {
-  if (p > 0.90) return 0.90;
-  if (p < 0.05) return 0.05;
-  return p;
-}
+export interface MonteCarloAdapterOutput {
+  valid: boolean;
 
-/* ===========================
-   NORMALIZAÇÃO LEVE
-=========================== */
+  probabilities: MonteCarloAdapterProbabilities;
 
-function normalizeLambdas(home: number, away: number) {
-  const total = home + away;
+  /*
+   * Campos legados temporários.
+   *
+   * Mantidos para não quebrar consumidores
+   * que ainda usam os nomes anteriores.
+   */
+  homeWinProb: number;
+  drawProb: number;
+  awayWinProb: number;
 
-  const MIN_TOTAL = 1.2;
-  const MAX_TOTAL = 3.8;
+  over15Prob: number;
+  over25Prob: number;
 
-  if (total <= 0) {
-    return { home: 1.2, away: 1.0 };
-  }
+  bttsProb: number;
+  bttsNoProb: number;
 
-  if (total >= MIN_TOTAL && total <= MAX_TOTAL) {
-    return { home, away };
-  }
+  doubleChance1XProb: number;
+  doubleChanceX2Prob: number;
 
-  const targetTotal = clamp(total, MIN_TOTAL, MAX_TOTAL);
-  const scale = targetTotal / total;
+  iterations: number;
 
-  return {
-    home: Number((home * scale).toFixed(4)),
-    away: Number((away * scale).toFixed(4))
+  samplingError:
+    MonteCarloMatchResult["samplingError"];
+
+  maxSamplingError: number;
+
+  debug: {
+    source: "pipeline_lambdas";
+
+    model:
+      "INDEPENDENT_POISSON";
+
+    usesDixonColes:
+      false;
+
+    lambdaHome: number;
+    lambdaAway: number;
+    totalLambda: number;
+
+    simulations: number;
+
+    invalidReason?: string;
   };
 }
 
-/* ===========================
-   MODIFIERS (fallback only)
-=========================== */
+/* ==========================================
+   CONSTANTES
+========================================== */
 
-function getPressureFactor(pressure: number) {
-  if (pressure >= 25) return 1.12;
-  if (pressure >= 18) return 1.07;
-  if (pressure >= 12) return 1.03;
-  return 0.98;
+const DEFAULT_SIMULATIONS = 50_000;
+
+const INVALID_PROBABILITIES:
+  MonteCarloAdapterProbabilities = {
+    homeWin: 0,
+    draw: 0,
+    awayWin: 0,
+
+    over15: 0,
+    over25: 0,
+
+    bttsYes: 0,
+    bttsNo: 0,
+
+    doubleChance1X: 0,
+    doubleChanceX2: 0
+  };
+
+const EMPTY_SAMPLING_ERROR:
+  MonteCarloMatchResult["samplingError"] = {
+    homeWin: 0,
+    draw: 0,
+    awayWin: 0,
+
+    over15: 0,
+    over25: 0,
+
+    bttsYes: 0
+  };
+
+/* ==========================================
+   UTILITÁRIOS
+========================================== */
+
+function safeNumber(
+  value: unknown,
+  fallback: number
+): number {
+  const parsed =
+    Number(value);
+
+  return Number.isFinite(parsed)
+    ? parsed
+    : fallback;
 }
 
-function getDefenseFactor(goalsAgainst: number) {
-  if (goalsAgainst <= 0.8) return 0.92;
-  if (goalsAgainst <= 1.2) return 1;
-  if (goalsAgainst <= 1.8) return 1.06;
-  return 1.12;
+function isValidLambda(
+  value: unknown
+): boolean {
+  const parsed =
+    Number(value);
+
+  return (
+    Number.isFinite(parsed) &&
+    parsed > 0
+  );
 }
 
-function getFormFactor(last5For: number) {
-  if (last5For >= 10) return 1.10;
-  if (last5For >= 7) return 1.05;
-  if (last5For >= 5) return 1;
-  return 0.96;
+function sanitizeSimulations(
+  value: unknown
+): number {
+  const parsed =
+    Math.floor(
+      safeNumber(
+        value,
+        DEFAULT_SIMULATIONS
+      )
+    );
+
+  return parsed > 0
+    ? parsed
+    : DEFAULT_SIMULATIONS;
 }
 
-/* ===========================
-   FALLBACK LAMBDA
-=========================== */
+/* ==========================================
+   RESULTADO INVÁLIDO
+========================================== */
 
-function adjustLambda(base: number, modifiers: number[]) {
-  let adjusted = base;
+function createInvalidResult(
+  input: Partial<RunMonteCarloInput>,
+  reason: string
+): MonteCarloAdapterOutput {
+  const lambdaHome =
+    safeNumber(
+      input.lambdaHome,
+      0
+    );
 
-  for (const m of modifiers) {
-    adjusted *= m;
-  }
+  const lambdaAway =
+    safeNumber(
+      input.lambdaAway,
+      0
+    );
 
-  return clamp(adjusted, 0.4, 2.8);
-}
+  const simulations =
+    sanitizeSimulations(
+      input.simulations
+    );
 
-/* ===========================
-   🚀 MONTE CARLO
-=========================== */
-
-export function runMonteCarlo(data: any) {
-  const home = data?.stats?.home || {};
-  const away = data?.stats?.away || {};
-
-  /* ===========================
-     PRIORIDADE MÁXIMA:
-     usar lambdas finais do pipeline
-  ============================ */
-
-  const hasPipelineLambdas =
-    Number.isFinite(Number(data?.lambdaHome)) &&
-    Number.isFinite(Number(data?.lambdaAway));
-
-  let lambdaHome = safe(data?.lambdaHome, NaN);
-  let lambdaAway = safe(data?.lambdaAway, NaN);
-
-  /* ===========================
-     FALLBACK SECUNDÁRIO
-  ============================ */
-
-  if (!hasPipelineLambdas) {
-    const baseHome = safe(home.goalsFor, 1.2);
-    const baseAway = safe(away.goalsFor, 1.0);
-
-    const homeModifiers = [
-      getPressureFactor(safe(home.pressure, 10)),
-      getFormFactor(safe(home.last5GoalsFor, 5)),
-      getDefenseFactor(safe(away.goalsAgainst, 1.2))
-    ];
-
-    const awayModifiers = [
-      getPressureFactor(safe(away.pressure, 10)),
-      getFormFactor(safe(away.last5GoalsFor, 5)),
-      getDefenseFactor(safe(home.goalsAgainst, 1.2))
-    ];
-
-    lambdaHome = adjustLambda(baseHome, homeModifiers);
-    lambdaAway = adjustLambda(baseAway, awayModifiers);
-  }
-
-  /* ===========================
-     PROTEÇÃO FINAL
-  ============================ */
-
-  lambdaHome = clamp(safe(lambdaHome, 1.2), 0.35, 3.4);
-  lambdaAway = clamp(safe(lambdaAway, 1.0), 0.35, 3.4);
-
-  const normalized = normalizeLambdas(lambdaHome, lambdaAway);
-  lambdaHome = normalized.home;
-  lambdaAway = normalized.away;
-
-  /* ===========================
-     MONTE CARLO
-  ============================ */
-
-  const result = monteCarloPoisson(lambdaHome, lambdaAway, 15000);
-
-  /* ===========================
-     CALIBRAÇÃO FINAL
-  ============================ */
-
-  const over25Prob = calibrateProbability(result.over25);
-  const over15Prob = calibrateProbability(result.over15);
-  const bttsProb = calibrateProbability(result.bttsYes);
-  const homeWinProb = calibrateProbability(result.homeWin);
-  const drawProb = calibrateProbability(result.draw);
-  const awayWinProb = calibrateProbability(result.awayWin);
-
-  /* ===========================
-     OUTPUT
-  ============================ */
+  const totalLambda =
+    Number.isFinite(
+      lambdaHome + lambdaAway
+    )
+      ? lambdaHome + lambdaAway
+      : 0;
 
   return {
-    over25Prob,
-    over15Prob,
-    bttsProb,
-    homeWinProb,
-    drawProb,
-    awayWinProb,
-    mainProb: over25Prob,
+    valid: false,
+
+    probabilities: {
+      ...INVALID_PROBABILITIES
+    },
+
+    homeWinProb: 0,
+    drawProb: 0,
+    awayWinProb: 0,
+
+    over15Prob: 0,
+    over25Prob: 0,
+
+    bttsProb: 0,
+    bttsNoProb: 0,
+
+    doubleChance1XProb: 0,
+    doubleChanceX2Prob: 0,
+
+    iterations: 0,
+
+    samplingError: {
+      ...EMPTY_SAMPLING_ERROR
+    },
+
+    maxSamplingError: 0,
 
     debug: {
-      source: hasPipelineLambdas ? "pipeline_lambdas" : "fallback_rebuild",
+      source:
+        "pipeline_lambdas",
+
+      model:
+        "INDEPENDENT_POISSON",
+
+      usesDixonColes:
+        false,
+
       lambdaHome,
       lambdaAway,
-      totalLambda: Number((lambdaHome + lambdaAway).toFixed(4))
+      totalLambda,
+
+      simulations,
+
+      invalidReason:
+        reason
     }
   };
+}
+
+/* ==========================================
+   ADAPTAÇÃO DO RESULTADO
+========================================== */
+
+function adaptResult(
+  result: MonteCarloMatchResult
+): MonteCarloAdapterOutput {
+  const probabilities:
+    MonteCarloAdapterProbabilities = {
+      homeWin:
+        result.homeWin,
+
+      draw:
+        result.draw,
+
+      awayWin:
+        result.awayWin,
+
+      over15:
+        result.over15,
+
+      over25:
+        result.over25,
+
+      bttsYes:
+        result.bttsYes,
+
+      bttsNo:
+        result.bttsNo,
+
+      doubleChance1X:
+        result.doubleChance1X,
+
+      doubleChanceX2:
+        result.doubleChanceX2
+    };
+
+  return {
+    valid: true,
+
+    probabilities,
+
+    /*
+     * Compatibilidade com o formato anterior.
+     */
+    homeWinProb:
+      probabilities.homeWin,
+
+    drawProb:
+      probabilities.draw,
+
+    awayWinProb:
+      probabilities.awayWin,
+
+    over15Prob:
+      probabilities.over15,
+
+    over25Prob:
+      probabilities.over25,
+
+    bttsProb:
+      probabilities.bttsYes,
+
+    bttsNoProb:
+      probabilities.bttsNo,
+
+    doubleChance1XProb:
+      probabilities.doubleChance1X,
+
+    doubleChanceX2Prob:
+      probabilities.doubleChanceX2,
+
+    iterations:
+      result.iterations,
+
+    samplingError:
+      result.samplingError,
+
+    maxSamplingError:
+      result.maxSamplingError,
+
+    debug: {
+      source:
+        "pipeline_lambdas",
+
+      model:
+        "INDEPENDENT_POISSON",
+
+      usesDixonColes:
+        false,
+
+      lambdaHome:
+        result.lambdaHome,
+
+      lambdaAway:
+        result.lambdaAway,
+
+      totalLambda:
+        result.totalLambda,
+
+      simulations:
+        result.iterations
+    }
+  };
+}
+
+/* ==========================================
+   EXECUÇÃO
+========================================== */
+
+export function runMonteCarlo(
+  input: RunMonteCarloInput
+): MonteCarloAdapterOutput {
+  if (
+    !input ||
+    typeof input !== "object"
+  ) {
+    return createInvalidResult(
+      {},
+      "MONTE_CARLO_INPUT_MISSING"
+    );
+  }
+
+  if (
+    !isValidLambda(
+      input.lambdaHome
+    )
+  ) {
+    return createInvalidResult(
+      input,
+      "INVALID_PIPELINE_HOME_LAMBDA"
+    );
+  }
+
+  if (
+    !isValidLambda(
+      input.lambdaAway
+    )
+  ) {
+    return createInvalidResult(
+      input,
+      "INVALID_PIPELINE_AWAY_LAMBDA"
+    );
+  }
+
+  const simulations =
+    sanitizeSimulations(
+      input.simulations
+    );
+
+  const options:
+    MonteCarloOptions = {};
+
+  if (
+    typeof input.random ===
+    "function"
+  ) {
+    options.random =
+      input.random;
+  }
+
+  const result =
+    monteCarloPoisson(
+      Number(
+        input.lambdaHome
+      ),
+
+      Number(
+        input.lambdaAway
+      ),
+
+      simulations,
+
+      options
+    );
+
+  return adaptResult(
+    result
+  );
 }

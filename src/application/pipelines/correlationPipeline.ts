@@ -1,99 +1,594 @@
-import { applyCorrelationAdjustments } from "../../domain/correlation/correlationEngine";
+import {
+  applyCorrelationAdjustments
+} from "../../domain/correlation/correlationEngine";
 
-export function correlationPipeline(data: any) {
-  const markets = data.markets ?? [];
+/* ==========================================
+   CORRELATION PIPELINE — QUANTIFY V7
+========================================== */
 
-  const adjustedMarkets = applyCorrelationAdjustments(markets, {
-    lambdaHome: data.lambdaHome,
-    lambdaAway: data.lambdaAway,
-    goalExpectationScore: data.goalExpectationScore,
-  });
+/*
+ * Responsabilidade:
+ *
+ * - receber os mercados produzidos pelos
+ *   pipelines anteriores;
+ * - construir o contexto de correlação;
+ * - executar o correlationEngine uma única vez;
+ * - padronizar warnings e penalidades;
+ * - preservar mercados originais para auditoria;
+ * - anexar diagnóstico ao resultado.
+ *
+ * Este arquivo não:
+ *
+ * - cria regras matemáticas de correlação;
+ * - escolhe mercados;
+ * - remove mercados;
+ * - calcula probabilidade;
+ * - calcula EV;
+ * - detecta exposição de uma carteira final;
+ * - aplica penalidades adicionais.
+ */
 
-  const correlatedMarkets = adjustedMarkets.map((m: any) => {
-    const name = String(m.market ?? "").toUpperCase();
+/* ==========================================
+   CONTRATOS
+========================================== */
 
-    const warnings: string[] = [
-      ...((m.warnings as string[]) ?? []),
-    ];
+export interface CorrelationContext {
+  lambdaHome: number | null;
+  lambdaAway: number | null;
+  goalExpectationScore: number | null;
+}
 
-    let correlationPenalty = Number(m.correlationPenalty ?? 0);
+export interface CorrelationPipelineDebug {
+  valid: boolean;
 
-    if (
-      name === "OVER_2_5" &&
-      hasExactMarket(adjustedMarkets, "BTTS_NO")
-    ) {
-      warnings.push("CONFLICT_OVER25_BTTS_NO");
-      correlationPenalty += 0.06;
-    }
+  source:
+    "correlationEngine";
 
-    if (
-      name === "BTTS_NO" &&
-      hasExactMarket(adjustedMarkets, "OVER_2_5")
-    ) {
-      warnings.push("CONFLICT_BTTS_NO_OVER25");
-      correlationPenalty += 0.06;
-    }
+  inputMarkets: number;
+  outputMarkets: number;
 
-    if (
-      name === "HOME_WIN" &&
-      hasExactMarket(adjustedMarkets, "DOUBLE_CHANCE_1X")
-    ) {
-      warnings.push("DUPLICATED_EXPOSURE_HOME_DC");
-      correlationPenalty += 0.03;
-    }
+  adjustedMarkets: number;
+  penalizedMarkets: number;
+  warnedMarkets: number;
 
-    if (
-      name === "AWAY_WIN" &&
-      hasExactMarket(adjustedMarkets, "DOUBLE_CHANCE_X2")
-    ) {
-      warnings.push("DUPLICATED_EXPOSURE_AWAY_DC");
-      correlationPenalty += 0.03;
-    }
+  removedMarkets: number;
 
-    const diff = Math.abs(
-      Number(data.lambdaHome ?? 1) -
-      Number(data.lambdaAway ?? 1)
-    );
+  context: CorrelationContext;
 
-    if (name === "BTTS_YES" && diff > 1.4) {
-      warnings.push("BTTS_YES_UNBALANCED_GAME");
-      correlationPenalty += 0.07;
-    }
+  error?: string;
+
+  note:
+    "Correlation engine adjusts diagnostics and penalties without selecting the final market.";
+}
+
+/* ==========================================
+   PIPELINE
+========================================== */
+
+export function correlationPipeline(
+  data: any
+) {
+  const rawMarkets =
+    Array.isArray(data?.markets)
+      ? data.markets
+      : [];
+
+  const context:
+    CorrelationContext = {
+      lambdaHome:
+        parseFiniteNumber(
+          data?.lambdaHome
+        ),
+
+      lambdaAway:
+        parseFiniteNumber(
+          data?.lambdaAway
+        ),
+
+      goalExpectationScore:
+        parseFiniteNumber(
+          data?.goalExpectationScore
+        )
+    };
+
+  /*
+   * Sem mercados não existe correlação
+   * para aplicar.
+   */
+  if (rawMarkets.length === 0) {
+    const debug:
+      CorrelationPipelineDebug = {
+        valid: false,
+
+        source:
+          "correlationEngine",
+
+        inputMarkets: 0,
+        outputMarkets: 0,
+
+        adjustedMarkets: 0,
+        penalizedMarkets: 0,
+        warnedMarkets: 0,
+
+        removedMarkets: 0,
+
+        context,
+
+        error:
+          "NO_MARKETS_TO_CORRELATE",
+
+        note:
+          "Correlation engine adjusts diagnostics and penalties without selecting the final market."
+      };
 
     return {
-      ...m,
-      correlationPenalty: Number(correlationPenalty.toFixed(4)),
-      warnings,
+      ...data,
+
+      rawMarkets:
+        rawMarkets,
+
+      markets:
+        rawMarkets,
+
+      correlationApplied:
+        false,
+
+      correlationValid:
+        false,
+
       debug: {
-        ...(m.debug || {}),
-        correlationPipeline: {
-          warnings,
-          correlationPenalty: Number(correlationPenalty.toFixed(4)),
-        },
-      },
+        ...(data?.debug ?? {}),
+
+        correlationPipeline:
+          debug
+      }
     };
-  });
+  }
+
+  try {
+    /*
+     * Toda regra de correlação pertence ao
+     * correlationEngine.
+     *
+     * O pipeline apenas orquestra.
+     */
+    const engineResult =
+      applyCorrelationAdjustments(
+        rawMarkets,
+
+        {
+          lambdaHome:
+            context.lambdaHome,
+
+          lambdaAway:
+            context.lambdaAway,
+
+          goalExpectationScore:
+            context.goalExpectationScore
+        }
+      );
+
+    /*
+     * Se o engine retornar algo inesperado,
+     * não inventamos mercados.
+     */
+    if (!Array.isArray(engineResult)) {
+      return createFailedResult(
+        data,
+        rawMarkets,
+        context,
+        "INVALID_CORRELATION_ENGINE_OUTPUT"
+      );
+    }
+
+    const correlatedMarkets =
+      engineResult.map(
+        (
+          market: any,
+          index: number
+        ) =>
+          normalizeCorrelatedMarket(
+            market,
+            index
+          )
+      );
+
+    const adjustedMarkets =
+      countAdjustedMarkets(
+        rawMarkets,
+        correlatedMarkets
+      );
+
+    const penalizedMarkets =
+      correlatedMarkets.filter(
+        market =>
+          market.correlationPenalty > 0
+      ).length;
+
+    const warnedMarkets =
+      correlatedMarkets.filter(
+        market =>
+          market.warnings.length > 0
+      ).length;
+
+    const debug:
+      CorrelationPipelineDebug = {
+        valid: true,
+
+        source:
+          "correlationEngine",
+
+        inputMarkets:
+          rawMarkets.length,
+
+        outputMarkets:
+          correlatedMarkets.length,
+
+        adjustedMarkets,
+        penalizedMarkets,
+        warnedMarkets,
+
+        removedMarkets:
+          Math.max(
+            0,
+            rawMarkets.length -
+              correlatedMarkets.length
+          ),
+
+        context,
+
+        note:
+          "Correlation engine adjusts diagnostics and penalties without selecting the final market."
+      };
+
+    return {
+      ...data,
+
+      /*
+       * Preserva a entrada real do pipeline
+       * para comparação e auditoria.
+       */
+      rawMarkets,
+
+      markets:
+        correlatedMarkets,
+
+      correlationApplied:
+        true,
+
+      correlationValid:
+        true,
+
+      debug: {
+        ...(data?.debug ?? {}),
+
+        correlationPipeline:
+          debug
+      }
+    };
+  } catch (error) {
+    /*
+     * Uma falha de correlação não deve derrubar
+     * toda a análise.
+     *
+     * Entretanto, ela deve ser explicitamente
+     * sinalizada para que o risk/decision pipeline
+     * possa bloquear ou reduzir confiança.
+     */
+    return createFailedResult(
+      data,
+      rawMarkets,
+      context,
+      getErrorMessage(error)
+    );
+  }
+}
+
+/* ==========================================
+   NORMALIZAÇÃO DO MERCADO
+========================================== */
+
+function normalizeCorrelatedMarket(
+  market: any,
+  index: number
+) {
+  const warnings =
+    normalizeWarnings(
+      market?.warnings
+    );
+
+  const correlationPenalty =
+    parseNonNegativeNumber(
+      market?.correlationPenalty
+    ) ?? 0;
 
   return {
-    ...data,
-    markets: correlatedMarkets,
-    rawMarkets: adjustedMarkets,
-    correlationApplied: true,
+    ...market,
+
+    correlationPenalty:
+      roundNumber(
+        correlationPenalty
+      ),
+
+    warnings,
 
     debug: {
-      ...(data.debug || {}),
+      ...(market?.debug ?? {}),
+
       correlationPipeline: {
-        inputMarkets: markets.length,
-        outputMarkets: correlatedMarkets.length,
-        removedMarkets: 0,
-        note: "Correlation no longer hard-filters markets; it only adds warnings and penalties.",
-      },
-    },
+        marketIndex:
+          index,
+
+        correlationPenalty:
+          roundNumber(
+            correlationPenalty
+          ),
+
+        warnings
+      }
+    }
   };
 }
 
-function hasExactMarket(markets: any[], target: string) {
-  return markets.some(
-    m => String(m.market ?? "").toUpperCase() === target
+/* ==========================================
+   RESULTADO DE FALHA
+========================================== */
+
+function createFailedResult(
+  data: any,
+  rawMarkets: any[],
+  context: CorrelationContext,
+  error: string
+) {
+  const unchangedMarkets =
+    rawMarkets.map(
+      (
+        market: any,
+        index: number
+      ) => {
+        const warnings =
+          normalizeWarnings([
+            ...normalizeWarnings(
+              market?.warnings
+            ),
+
+            "CORRELATION_NOT_APPLIED"
+          ]);
+
+        return {
+          ...market,
+
+          warnings,
+
+          debug: {
+            ...(market?.debug ?? {}),
+
+            correlationPipeline: {
+              marketIndex:
+                index,
+
+              correlationPenalty:
+                parseNonNegativeNumber(
+                  market?.correlationPenalty
+                ) ?? 0,
+
+              warnings,
+
+              error
+            }
+          }
+        };
+      }
+    );
+
+  const debug:
+    CorrelationPipelineDebug = {
+      valid: false,
+
+      source:
+        "correlationEngine",
+
+      inputMarkets:
+        rawMarkets.length,
+
+      outputMarkets:
+        unchangedMarkets.length,
+
+      adjustedMarkets: 0,
+      penalizedMarkets: 0,
+
+      warnedMarkets:
+        unchangedMarkets.length,
+
+      removedMarkets: 0,
+
+      context,
+
+      error,
+
+      note:
+        "Correlation engine adjusts diagnostics and penalties without selecting the final market."
+    };
+
+  return {
+    ...data,
+
+    rawMarkets,
+
+    markets:
+      unchangedMarkets,
+
+    correlationApplied:
+      false,
+
+    correlationValid:
+      false,
+
+    debug: {
+      ...(data?.debug ?? {}),
+
+      correlationPipeline:
+        debug
+    }
+  };
+}
+
+/* ==========================================
+   CONTAGEM DE ALTERAÇÕES
+========================================== */
+
+function countAdjustedMarkets(
+  rawMarkets: any[],
+  correlatedMarkets: any[]
+): number {
+  const count =
+    Math.min(
+      rawMarkets.length,
+      correlatedMarkets.length
+    );
+
+  let adjusted = 0;
+
+  for (
+    let index = 0;
+    index < count;
+    index++
+  ) {
+    const rawPenalty =
+      parseNonNegativeNumber(
+        rawMarkets[index]
+          ?.correlationPenalty
+      ) ?? 0;
+
+    const adjustedPenalty =
+      parseNonNegativeNumber(
+        correlatedMarkets[index]
+          ?.correlationPenalty
+      ) ?? 0;
+
+    const rawWarnings =
+      normalizeWarnings(
+        rawMarkets[index]
+          ?.warnings
+      );
+
+    const adjustedWarnings =
+      normalizeWarnings(
+        correlatedMarkets[index]
+          ?.warnings
+      );
+
+    const penaltyChanged =
+      Math.abs(
+        rawPenalty -
+        adjustedPenalty
+      ) > 1e-9;
+
+    const warningsChanged =
+      rawWarnings.join("|") !==
+      adjustedWarnings.join("|");
+
+    if (
+      penaltyChanged ||
+      warningsChanged
+    ) {
+      adjusted++;
+    }
+  }
+
+  /*
+   * Caso o engine altere a quantidade de mercados,
+   * isso também é considerado uma modificação.
+   */
+  adjusted +=
+    Math.abs(
+      rawMarkets.length -
+      correlatedMarkets.length
+    );
+
+  return adjusted;
+}
+
+/* ==========================================
+   HELPERS
+========================================== */
+
+function normalizeWarnings(
+  value: unknown
+): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const normalized =
+    value
+      .map(warning =>
+        String(warning ?? "")
+          .trim()
+      )
+      .filter(Boolean);
+
+  return [
+    ...new Set(normalized)
+  ];
+}
+
+function parseFiniteNumber(
+  value: unknown
+): number | null {
+  const parsed =
+    Number(value);
+
+  return Number.isFinite(parsed)
+    ? parsed
+    : null;
+}
+
+function parseNonNegativeNumber(
+  value: unknown
+): number | null {
+  const parsed =
+    Number(value);
+
+  if (
+    !Number.isFinite(parsed) ||
+    parsed < 0
+  ) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function getErrorMessage(
+  error: unknown
+): string {
+  if (
+    error instanceof Error &&
+    error.message
+  ) {
+    return error.message;
+  }
+
+  return (
+    "CORRELATION_ENGINE_EXECUTION_FAILED"
+  );
+}
+
+function roundNumber(
+  value: number,
+  decimals = 4
+): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  const factor =
+    10 ** decimals;
+
+  return (
+    Math.round(
+      value * factor
+    ) / factor
   );
 }
