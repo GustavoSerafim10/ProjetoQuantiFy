@@ -161,6 +161,32 @@ const StrengthBar = ({
   );
 };
 
+
+const MARKET_LABELS: Record<string, string> = {
+  HOME: "🏠 Casa",
+  DRAW: "🤝 Empate",
+  AWAY: "✈️ Fora",
+
+  DOUBLE_CHANCE_1X: "🏠🤝 Casa ou Empate (1X)",
+  DOUBLE_CHANCE_X2: "🤝✈️ Empate ou Fora (X2)",
+
+  OVER_1_5: "⚽ Mais de 1.5 Gols",
+  OVER_2_5: "⚽ Mais de 2.5 Gols",
+
+  BTTS_YES: "🎯 Ambas Marcam – Sim",
+  BTTS_NO: "🚫 Ambas Marcam – Não"
+};
+
+function getMarketLabel(
+  market?: string
+): string {
+  if (!market) {
+    return "Mercado";
+  }
+
+  return MARKET_LABELS[market] ?? market;
+}
+
 /* ==========================================
    VALUE HELPERS
 ========================================== */
@@ -488,12 +514,9 @@ export default function Dashboard({
       ]
     );
 
-if (!data) {
-  return null;
-}
 
 const dashboardData: DashboardData =
-  data;
+  data ?? {};
 
 const best =
   dashboardData.best ??
@@ -649,8 +672,7 @@ const markets: DashboardMarket[] =
             <div className="flex justify-between items-start gap-3">
               <div>
                 <div className="text-2xl font-bold mt-2 text-green-400">
-                  {best.market ||
-                    "Mercado"}
+                  {getMarketLabel(best.market)}
                 </div>
 
                 <div
@@ -870,8 +892,7 @@ const markets: DashboardMarket[] =
                         </span>
 
                         <span>
-                          {market.market ??
-                            "Mercado"}
+                          {getMarketLabel(market.market)}
                         </span>
                       </div>
 
@@ -1033,8 +1054,7 @@ const markets: DashboardMarket[] =
                     </span>
 
                     <span className="text-zinc-400">
-                      {bet.market ||
-                        "Mercado"}
+                      {getMarketLabel(bet.market)}
                     </span>
 
                     <span className="text-[10px] text-blue-400">

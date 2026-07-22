@@ -395,21 +395,19 @@ function App() {
 
       {/* RESULTADOS */}
 
-      {result && (
-        <>
-          <Dashboard
-            data={
-              result
-            }
-          />
+  {/* DASHBOARD E HISTÓRICO — SEMPRE VISÍVEIS */}
 
-          <GameAnalysisPanel
-            markets={
-              resultMarkets
-            }
-          />
-        </>
-      )}
+<Dashboard
+  data={result}
+/>
+
+{/* ANÁLISE DETALHADA — SOMENTE APÓS ANALISAR */}
+
+{result && (
+  <GameAnalysisPanel
+    markets={resultMarkets}
+  />
+)}
 
     </div>
   );

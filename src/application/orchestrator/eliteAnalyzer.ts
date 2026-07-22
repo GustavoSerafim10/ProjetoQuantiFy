@@ -173,12 +173,13 @@ const ranked =
           ? context.markets.length
           : 0,
 
-      modelMarkets:
-        Array.isArray(
-          model?.markets
-        )
-          ? model.markets.length
-          : 0,
+   modelMarkets:
+  model?.markets &&
+  typeof model.markets === "object"
+    ? Object.keys(
+        model.markets
+      ).length
+    : 0,
 
       probabilityValid:
         probabilities

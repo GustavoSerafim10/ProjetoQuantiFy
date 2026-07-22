@@ -59,26 +59,71 @@ let history: Bet[] = loadFromStorage();
    📥 REGISTRAR APOSTA
 =========================== */
 
-export function registerBet(bet: Bet) {
-  const exists = history.some(b => b.id === bet.id);
+export function registerBet(
+  bet: Bet
+) {
+  const exists =
+    history.some(
+      item =>
+        item.id ===
+        bet.id
+    );
+
   if (exists) {
-    console.warn("⚠️ Bet já registrada:", bet.id);
+    console.warn(
+      "⚠️ Bet já registrada:",
+      bet.id
+    );
+
     return;
   }
 
-  if (!bet.odd || !bet.stake || !bet.market) {
-    console.warn("⚠️ Bet inválida:", bet);
+  if (
+    !bet.odd ||
+    bet.odd <= 1 ||
+    !bet.market
+  ) {
+    console.warn(
+      "⚠️ Bet inválida:",
+      bet
+    );
+
     return;
   }
+
+  const normalizedStake =
+    Number.isFinite(
+      Number(
+        bet.stake
+      )
+    ) &&
+    Number(
+      bet.stake
+    ) > 0
+      ? Number(
+          bet.stake
+        )
+      : 1;
 
   history.push({
     ...bet,
-    profit: 0
+
+    stake:
+      normalizedStake,
+
+    profit:
+      0
   });
 
-  saveToStorage(history);
-}
+  saveToStorage(
+    history
+  );
 
+  console.log(
+    "✅ Bet registrada:",
+    bet
+  );
+}
 /* ===========================
    🧾 LIQUIDAR APOSTA
 =========================== */

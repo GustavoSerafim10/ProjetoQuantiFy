@@ -1,5 +1,7 @@
 import {
   useEffect,
+  useMemo,
+  useRef,
   useState,
   type ChangeEvent,
   type ReactNode
@@ -14,24 +16,202 @@ import {
  *
  * - receber os dados manuais da partida;
  * - incorporar dados do ComparisonPanel;
- * - manter campos editáveis;
+ * - manter os campos editáveis;
  * - converter números apenas no envio;
  * - montar o payload oficial da análise;
+ * - validar coerência básica dos dados;
+ * - registrar a origem dos valores;
  * - não executar cálculos quantitativos.
+ *
+ * Este arquivo não:
+ *
+ * - calcula lambdas;
+ * - calcula probabilidades;
+ * - calcula EV;
+ * - calcula risco;
+ * - classifica entradas;
+ * - toma decisões operacionais.
  */
 
 /* ==========================================
-   CONTRATOS
+   FORMULÁRIO
 ========================================== */
 
+type FormField =
+  | "homeTeam"
+  | "awayTeam"
+  | "league"
+
+  | "homeRating"
+  | "awayRating"
+
+  | "homeMatches"
+  | "awayMatches"
+
+  | "homeGoals"
+  | "awayGoals"
+
+  | "homeConceded"
+  | "awayConceded"
+
+  | "homeAssists"
+  | "awayAssists"
+
+  | "homeGoalsPG"
+  | "awayGoalsPG"
+
+  | "homeShotsOnTarget"
+  | "awayShotsOnTarget"
+
+  | "homeBigChances"
+  | "awayBigChances"
+
+  | "homeBigChancesMissed"
+  | "awayBigChancesMissed"
+
+  | "homePossession"
+  | "awayPossession"
+
+  | "homePasses"
+  | "awayPasses"
+
+  | "homeLongBalls"
+  | "awayLongBalls"
+
+  | "homeCleanSheets"
+  | "awayCleanSheets"
+
+  | "homeConcededPG"
+  | "awayConcededPG"
+
+  | "homeInterceptions"
+  | "awayInterceptions"
+
+  | "homeTackles"
+  | "awayTackles"
+
+  | "homeClearances"
+  | "awayClearances"
+
+  | "homeSaves"
+  | "awaySaves"
+
+  | "homeFouls"
+  | "awayFouls"
+
+  | "homeOffsides"
+  | "awayOffsides"
+
+  | "homeThrowIns"
+  | "awayThrowIns"
+
+  | "homeYellow"
+  | "awayYellow"
+
+  | "homeRed"
+  | "awayRed"
+
+  | "oddHome"
+  | "oddDraw"
+  | "oddAway"
+
+  | "oddOver15"
+  | "oddOver25"
+
+  | "oddBTTSYes"
+  | "oddBTTSNo"
+
+  | "odd1X"
+  | "oddX2";
+
 type FormState =
-  Record<string, string>;
+  Partial<Record<FormField, string>>;
 
-type ExternalInputData =
-  Record<string, number>;
+/* ==========================================
+   DADOS EXTERNOS
+========================================== */
 
-type NumericStats =
-  Record<string, number>;
+/*
+ * O ComparisonPanel pode enviar números,
+ * strings numéricas ou valores ausentes.
+ *
+ * Não restringimos tudo a number porque isso
+ * esconderia problemas reais vindos da origem.
+ */
+export type ExternalInputData =
+  Partial<
+    Record<
+      FormField,
+      number | string | null | undefined
+    >
+  >;
+
+/* ==========================================
+   CONTRATO ESTATÍSTICO OFICIAL
+========================================== */
+
+export interface TeamStatsPayload {
+  rating?: number;
+
+  matches?: number;
+  matchesPlayed?: number;
+
+  goalsFor?: number;
+  goalsAgainst?: number;
+
+  /*
+   * Contrato canônico e aliases temporários.
+   */
+  avgGoals?: number;
+  goalsPerGame?: number;
+  goalsForPerGame?: number;
+
+  avgGoalsAgainst?: number;
+  goalsConcededPerGame?: number;
+  goalsAgainstPerGame?: number;
+
+  assists?: number;
+
+  avgShotsOnTarget?: number;
+  shotsOnTarget?: number;
+  shotsOnTargetPerGame?: number;
+
+  bigChances?: number;
+  bigChancesMissed?: number;
+
+  possession?: number;
+  passes?: number;
+  longBalls?: number;
+
+  cleanSheets?: number;
+
+  interceptions?: number;
+  tackles?: number;
+  clearances?: number;
+  saves?: number;
+
+  fouls?: number;
+  offsides?: number;
+  throwIns?: number;
+
+  yellowCards?: number;
+  redCards?: number;
+}
+
+export interface OddsPayload {
+  home?: number;
+  draw?: number;
+  away?: number;
+
+  over15?: number;
+  over25?: number;
+
+  bttsYes?: number;
+  bttsNo?: number;
+
+  homeOrDraw?: number;
+  awayOrDraw?: number;
+}
 
 export interface AnalysisPayload {
   match: {
@@ -41,12 +221,33 @@ export interface AnalysisPayload {
   };
 
   stats: {
-    home: NumericStats;
-    away: NumericStats;
+    home: TeamStatsPayload;
+    away: TeamStatsPayload;
   };
 
-  odds: Record<string, number>;
+  odds: OddsPayload;
+
+  inputDiagnostics: {
+    source:
+      "MANUAL_OR_COMPARISON_PANEL";
+
+    externalDataReceived:
+      boolean;
+
+    externalDataPartial:
+      boolean;
+
+    externalMissingFields:
+      FormField[];
+
+    warnings:
+      string[];
+  };
 }
+
+/* ==========================================
+   PROPS
+========================================== */
 
 interface InputPanelProps {
   onAnalyze: (
@@ -60,10 +261,14 @@ interface InputPanelProps {
 interface RowProps {
   label: string;
 
-  home: string;
-  away: string;
+  home:
+    FormField;
 
-  form: FormState;
+  away:
+    FormField;
+
+  form:
+    FormState;
 
   handleChange: (
     event:
@@ -78,6 +283,93 @@ interface CardProps {
   title: string;
   children: ReactNode;
 }
+
+/* ==========================================
+   CAMPOS ESTATÍSTICOS CONTROLADOS
+========================================== */
+
+/*
+ * Estes campos devem ser limpos quando uma nova
+ * comparação completa substituir a anterior.
+ *
+ * Não limpamos:
+ *
+ * - nomes dos times;
+ * - liga;
+ * - odds.
+ *
+ * Eles podem vir de outras fontes ou serem
+ * preenchidos manualmente.
+ */
+
+const HOME_STAT_FIELDS: FormField[] = [
+  "homeRating",
+  "homeMatches",
+  "homeGoals",
+  "homeConceded",
+  "homeAssists",
+  "homeGoalsPG",
+  "homeShotsOnTarget",
+  "homeBigChances",
+  "homeBigChancesMissed",
+  "homePossession",
+  "homePasses",
+  "homeLongBalls",
+  "homeCleanSheets",
+  "homeConcededPG",
+  "homeInterceptions",
+  "homeTackles",
+  "homeClearances",
+  "homeSaves",
+  "homeFouls",
+  "homeOffsides",
+  "homeThrowIns",
+  "homeYellow",
+  "homeRed"
+];
+
+const AWAY_STAT_FIELDS: FormField[] = [
+  "awayRating",
+  "awayMatches",
+  "awayGoals",
+  "awayConceded",
+  "awayAssists",
+  "awayGoalsPG",
+  "awayShotsOnTarget",
+  "awayBigChances",
+  "awayBigChancesMissed",
+  "awayPossession",
+  "awayPasses",
+  "awayLongBalls",
+  "awayCleanSheets",
+  "awayConcededPG",
+  "awayInterceptions",
+  "awayTackles",
+  "awayClearances",
+  "awaySaves",
+  "awayFouls",
+  "awayOffsides",
+  "awayThrowIns",
+  "awayYellow",
+  "awayRed"
+];
+
+const REQUIRED_EXTERNAL_STAT_FIELDS: FormField[] = [
+  "homeMatches",
+  "awayMatches",
+
+  "homeGoals",
+  "awayGoals",
+
+  "homeConceded",
+  "awayConceded",
+
+  "homeGoalsPG",
+  "awayGoalsPG",
+
+  "homeConcededPG",
+  "awayConcededPG"
+];
 
 /* ==========================================
    LINHA COMPARATIVA
@@ -260,9 +552,39 @@ export default function InputPanel({
   >(null);
 
   const [
+    inputWarnings,
+    setInputWarnings
+  ] = useState<string[]>([]);
+
+  const [
     isSubmitting,
     setIsSubmitting
   ] = useState(false);
+
+  /*
+   * Armazena uma assinatura dos dados externos
+   * anteriores para evitar reaplicar o mesmo
+   * objeto sem necessidade.
+   */
+  const previousExternalSignature =
+    useRef<string | null>(
+      null
+    );
+
+  /*
+   * Informa se a última carga externa foi
+   * parcial.
+   */
+  const externalDataStatus =
+    useMemo(
+      () =>
+        inspectExternalData(
+          externalData
+        ),
+      [
+        externalData
+      ]
+    );
 
   /* ==========================================
      DADOS EXTERNOS
@@ -274,34 +596,98 @@ export default function InputPanel({
         return;
       }
 
-      const convertedData:
-        FormState = {};
-
-      for (
-        const [
-          key,
-          value
-        ] of Object.entries(
+      const externalSignature =
+        createExternalSignature(
           externalData
-        )
+        );
+
+      if (
+        previousExternalSignature.current ===
+        externalSignature
       ) {
-        convertedData[key] =
-          Number.isFinite(
-            Number(value)
-          )
-            ? String(value)
-            : "";
+        return;
       }
 
+      previousExternalSignature.current =
+        externalSignature;
+
+      console.group(
+        "📥 INPUT PANEL — EXTERNAL DATA"
+      );
+
+      console.log(
+        "RAW EXTERNAL DATA:",
+        externalData
+      );
+
+      console.log(
+        "EXTERNAL DATA STATUS:",
+        externalDataStatus
+      );
+
+      const convertedData =
+        convertExternalDataToForm(
+          externalData
+        );
+
+      console.log(
+        "CONVERTED EXTERNAL DATA:",
+        convertedData
+      );
+
+      setInputWarnings(
+        externalDataStatus.warnings
+      );
+
+      setValidationError(
+        null
+      );
+
       setForm(
-        previous => ({
-          ...previous,
-          ...convertedData
-        })
+        previous => {
+          /*
+           * Limpa os campos estatísticos antigos
+           * antes de aplicar uma nova comparação.
+           *
+           * Isso evita:
+           *
+           * partida anterior + dados parciais
+           * da partida atual.
+           */
+          const cleanedPrevious =
+            clearPreviousStatisticalFields(
+              previous
+            );
+
+          const next: FormState = {
+            ...cleanedPrevious,
+            ...convertedData
+          };
+
+          console.log(
+            "PREVIOUS FORM:",
+            previous
+          );
+
+          console.log(
+            "CLEANED PREVIOUS FORM:",
+            cleanedPrevious
+          );
+
+          console.log(
+            "FINAL FORM AFTER EXTERNAL DATA:",
+            next
+          );
+
+          console.groupEnd();
+
+          return next;
+        }
       );
     },
     [
-      externalData
+      externalData,
+      externalDataStatus
     ]
   );
 
@@ -317,6 +703,19 @@ export default function InputPanel({
       name,
       value
     } = event.target;
+
+    if (
+      !isFormField(
+        name
+      )
+    ) {
+      console.warn(
+        "UNKNOWN_FORM_FIELD:",
+        name
+      );
+
+      return;
+    }
 
     setValidationError(
       null
@@ -366,6 +765,62 @@ export default function InputPanel({
       return;
     }
 
+    const homeStats =
+      buildTeamStats(
+        form,
+        "home"
+      );
+
+    const awayStats =
+      buildTeamStats(
+        form,
+        "away"
+      );
+
+    const requiredFieldErrors =
+      validateRequiredTeamFields({
+        homeStats,
+        awayStats,
+        homeTeam,
+        awayTeam
+      });
+
+    if (
+      requiredFieldErrors.length > 0
+    ) {
+      setValidationError(
+        requiredFieldErrors.join(
+          " "
+        )
+      );
+
+      return;
+    }
+
+    const consistencyErrors = [
+      ...validateTeamConsistency(
+        homeStats,
+        homeTeam
+      ),
+
+      ...validateTeamConsistency(
+        awayStats,
+        awayTeam
+      )
+    ];
+
+    if (
+      consistencyErrors.length > 0
+    ) {
+      setValidationError(
+        consistencyErrors.join(
+          " "
+        )
+      );
+
+      return;
+    }
+
     const odds =
       buildOddsPayload(
         form
@@ -383,6 +838,17 @@ export default function InputPanel({
       return;
     }
 
+    const diagnosticWarnings =
+      normalizeWarnings([
+        ...inputWarnings,
+
+        ...createPayloadWarnings({
+          homeStats,
+          awayStats,
+          externalDataStatus
+        })
+      ]);
+
     const data:
       AnalysisPayload = {
         match: {
@@ -397,25 +863,66 @@ export default function InputPanel({
 
         stats: {
           home:
-            buildTeamStats(
-              form,
-              "home"
-            ),
+            homeStats,
 
           away:
-            buildTeamStats(
-              form,
-              "away"
-            )
+            awayStats
         },
 
-        odds
+        odds,
+
+        inputDiagnostics: {
+          source:
+            "MANUAL_OR_COMPARISON_PANEL",
+
+          externalDataReceived:
+            Boolean(
+              externalData
+            ),
+
+          externalDataPartial:
+            externalDataStatus
+              .partial,
+
+          externalMissingFields:
+            externalDataStatus
+              .missingFields,
+
+          warnings:
+            diagnosticWarnings
+        }
       };
 
+    console.group(
+      "🔥 INPUT PANEL — FINAL PAYLOAD"
+    );
+
     console.log(
-      "🔥 DATA FINAL:",
+      "FORM STATE AT SUBMIT:",
+      form
+    );
+
+    console.log(
+      "HOME STATS PAYLOAD:",
+      homeStats
+    );
+
+    console.log(
+      "AWAY STATS PAYLOAD:",
+      awayStats
+    );
+
+    console.log(
+      "ODDS PAYLOAD:",
+      odds
+    );
+
+    console.log(
+      "ANALYSIS PAYLOAD:",
       data
     );
+
+    console.groupEnd();
 
     setIsSubmitting(
       true
@@ -493,6 +1000,28 @@ export default function InputPanel({
           />
         </div>
 
+        {/* WARNINGS DOS DADOS EXTERNOS */}
+
+        {inputWarnings.length > 0 && (
+          <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-4 text-sm text-yellow-300">
+            <div className="font-bold mb-2">
+              ⚠️ Diagnóstico dos dados recebidos
+            </div>
+
+            <ul className="space-y-1">
+              {inputWarnings.map(
+                warning => (
+                  <li key={warning}>
+                    • {formatWarning(
+                      warning
+                    )}
+                  </li>
+                )
+              )}
+            </ul>
+          </div>
+        )}
+
         {/* GERAL */}
 
         <Card title="📊 Geral">
@@ -519,6 +1048,7 @@ export default function InputPanel({
             away="awayGoals"
             form={form}
             handleChange={handleChange}
+            integer
           />
 
           <Row
@@ -527,6 +1057,7 @@ export default function InputPanel({
             away="awayConceded"
             form={form}
             handleChange={handleChange}
+            integer
           />
 
           <Row
@@ -824,7 +1355,7 @@ function OddInput({
   form,
   onChange
 }: {
-  name: string;
+  name: FormField;
   placeholder: string;
   form: FormState;
 
@@ -889,53 +1420,82 @@ function buildTeamStats(
   side:
     | "home"
     | "away"
-): NumericStats {
+): TeamStatsPayload {
   const prefix =
     side === "home"
       ? "home"
       : "away";
 
-  /*
-   * Mantemos os aliases já utilizados pelo
-   * projeto e incluímos os campos completos
-   * preenchidos na interface.
-   */
-  return removeInvalidNumbers({
+  const matches =
+    readNumber(
+      form,
+      `${prefix}Matches`
+    );
+
+  const goalsFor =
+    readNumber(
+      form,
+      `${prefix}Goals`
+    );
+
+  const goalsAgainst =
+    readNumber(
+      form,
+      `${prefix}Conceded`
+    );
+
+  const goalsPerGame =
+    readNumber(
+      form,
+      `${prefix}GoalsPG`
+    );
+
+  const goalsConcededPerGame =
+    readNumber(
+      form,
+      `${prefix}ConcededPG`
+    );
+
+  const shotsOnTargetPerGame =
+    readNumber(
+      form,
+      `${prefix}ShotsOnTarget`
+    );
+
+  return removeInvalidTeamStats({
     rating:
       readNumber(
         form,
         `${prefix}Rating`
       ),
 
-    matches:
-      readNumber(
-        form,
-        `${prefix}Matches`
-      ),
+    matches,
 
-    goalsFor:
-      readNumber(
-        form,
-        `${prefix}Goals`
-      ),
+    matchesPlayed:
+      matches,
 
-    goalsAgainst:
-      readNumber(
-        form,
-        `${prefix}Conceded`
-      ),
+    goalsFor,
 
-    goalsPerGame:
-      readNumber(
-        form,
-        `${prefix}GoalsPG`
-      ),
+    goalsAgainst,
 
-    goalsConcededPerGame:
-      readNumber(
-        form,
-        `${prefix}ConcededPG`
-      ),
+    /*
+     * Contrato canônico e aliases.
+     */
+    avgGoals:
+      goalsPerGame,
+
+    goalsPerGame,
+
+    goalsForPerGame:
+      goalsPerGame,
+
+    avgGoalsAgainst:
+      goalsConcededPerGame,
+
+    goalsConcededPerGame,
+
+    goalsAgainstPerGame:
+      goalsConcededPerGame,
 
     assists:
       readNumber(
@@ -943,11 +1503,20 @@ function buildTeamStats(
         `${prefix}Assists`
       ),
 
+    /*
+     * Chutes no alvo:
+     *
+     * O InputPanel envia todos os aliases
+     * temporariamente para impedir perda de
+     * dados em módulos antigos.
+     */
+    avgShotsOnTarget:
+      shotsOnTargetPerGame,
+
     shotsOnTarget:
-      readNumber(
-        form,
-        `${prefix}ShotsOnTarget`
-      ),
+      shotsOnTargetPerGame,
+
+    shotsOnTargetPerGame,
 
     bigChances:
       readNumber(
@@ -1042,12 +1611,284 @@ function buildTeamStats(
 }
 
 /* ==========================================
+   VALIDAÇÃO DOS CAMPOS OBRIGATÓRIOS
+========================================== */
+
+function validateRequiredTeamFields({
+  homeStats,
+  awayStats,
+  homeTeam,
+  awayTeam
+}: {
+  homeStats:
+    TeamStatsPayload;
+
+  awayStats:
+    TeamStatsPayload;
+
+  homeTeam:
+    string;
+
+  awayTeam:
+    string;
+}): string[] {
+  const errors:
+    string[] = [];
+
+  validateRequiredStatsForTeam(
+    homeStats,
+    homeTeam,
+    errors
+  );
+
+  validateRequiredStatsForTeam(
+    awayStats,
+    awayTeam,
+    errors
+  );
+
+  return errors;
+}
+
+function validateRequiredStatsForTeam(
+  stats: TeamStatsPayload,
+  teamName: string,
+  errors: string[]
+) {
+  if (
+    !isPositiveNumber(
+      stats.matches
+    )
+  ) {
+    errors.push(
+      `${teamName}: informe a quantidade de partidas.`
+    );
+  }
+
+  if (
+    !isNonNegativeNumber(
+      stats.goalsFor
+    )
+  ) {
+    errors.push(
+      `${teamName}: informe os gols marcados.`
+    );
+  }
+
+  if (
+    !isNonNegativeNumber(
+      stats.goalsAgainst
+    )
+  ) {
+    errors.push(
+      `${teamName}: informe os gols sofridos.`
+    );
+  }
+
+  if (
+    !isNonNegativeNumber(
+      stats.goalsPerGame
+    )
+  ) {
+    errors.push(
+      `${teamName}: informe os gols por jogo.`
+    );
+  }
+
+  if (
+    !isNonNegativeNumber(
+      stats.goalsConcededPerGame
+    )
+  ) {
+    errors.push(
+      `${teamName}: informe os gols sofridos por jogo.`
+    );
+  }
+}
+
+/* ==========================================
+   VALIDAÇÃO DE COERÊNCIA
+========================================== */
+
+function validateTeamConsistency(
+  stats:
+    TeamStatsPayload,
+
+  teamName:
+    string
+): string[] {
+  const errors:
+    string[] = [];
+
+  const matches =
+    stats.matches;
+
+  const goalsFor =
+    stats.goalsFor;
+
+  const goalsAgainst =
+    stats.goalsAgainst;
+
+  const goalsPerGame =
+    stats.goalsPerGame;
+
+  const goalsConcededPerGame =
+    stats.goalsConcededPerGame;
+
+  if (
+    isPositiveNumber(
+      matches
+    ) &&
+    isNonNegativeNumber(
+      goalsFor
+    ) &&
+    isNonNegativeNumber(
+      goalsPerGame
+    )
+  ) {
+    const calculatedGoalsPerGame =
+      goalsFor /
+      matches;
+
+    const difference =
+      Math.abs(
+        calculatedGoalsPerGame -
+        goalsPerGame
+      );
+
+    /*
+     * Tolerância de 0,20 permite arredondamentos
+     * comuns como:
+     *
+     * 28 / 18 = 1,555...
+     * SofaScore = 1,6
+     */
+    if (
+      difference >
+      0.2
+    ) {
+      errors.push(
+        `${teamName}: gols por jogo inconsistentes. ` +
+        `${goalsFor} gols em ${matches} jogos equivalem a ` +
+        `${calculatedGoalsPerGame.toFixed(2)}, mas foi informado ` +
+        `${goalsPerGame.toFixed(2)}.`
+      );
+    }
+  }
+
+  if (
+    isPositiveNumber(
+      matches
+    ) &&
+    isNonNegativeNumber(
+      goalsAgainst
+    ) &&
+    isNonNegativeNumber(
+      goalsConcededPerGame
+    )
+  ) {
+    const calculatedConcededPerGame =
+      goalsAgainst /
+      matches;
+
+    const difference =
+      Math.abs(
+        calculatedConcededPerGame -
+        goalsConcededPerGame
+      );
+
+    if (
+      difference >
+      0.2
+    ) {
+      errors.push(
+        `${teamName}: gols sofridos por jogo inconsistentes. ` +
+        `${goalsAgainst} gols sofridos em ${matches} jogos equivalem a ` +
+        `${calculatedConcededPerGame.toFixed(2)}, mas foi informado ` +
+        `${goalsConcededPerGame.toFixed(2)}.`
+      );
+    }
+  }
+
+  return errors;
+}
+
+/* ==========================================
+   WARNINGS DO PAYLOAD
+========================================== */
+
+function createPayloadWarnings({
+  homeStats,
+  awayStats,
+  externalDataStatus
+}: {
+  homeStats:
+    TeamStatsPayload;
+
+  awayStats:
+    TeamStatsPayload;
+
+  externalDataStatus:
+    ExternalDataInspection;
+}): string[] {
+  const warnings:
+    string[] = [];
+
+  if (
+    externalDataStatus.partial
+  ) {
+    warnings.push(
+      "EXTERNAL_DATA_PARTIAL"
+    );
+  }
+
+  if (
+    homeStats.shotsOnTargetPerGame ===
+    undefined
+  ) {
+    warnings.push(
+      "MISSING_HOME_SHOTS_ON_TARGET"
+    );
+  }
+
+  if (
+    awayStats.shotsOnTargetPerGame ===
+    undefined
+  ) {
+    warnings.push(
+      "MISSING_AWAY_SHOTS_ON_TARGET"
+    );
+  }
+
+  if (
+    homeStats.bigChances ===
+    undefined
+  ) {
+    warnings.push(
+      "MISSING_HOME_BIG_CHANCES"
+    );
+  }
+
+  if (
+    awayStats.bigChances ===
+    undefined
+  ) {
+    warnings.push(
+      "MISSING_AWAY_BIG_CHANCES"
+    );
+  }
+
+  return warnings;
+}
+
+/* ==========================================
    ODDS PAYLOAD
 ========================================== */
 
 function buildOddsPayload(
-  form: FormState
-): Record<string, number> {
+  form:
+    FormState
+): OddsPayload {
   return removeInvalidOdds({
     home:
       readNumber(
@@ -1106,12 +1947,221 @@ function buildOddsPayload(
 }
 
 /* ==========================================
-   HELPERS
+   INSPEÇÃO DOS DADOS EXTERNOS
+========================================== */
+
+interface ExternalDataInspection {
+  received:
+    boolean;
+
+  partial:
+    boolean;
+
+  missingFields:
+    FormField[];
+
+  warnings:
+    string[];
+}
+
+function inspectExternalData(
+  externalData:
+    ExternalInputData | null | undefined
+): ExternalDataInspection {
+  if (!externalData) {
+    return {
+      received:
+        false,
+
+      partial:
+        false,
+
+      missingFields:
+        [],
+
+      warnings:
+        []
+    };
+  }
+
+  const missingFields =
+    REQUIRED_EXTERNAL_STAT_FIELDS
+      .filter(
+        field =>
+          parseOptionalNumber(
+            externalData[field]
+          ) === null
+      );
+
+  const warnings:
+    string[] = [];
+
+  if (
+    missingFields.length > 0
+  ) {
+    warnings.push(
+      "EXTERNAL_DATA_PARTIAL"
+    );
+
+    for (
+      const field of missingFields
+    ) {
+      warnings.push(
+        `MISSING_EXTERNAL_FIELD_${field.toUpperCase()}`
+      );
+    }
+  }
+
+  return {
+    received:
+      true,
+
+    partial:
+      missingFields.length > 0,
+
+    missingFields,
+
+    warnings:
+      normalizeWarnings(
+        warnings
+      )
+  };
+}
+
+/* ==========================================
+   CONVERSÃO DOS DADOS EXTERNOS
+========================================== */
+
+function convertExternalDataToForm(
+  externalData:
+    ExternalInputData
+): FormState {
+  const converted:
+    FormState = {};
+
+  for (
+    const [
+      rawKey,
+      rawValue
+    ] of Object.entries(
+      externalData
+    )
+  ) {
+    if (
+      !isFormField(
+        rawKey
+      )
+    ) {
+      console.warn(
+        "IGNORED_UNKNOWN_EXTERNAL_FIELD:",
+        rawKey,
+        rawValue
+      );
+
+      continue;
+    }
+
+    if (
+      rawKey === "homeTeam" ||
+      rawKey === "awayTeam" ||
+      rawKey === "league"
+    ) {
+      const textValue =
+        String(
+          rawValue ??
+          ""
+        ).trim();
+
+      if (textValue) {
+        converted[rawKey] =
+          textValue;
+      }
+
+      continue;
+    }
+
+    const parsed =
+      parseOptionalNumber(
+        rawValue
+      );
+
+    if (
+      parsed !== null
+    ) {
+      converted[rawKey] =
+        String(
+          parsed
+        );
+    }
+  }
+
+  return converted;
+}
+
+/* ==========================================
+   LIMPEZA DO ESTADO ANTERIOR
+========================================== */
+
+function clearPreviousStatisticalFields(
+  previous:
+    FormState
+): FormState {
+  const next:
+    FormState = {
+      ...previous
+    };
+
+  const fieldsToClear = [
+    ...HOME_STAT_FIELDS,
+    ...AWAY_STAT_FIELDS
+  ];
+
+  for (
+    const field of fieldsToClear
+  ) {
+    delete next[field];
+  }
+
+  return next;
+}
+
+/* ==========================================
+   ASSINATURA DOS DADOS EXTERNOS
+========================================== */
+
+function createExternalSignature(
+  externalData:
+    ExternalInputData
+): string {
+  const sortedEntries =
+    Object.entries(
+      externalData
+    )
+      .sort(
+        (
+          [keyA],
+          [keyB]
+        ) =>
+          keyA.localeCompare(
+            keyB
+          )
+      );
+
+  return JSON.stringify(
+    sortedEntries
+  );
+}
+
+/* ==========================================
+   PARSERS
 ========================================== */
 
 function readNumber(
-  form: FormState,
-  key: string
+  form:
+    FormState,
+
+  key:
+    FormField
 ): number | null {
   return parseOptionalNumber(
     form[key]
@@ -1119,23 +2169,37 @@ function readNumber(
 }
 
 function parseOptionalNumber(
-  value: unknown
+  value:
+    unknown
 ): number | null {
   if (
     value === "" ||
     value === null ||
-    value === undefined
+    value === undefined ||
+    typeof value === "boolean"
+  ) {
+    return null;
+  }
+
+  const normalized =
+    String(
+      value
+    )
+      .replace(
+        ",",
+        "."
+      )
+      .trim();
+
+  if (
+    normalized === ""
   ) {
     return null;
   }
 
   const parsed =
     Number(
-      String(value)
-        .replace(
-          ",",
-          "."
-        )
+      normalized
     );
 
   return Number.isFinite(
@@ -1145,34 +2209,44 @@ function parseOptionalNumber(
     : null;
 }
 
-function removeInvalidNumbers(
+/* ==========================================
+   LIMPEZA DOS OBJETOS
+========================================== */
+
+function removeInvalidTeamStats(
   input:
     Record<
-      string,
+      keyof TeamStatsPayload,
       number | null
     >
-): NumericStats {
+): TeamStatsPayload {
   const output:
-    NumericStats = {};
+    TeamStatsPayload = {};
 
   for (
     const [
-      key,
+      rawKey,
       value
     ] of Object.entries(
       input
     )
   ) {
     if (
-      value !== null &&
-      Number.isFinite(
+      value === null ||
+      !Number.isFinite(
         value
-      ) &&
-      value >= 0
+      ) ||
+      value < 0
     ) {
-      output[key] =
-        value;
+      continue;
     }
+
+    const key =
+      rawKey as
+        keyof TeamStatsPayload;
+
+    output[key] =
+      value;
   }
 
   return output;
@@ -1181,32 +2255,214 @@ function removeInvalidNumbers(
 function removeInvalidOdds(
   input:
     Record<
-      string,
+      keyof OddsPayload,
       number | null
     >
-): Record<string, number> {
+): OddsPayload {
   const output:
-    Record<string, number> = {};
+    OddsPayload = {};
 
   for (
     const [
-      key,
+      rawKey,
       value
     ] of Object.entries(
       input
     )
   ) {
     if (
-      value !== null &&
-      Number.isFinite(
+      value === null ||
+      !Number.isFinite(
         value
-      ) &&
-      value > 1
+      ) ||
+      value <= 1
     ) {
-      output[key] =
-        value;
+      continue;
     }
+
+    const key =
+      rawKey as
+        keyof OddsPayload;
+
+    output[key] =
+      value;
   }
 
   return output;
+}
+
+/* ==========================================
+   VALIDAÇÃO NUMÉRICA
+========================================== */
+
+function isPositiveNumber(
+  value:
+    unknown
+): value is number {
+  return (
+    typeof value ===
+      "number" &&
+    Number.isFinite(
+      value
+    ) &&
+    value > 0
+  );
+}
+
+function isNonNegativeNumber(
+  value:
+    unknown
+): value is number {
+  return (
+    typeof value ===
+      "number" &&
+    Number.isFinite(
+      value
+    ) &&
+    value >= 0
+  );
+}
+
+/* ==========================================
+   FIELD GUARD
+========================================== */
+
+const FORM_FIELDS =
+  new Set<FormField>([
+    "homeTeam",
+    "awayTeam",
+    "league",
+
+    "homeRating",
+    "awayRating",
+
+    "homeMatches",
+    "awayMatches",
+
+    "homeGoals",
+    "awayGoals",
+
+    "homeConceded",
+    "awayConceded",
+
+    "homeAssists",
+    "awayAssists",
+
+    "homeGoalsPG",
+    "awayGoalsPG",
+
+    "homeShotsOnTarget",
+    "awayShotsOnTarget",
+
+    "homeBigChances",
+    "awayBigChances",
+
+    "homeBigChancesMissed",
+    "awayBigChancesMissed",
+
+    "homePossession",
+    "awayPossession",
+
+    "homePasses",
+    "awayPasses",
+
+    "homeLongBalls",
+    "awayLongBalls",
+
+    "homeCleanSheets",
+    "awayCleanSheets",
+
+    "homeConcededPG",
+    "awayConcededPG",
+
+    "homeInterceptions",
+    "awayInterceptions",
+
+    "homeTackles",
+    "awayTackles",
+
+    "homeClearances",
+    "awayClearances",
+
+    "homeSaves",
+    "awaySaves",
+
+    "homeFouls",
+    "awayFouls",
+
+    "homeOffsides",
+    "awayOffsides",
+
+    "homeThrowIns",
+    "awayThrowIns",
+
+    "homeYellow",
+    "awayYellow",
+
+    "homeRed",
+    "awayRed",
+
+    "oddHome",
+    "oddDraw",
+    "oddAway",
+
+    "oddOver15",
+    "oddOver25",
+
+    "oddBTTSYes",
+    "oddBTTSNo",
+
+    "odd1X",
+    "oddX2"
+  ]);
+
+function isFormField(
+  value:
+    string
+): value is FormField {
+  return FORM_FIELDS.has(
+    value as FormField
+  );
+}
+
+/* ==========================================
+   WARNINGS
+========================================== */
+
+function normalizeWarnings(
+  warnings:
+    string[]
+): string[] {
+  return [
+    ...new Set(
+      warnings
+        .map(
+          warning =>
+            String(
+              warning ??
+              ""
+            ).trim()
+        )
+        .filter(
+          Boolean
+        )
+    )
+  ];
+}
+
+function formatWarning(
+  warning:
+    string
+): string {
+  return warning
+    .replace(
+      /_/g,
+      " "
+    )
+    .toLowerCase()
+    .replace(
+      /^./,
+      character =>
+        character.toUpperCase()
+    );
 }

@@ -13,64 +13,151 @@ import {
  * - construir sinais contextuais da partida;
  * - identificar ritmo e estrutura geral;
  * - produzir alertas contextuais;
+ * - calcular somente expectativa contextual;
  * - não calcular probabilidades;
  * - não produzir decisões;
- * - não substituir os lambdas oficiais.
+ * - não substituir os lambdas oficiais;
+ * - não substituir o goalExpectationScore oficial.
+ *
+ * Autoridades:
+ *
+ * goalExpectationScore
+ * → produzido pelo modelPipeline a partir
+ *   das lambdas oficiais.
+ *
+ * contextualGoalExpectationScore
+ * → produzido neste arquivo a partir do
+ *   ambiente estatístico da partida.
  */
+
+/* ==========================================
+   CONTRATOS
+========================================== */
+
+interface ContextPipelineInput {
+  homeStats?: unknown;
+  awayStats?: unknown;
+
+  /*
+   * Pode existir caso este pipeline seja chamado
+   * depois do modelPipeline em algum fluxo futuro.
+   *
+   * Este arquivo nunca sobrescreve esse valor.
+   */
+  goalExpectationScore?: unknown;
+
+  /*
+   * Score produzido exclusivamente pelo
+   * contextPipeline.
+   */
+  contextualGoalExpectationScore?: unknown;
+
+  /*
+   * Contexto utilizado pelos pipelines
+   * posteriores.
+   */
+  marketContext?: unknown;
+
+  /*
+   * Mantido por compatibilidade com
+   * eliteAnalyzer e demais módulos que
+   * ainda consultam context.markets.
+   */
+  markets?: unknown;
+
+  debug?: unknown;
+
+  [key: string]: unknown;
+}
+
+interface ObjectRecord {
+  [key: string]: unknown;
+}
 
 /* ==========================================
    CONSTANTES
 ========================================== */
 
 /*
- * Centro da curva de expectativa.
+ * Centro da curva contextual.
  *
- * Um total contextual próximo de 2.50 gols
- * produz score próximo de 0.50.
+ * Um ambiente próximo de 2.50 gols produz
+ * score contextual próximo de 0.50.
  */
 const GOAL_EXPECTATION_CENTER =
   2.50;
 
 /*
- * Controla a inclinação da curva.
- *
- * Quanto maior, mais rapidamente o score se
- * aproxima dos extremos.
+ * Controla a inclinação da curva logística.
  */
 const GOAL_EXPECTATION_SLOPE =
   1.35;
 
 /*
- * Proteção para que o score não chegue
- * exatamente a 0 ou 1.
+ * O score contextual não chega exatamente
+ * aos extremos 0 e 1.
  */
-const MIN_GOAL_SCORE =
+const MIN_CONTEXTUAL_GOAL_SCORE =
   0.02;
 
-const MAX_GOAL_SCORE =
+const MAX_CONTEXTUAL_GOAL_SCORE =
   0.98;
 
 /* ==========================================
-   HELPERS
+   HELPERS DE OBJETO
 ========================================== */
+
+function isObjectRecord(
+  value: unknown
+): value is ObjectRecord {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value)
+  );
+}
+
+/* ==========================================
+   HELPERS NUMÉRICOS
+========================================== */
+
+function parseFiniteNumber(
+  value: unknown
+): number | null {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    typeof value === "boolean"
+  ) {
+    return null;
+  }
+
+  const parsed =
+    Number(
+      String(value)
+        .replace(",", ".")
+        .trim()
+    );
+
+  return Number.isFinite(parsed)
+    ? parsed
+    : null;
+}
+
 function firstValidNumber(
   values: unknown[],
   fallback: number
 ): number {
-  for (const value of values) {
-    if (
-      value === null ||
-      value === undefined ||
-      value === "" ||
-      typeof value === "boolean"
-    ) {
-      continue;
-    }
-
+  for (
+    const value of values
+  ) {
     const parsed =
-      Number(value);
+      parseFiniteNumber(value);
 
-    if (Number.isFinite(parsed)) {
+    if (
+      parsed !== null
+    ) {
       return parsed;
     }
   }
@@ -78,12 +165,33 @@ function firstValidNumber(
   return fallback;
 }
 
+function optionalScore(
+  value: unknown
+): number | null {
+  const parsed =
+    parseFiniteNumber(value);
+
+  if (
+    parsed === null
+  ) {
+    return null;
+  }
+
+  return clamp(
+    parsed,
+    0,
+    1
+  );
+}
+
 function clamp(
   value: number,
   minimum = 0,
   maximum = 1
 ): number {
-  if (!Number.isFinite(value)) {
+  if (
+    !Number.isFinite(value)
+  ) {
     return minimum;
   }
 
@@ -100,7 +208,9 @@ function roundNumber(
   value: number,
   decimals = 4
 ): number {
-  if (!Number.isFinite(value)) {
+  if (
+    !Number.isFinite(value)
+  ) {
     return 0;
   }
 
@@ -109,8 +219,10 @@ function roundNumber(
 
   return (
     Math.round(
-      value * factor
-    ) / factor
+      value *
+      factor
+    ) /
+    factor
   );
 }
 
@@ -119,26 +231,17 @@ function roundNumber(
 ========================================== */
 
 /*
- * Transforma uma expectativa contextual total
- * em score entre aproximadamente 0.02 e 0.98.
+ * Transforma o ambiente contextual de gols
+ * em um score entre aproximadamente 0.02 e 0.98.
  *
- * Utilizamos uma curva logística para evitar:
+ * Este score:
  *
- * - saturação linear em 1;
- * - perda de diferenciação entre jogos ofensivos;
- * - saltos bruscos causados por clamp.
- *
- * Referências aproximadas:
- *
- * 1.50 gols → 0.21
- * 2.00 gols → 0.34
- * 2.50 gols → 0.50
- * 3.00 gols → 0.66
- * 3.50 gols → 0.79
- * 4.00 gols → 0.88
- * 4.50 gols → 0.94
+ * - não é probabilidade;
+ * - não é lambda;
+ * - não substitui o score oficial do modelo;
+ * - não deve alterar diretamente mercados.
  */
-function calculateContextGoalScore(
+function calculateContextualGoalExpectationScore(
   expectedGoalEnvironment: number
 ): number {
   if (
@@ -164,8 +267,8 @@ function calculateContextGoalScore(
 
   return clamp(
     logisticScore,
-    MIN_GOAL_SCORE,
-    MAX_GOAL_SCORE
+    MIN_CONTEXTUAL_GOAL_SCORE,
+    MAX_CONTEXTUAL_GOAL_SCORE
   );
 }
 
@@ -174,85 +277,107 @@ function calculateContextGoalScore(
 ========================================== */
 
 export function contextPipeline(
-  input: any
+  input: ContextPipelineInput
 ) {
+  const safeInput =
+    isObjectRecord(input)
+      ? input
+      : {};
+
   const homeStats =
     normalizeStats(
-      input?.homeStats ?? {}
+      isObjectRecord(
+        safeInput.homeStats
+      )
+        ? safeInput.homeStats
+        : {}
     );
 
   const awayStats =
     normalizeStats(
-      input?.awayStats ?? {}
+      isObjectRecord(
+        safeInput.awayStats
+      )
+        ? safeInput.awayStats
+        : {}
     );
 
   /*
-   * Contrato esperado do dataNormalizer:
+   * Score oficial já existente.
    *
-   * goalsPerGame
-   * avgGoals
-   * goalsConcededPerGame
-   * avgGoalsAgainst
+   * Normalmente será null neste estágio, pois o
+   * modelPipeline costuma ser executado depois.
    *
-   * firstValidNumber evita que valores inválidos
-   * sejam transformados silenciosamente em zero.
+   * Mesmo assim, nunca será sobrescrito aqui.
    */
-
-  const homeGoals =
-    clamp(
-      firstValidNumber(
-        [
-          homeStats.goalsPerGame,
-          homeStats.avgGoals
-        ],
-        1.20
-      ),
-      0,
-      6
+  const officialGoalExpectationScore =
+    optionalScore(
+      safeInput.goalExpectationScore
     );
 
-  const awayGoals =
-    clamp(
-      firstValidNumber(
-        [
-          awayStats.goalsPerGame,
-          awayStats.avgGoals
-        ],
-        1.10
-      ),
-      0,
-      6
-    );
+  /* ========================================
+     TAXAS CONTEXTUAIS
+  ======================================== */
 
-  const homeConcede =
-    clamp(
-      firstValidNumber(
-        [
-          homeStats.goalsConcededPerGame,
-          homeStats.avgGoalsAgainst
-        ],
-        1.20
-      ),
-      0,
-      6
-    );
+const homeGoals =
+  clamp(
+    firstValidNumber(
+      [
+        homeStats.goalsPerGame,
+        homeStats.goalsForPerGame,
+        homeStats.avgGoals
+      ],
+      1.20
+    ),
+    0,
+    6
+  );
 
-  const awayConcede =
-    clamp(
-      firstValidNumber(
-        [
-          awayStats.goalsConcededPerGame,
-          awayStats.avgGoalsAgainst
-        ],
-        1.20
-      ),
-      0,
-      6
-    );
+const awayGoals =
+  clamp(
+    firstValidNumber(
+      [
+        awayStats.goalsPerGame,
+        awayStats.goalsForPerGame,
+        awayStats.avgGoals
+      ],
+      1.10
+    ),
+    0,
+    6
+  );
 
-  /* ==========================================
+ const homeConcede =
+  clamp(
+    firstValidNumber(
+      [
+        homeStats.goalsConcededPerGame,
+        homeStats.goalsAgainstPerGame,
+        homeStats.avgGoalsAgainst
+      ],
+      1.20
+    ),
+    0,
+    6
+  );
+
+const awayConcede =
+  clamp(
+    firstValidNumber(
+      [
+        awayStats.goalsConcededPerGame,
+        awayStats.goalsAgainstPerGame,
+        awayStats.avgGoalsAgainst
+      ],
+      1.20
+    ),
+    0,
+    6
+  );
+
+  /* ========================================
      CONTEXTO DE GOLS
-  ========================================== */
+  ======================================== */
 
   const totalAttack =
     homeGoals +
@@ -263,10 +388,11 @@ export function contextPipeline(
     awayConcede;
 
   /*
-   * Este valor permanece na unidade aproximada
-   * "gols esperados no ambiente da partida".
+   * Unidade aproximada:
    *
-   * Não é lambda e não é probabilidade.
+   * ambiente estatístico esperado de gols.
+   *
+   * Não deve ser confundido com totalLambda.
    */
   const expectedGoalEnvironment =
     totalAttack *
@@ -274,47 +400,40 @@ export function contextPipeline(
     totalConcede *
       0.40;
 
-  /*
-   * Curva logística:
-   *
-   * evita que qualquer expectativa acima de 4
-   * seja simplesmente convertida em score 1.
-   */
-  const goalExpectationScore =
+  const contextualGoalExpectationScore =
     roundNumber(
-      calculateContextGoalScore(
+      calculateContextualGoalExpectationScore(
         expectedGoalEnvironment
       )
     );
 
   const paceLevel =
-    goalExpectationScore >= 0.68
+    contextualGoalExpectationScore >= 0.68
       ? "high"
-      : goalExpectationScore >= 0.50
+      : contextualGoalExpectationScore >= 0.50
         ? "medium"
         : "low";
 
-  /* ==========================================
-     ESTRUTURA DA PARTIDA
-  ========================================== */
+  /* ========================================
+     ESTRUTURA CONTEXTUAL DA PARTIDA
+  ======================================== */
 
   /*
-   * Proxy contextual de diferença estrutural.
-   *
-   * Ainda não representa diferença oficial
-   * entre lambdaHome e lambdaAway.
+   * Não representa lambda oficial.
    */
   const contextualHomeExpectation =
     (
       homeGoals +
       awayConcede
-    ) / 2;
+    ) /
+    2;
 
   const contextualAwayExpectation =
     (
       awayGoals +
       homeConcede
-    ) / 2;
+    ) /
+    2;
 
   const contextualExpectationDiff =
     Math.abs(
@@ -325,7 +444,7 @@ export function contextPipeline(
   const gameType =
     contextualExpectationDiff >= 1.20
       ? "dominant"
-      : goalExpectationScore >= 0.62
+      : contextualGoalExpectationScore >= 0.62
         ? "open"
         : "balanced";
 
@@ -344,19 +463,72 @@ export function contextPipeline(
     totalAttack < 2.0 ||
     minAttack < 0.75;
 
+  /* ========================================
+     DIVERGÊNCIA ENTRE SCORES
+  ======================================== */
+
+  /*
+   * Só pode ser calculada caso um score oficial
+   * já exista na entrada.
+   *
+   * No fluxo context → model, normalmente ficará
+   * null até o modelPipeline produzir o oficial.
+   */
+  const goalExpectationDivergence =
+    officialGoalExpectationScore !== null
+      ? roundNumber(
+          Math.abs(
+            officialGoalExpectationScore -
+            contextualGoalExpectationScore
+          )
+        )
+      : null;
+
+  const previousMarketContext =
+    isObjectRecord(
+      safeInput.marketContext
+    )
+      ? safeInput.marketContext
+      : {};
+
   const marketContext = {
+    ...previousMarketContext,
+
     isBadBTTSGame,
 
     paceLevel,
     gameType,
 
     /*
-     * Mantido por compatibilidade temporária.
-     *
-     * A auditoria do modelPipeline definirá qual
-     * score será a fonte oficial do sistema.
+     * Nome oficial do valor produzido neste
+     * contextPipeline.
      */
-    goalExpectationScore,
+    contextualGoalExpectationScore,
+
+    /*
+     * O score estrutural só é incluído quando já
+     * existir. Este arquivo não o cria.
+     */
+    officialGoalExpectationScore,
+
+    goalExpectationDivergence,
+
+    /*
+     * Alias legado temporário.
+     *
+     * Alguns módulos antigos ainda podem acessar:
+     *
+     * marketContext.goalExpectationScore
+     *
+     * Dentro de marketContext, esse alias continua
+     * representando o score contextual.
+     *
+     * Remover após migrar todos os consumidores para:
+     *
+     * marketContext.contextualGoalExpectationScore
+     */
+    goalExpectationScore:
+      contextualGoalExpectationScore,
 
     contextualExpectationDiff:
       roundNumber(
@@ -364,10 +536,10 @@ export function contextPipeline(
       ),
 
     /*
-     * Alias temporário para não quebrar módulos
-     * que ainda acessam marketContext.lambdaDiff.
+     * Alias legado.
      *
-     * Este valor não é diferença real de lambdas.
+     * Não representa diferença real entre
+     * lambdaHome e lambdaAway.
      */
     lambdaDiff:
       roundNumber(
@@ -413,27 +585,73 @@ export function contextPipeline(
         )
     },
 
-    weights: {}
+    weights: {
+      attack:
+        0.60,
+
+      defense:
+        0.40
+    }
   };
 
+  const previousDebug =
+    isObjectRecord(
+      safeInput.debug
+    )
+      ? safeInput.debug
+      : {};
+
+  /* ========================================
+     RESULTADO
+  ======================================== */
+
   return {
-    ...input,
+    ...safeInput,
 
     homeStats,
     awayStats,
 
     /*
-     * Mantido diretamente por compatibilidade
-     * com os pipelines consumidores.
+     * Não publicamos:
+     *
+     * goalExpectationScore:
+     * contextualGoalExpectationScore
+     *
+     * Isso impediria a separação entre autoridade
+     * estrutural e contexto.
      */
-    goalExpectationScore,
+    contextualGoalExpectationScore,
+
+    /*
+     * Como safeInput foi espalhado acima, um
+     * goalExpectationScore oficial preexistente
+     * permanece intacto automaticamente.
+     */
 
     marketContext,
 
     debug: {
-      ...(input?.debug ?? {}),
+      ...previousDebug,
 
       contextPipeline: {
+        scoreAuthority: {
+          officialField:
+            "goalExpectationScore",
+
+          contextualField:
+            "contextualGoalExpectationScore",
+
+          officialAvailable:
+            officialGoalExpectationScore !== null,
+
+          officialGoalExpectationScore,
+
+          contextualGoalExpectationScore,
+
+          divergence:
+            goalExpectationDivergence
+        },
+
         homeGoals:
           roundNumber(
             homeGoals
@@ -469,7 +687,10 @@ export function contextPipeline(
             expectedGoalEnvironment
           ),
 
-        goalExpectationScore,
+        /*
+         * Nome correto do score criado aqui.
+         */
+        contextualGoalExpectationScore,
 
         paceLevel,
 
@@ -505,10 +726,16 @@ export function contextPipeline(
             GOAL_EXPECTATION_SLOPE,
 
           minimum:
-            MIN_GOAL_SCORE,
+            MIN_CONTEXTUAL_GOAL_SCORE,
 
           maximum:
-            MAX_GOAL_SCORE
+            MAX_CONTEXTUAL_GOAL_SCORE,
+
+          source:
+            "NORMALIZED_TEAM_STATISTICS",
+
+          authority:
+            "CONTEXTUAL_ONLY"
         }
       }
     }

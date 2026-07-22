@@ -17,10 +17,14 @@ import {
 
 /*
  * Elasticidades inferiores a 1 comprimem
- * valores extremos.
+ * diferenças extremas entre as equipes.
  *
- * Devem futuramente ser calibradas por backtest,
- * Log Loss e Brier Score.
+ * Devem ser calibradas futuramente com:
+ *
+ * - backtest;
+ * - Log Loss;
+ * - Brier Score;
+ * - calibração por faixa de probabilidade.
  */
 const ATTACK_ELASTICITY =
   0.82;
@@ -29,7 +33,7 @@ const DEFENSE_ELASTICITY =
   0.78;
 
 /*
- * Quantidade de partidas equivalentes utilizadas
+ * Quantidade equivalente de partidas usadas
  * como prior no shrinkage.
  */
 const SHRINK_FACTOR =
@@ -45,9 +49,10 @@ const MAX_LAMBDA =
   3.20;
 
 /*
- * Proteção apenas para totais excessivamente altos.
+ * Limite máximo do total.
  *
- * O limite não eleva jogos fechados.
+ * Apenas reduz jogos excessivamente inflados.
+ * Não eleva jogos de baixa expectativa.
  */
 const MAX_TOTAL_LAMBDA =
   5.0;
@@ -55,15 +60,85 @@ const MAX_TOTAL_LAMBDA =
 /*
  * Composição ofensiva.
  *
- * O proxy de xG possui peso inferior aos gols
- * porque não considera localização, ângulo,
- * tipo de finalização ou qualidade da chance.
+ * O xG proxy possui peso menor por não conhecer:
+ *
+ * - posição da finalização;
+ * - ângulo;
+ * - qualidade da chance;
+ * - tipo de assistência;
+ * - pressão defensiva.
  */
 const GOALS_WEIGHT =
   0.70;
 
 const XG_PROXY_WEIGHT =
   0.30;
+
+/*
+ * Referência mínima para considerar uma amostra
+ * razoavelmente confiável.
+ */
+const MIN_RELIABLE_MATCHES =
+  8;
+
+/* ==========================================
+   FONTES DOS DADOS
+========================================== */
+
+type StatSource =
+  | "homeGoalsScoredPerMatch"
+  | "awayGoalsScoredPerMatch"
+
+  | "homeGoalsConcededPerMatch"
+  | "awayGoalsConcededPerMatch"
+
+  | "goalsPerGame"
+  | "goalsForPerGame"
+  | "avgGoals"
+  | "goalsPerMatch"
+
+  | "goalsConcededPerGame"
+  | "goalsAgainstPerGame"
+  | "avgGoalsAgainst"
+  | "goalsConcededPerMatch"
+
+  | "goalsForDividedByMatches"
+  | "goalsAgainstDividedByMatches"
+
+  | "shotsOnTargetPerGame"
+  | "avgShotsOnTarget"
+  | "shotsOnTarget"
+  | "shotsOnTargetPerMatch"
+
+  | "shotsPerGame"
+  | "avgShots"
+  | "shots"
+  | "shotsPerMatch"
+
+  | "matchesPlayed"
+  | "matches"
+
+  | "leagueFallback"
+  | "missing";
+
+interface ResolvedStat {
+  value: number;
+  source: StatSource;
+
+  usedLeagueFallback:
+    boolean;
+
+  derivedFromTotals:
+    boolean;
+}
+
+interface ResolvedOptionalStat {
+  value: number | null;
+  source: StatSource;
+
+  available:
+    boolean;
+}
 
 /* ==========================================
    TIPOS INTERNOS
@@ -75,9 +150,32 @@ interface LimitedLambdas {
 }
 
 interface TeamStatsCompatibility {
+  /*
+   * Amostra.
+   */
   matchesPlayed?: number;
   matches?: number;
 
+  /*
+   * Totais.
+   */
+  goalsFor?: number;
+  goalsAgainst?: number;
+
+  /*
+   * Contrato canônico atual.
+   */
+  goalsPerGame?: number;
+  goalsForPerGame?: number;
+  avgGoals?: number;
+
+  goalsConcededPerGame?: number;
+  goalsAgainstPerGame?: number;
+  avgGoalsAgainst?: number;
+
+  /*
+   * Contratos antigos.
+   */
   goalsPerMatch?: number;
   goalsConcededPerMatch?: number;
 
@@ -87,7 +185,20 @@ interface TeamStatsCompatibility {
   awayGoalsScoredPerMatch?: number;
   awayGoalsConcededPerMatch?: number;
 
+  /*
+   * Finalizações no alvo.
+   */
+  shotsOnTargetPerGame?: number;
+  avgShotsOnTarget?: number;
+  shotsOnTarget?: number;
   shotsOnTargetPerMatch?: number;
+
+  /*
+   * Finalizações totais.
+   */
+  shotsPerGame?: number;
+  avgShots?: number;
+  shots?: number;
   shotsPerMatch?: number;
 }
 
@@ -100,7 +211,11 @@ function clamp(
   minimum: number,
   maximum: number
 ): number {
-  if (!Number.isFinite(value)) {
+  if (
+    !Number.isFinite(
+      value
+    )
+  ) {
     return minimum;
   }
 
@@ -127,9 +242,13 @@ function safeNumber(
   }
 
   const parsed =
-    Number(value);
+    Number(
+      value
+    );
 
-  return Number.isFinite(parsed)
+  return Number.isFinite(
+    parsed
+  )
     ? parsed
     : fallback;
 }
@@ -150,36 +269,39 @@ function safePositiveNumber(
     : fallback;
 }
 
-function firstFiniteNumber(
-  values: unknown[],
-  fallback: number
-): number {
-  for (const value of values) {
-    if (
-      value === null ||
-      value === undefined ||
-      value === "" ||
-      typeof value === "boolean"
-    ) {
-      continue;
-    }
-
-    const parsed =
-      Number(value);
-
-    if (Number.isFinite(parsed)) {
-      return parsed;
-    }
+function parseFiniteNumber(
+  value: unknown
+): number | null {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    typeof value === "boolean"
+  ) {
+    return null;
   }
 
-  return fallback;
+  const parsed =
+    Number(
+      value
+    );
+
+  return Number.isFinite(
+    parsed
+  )
+    ? parsed
+    : null;
 }
 
 function roundNumber(
   value: number,
   decimals = 4
 ): number {
-  if (!Number.isFinite(value)) {
+  if (
+    !Number.isFinite(
+      value
+    )
+  ) {
     return 0;
   }
 
@@ -196,91 +318,615 @@ function roundNumber(
 }
 
 /* ==========================================
-   RESOLUÇÃO DE CONTRATOS
+   RESOLVEDORES GENÉRICOS
+========================================== */
+
+function resolveFirstStat(
+  candidates: Array<{
+    value: unknown;
+    source: StatSource;
+  }>,
+  fallback: number
+): ResolvedStat {
+  for (
+    const candidate of candidates
+  ) {
+    const parsed =
+      parseFiniteNumber(
+        candidate.value
+      );
+
+    if (
+      parsed !== null &&
+      parsed >= 0
+    ) {
+      return {
+        value:
+          parsed,
+
+        source:
+          candidate.source,
+
+        usedLeagueFallback:
+          false,
+
+        derivedFromTotals:
+          candidate.source ===
+            "goalsForDividedByMatches" ||
+          candidate.source ===
+            "goalsAgainstDividedByMatches"
+      };
+    }
+  }
+
+  return {
+    value:
+      fallback,
+
+    source:
+      "leagueFallback",
+
+    usedLeagueFallback:
+      true,
+
+    derivedFromTotals:
+      false
+  };
+}
+
+function resolveOptionalStat(
+  candidates: Array<{
+    value: unknown;
+    source: StatSource;
+  }>
+): ResolvedOptionalStat {
+  for (
+    const candidate of candidates
+  ) {
+    const parsed =
+      parseFiniteNumber(
+        candidate.value
+      );
+
+    if (
+      parsed !== null &&
+      parsed >= 0
+    ) {
+      return {
+        value:
+          parsed,
+
+        source:
+          candidate.source,
+
+        available:
+          true
+      };
+    }
+  }
+
+  return {
+    value:
+      null,
+
+    source:
+      "missing",
+
+    available:
+      false
+  };
+}
+
+/* ==========================================
+   AMOSTRA
 ========================================== */
 
 function resolveMatchesPlayed(
-  team: TeamStatsCompatibility
-): number {
-  return clamp(
-    firstFiniteNumber(
-      [
-        team.matchesPlayed,
-        team.matches
-      ],
-      10
-    ),
-    0,
-    100
-  );
+  team:
+    TeamStatsCompatibility
+): ResolvedStat {
+  const matchesPlayed =
+    parseFiniteNumber(
+      team.matchesPlayed
+    );
+
+  if (
+    matchesPlayed !== null &&
+    matchesPlayed >= 0
+  ) {
+    return {
+      value:
+        clamp(
+          matchesPlayed,
+          0,
+          100
+        ),
+
+      source:
+        "matchesPlayed",
+
+      usedLeagueFallback:
+        false,
+
+      derivedFromTotals:
+        false
+    };
+  }
+
+  const matches =
+    parseFiniteNumber(
+      team.matches
+    );
+
+  if (
+    matches !== null &&
+    matches >= 0
+  ) {
+    return {
+      value:
+        clamp(
+          matches,
+          0,
+          100
+        ),
+
+      source:
+        "matches",
+
+      usedLeagueFallback:
+        false,
+
+      derivedFromTotals:
+        false
+    };
+  }
+
+  return {
+    value:
+      0,
+
+    source:
+      "missing",
+
+    usedLeagueFallback:
+      false,
+
+    derivedFromTotals:
+      false
+  };
 }
+
+/* ==========================================
+   MÉDIAS DERIVADAS DOS TOTAIS
+========================================== */
+
+function deriveRateFromTotals(
+  total: unknown,
+  matchesPlayed: number
+): number | null {
+  const safeTotal =
+    parseFiniteNumber(
+      total
+    );
+
+  if (
+    safeTotal === null ||
+    safeTotal < 0 ||
+    !Number.isFinite(
+      matchesPlayed
+    ) ||
+    matchesPlayed <= 0
+  ) {
+    return null;
+  }
+
+  const rate =
+    safeTotal /
+    matchesPlayed;
+
+  return Number.isFinite(
+    rate
+  )
+    ? rate
+    : null;
+}
+
+/* ==========================================
+   RESOLUÇÃO DAS TAXAS DE ATAQUE
+========================================== */
 
 function resolveHomeGoalsScored(
   team: TeamStatsCompatibility,
-  fallback: number
-): number {
-  return clamp(
-    firstFiniteNumber(
+  fallback: number,
+  matchesPlayed: number
+): ResolvedStat {
+  const derivedFromTotals =
+    deriveRateFromTotals(
+      team.goalsFor,
+      matchesPlayed
+    );
+
+  const resolved =
+    resolveFirstStat(
       [
-        team.homeGoalsScoredPerMatch,
-        team.goalsPerMatch
+        {
+          value:
+            team.homeGoalsScoredPerMatch,
+
+          source:
+            "homeGoalsScoredPerMatch"
+        },
+
+        {
+          value:
+            team.goalsPerGame,
+
+          source:
+            "goalsPerGame"
+        },
+
+        {
+          value:
+            team.goalsForPerGame,
+
+          source:
+            "goalsForPerGame"
+        },
+
+        {
+          value:
+            team.avgGoals,
+
+          source:
+            "avgGoals"
+        },
+
+        {
+          value:
+            team.goalsPerMatch,
+
+          source:
+            "goalsPerMatch"
+        },
+
+        {
+          value:
+            derivedFromTotals,
+
+          source:
+            "goalsForDividedByMatches"
+        }
       ],
       fallback
-    ),
-    0,
-    6
-  );
+    );
+
+  return {
+    ...resolved,
+
+    value:
+      clamp(
+        resolved.value,
+        0,
+        6
+      )
+  };
 }
 
 function resolveAwayGoalsScored(
   team: TeamStatsCompatibility,
-  fallback: number
-): number {
-  return clamp(
-    firstFiniteNumber(
+  fallback: number,
+  matchesPlayed: number
+): ResolvedStat {
+  const derivedFromTotals =
+    deriveRateFromTotals(
+      team.goalsFor,
+      matchesPlayed
+    );
+
+  const resolved =
+    resolveFirstStat(
       [
-        team.awayGoalsScoredPerMatch,
-        team.goalsPerMatch
+        {
+          value:
+            team.awayGoalsScoredPerMatch,
+
+          source:
+            "awayGoalsScoredPerMatch"
+        },
+
+        {
+          value:
+            team.goalsPerGame,
+
+          source:
+            "goalsPerGame"
+        },
+
+        {
+          value:
+            team.goalsForPerGame,
+
+          source:
+            "goalsForPerGame"
+        },
+
+        {
+          value:
+            team.avgGoals,
+
+          source:
+            "avgGoals"
+        },
+
+        {
+          value:
+            team.goalsPerMatch,
+
+          source:
+            "goalsPerMatch"
+        },
+
+        {
+          value:
+            derivedFromTotals,
+
+          source:
+            "goalsForDividedByMatches"
+        }
       ],
       fallback
-    ),
-    0,
-    6
-  );
+    );
+
+  return {
+    ...resolved,
+
+    value:
+      clamp(
+        resolved.value,
+        0,
+        6
+      )
+  };
 }
+
+/* ==========================================
+   RESOLUÇÃO DAS TAXAS DEFENSIVAS
+========================================== */
 
 function resolveHomeGoalsConceded(
   team: TeamStatsCompatibility,
-  fallback: number
-): number {
-  return clamp(
-    firstFiniteNumber(
+  fallback: number,
+  matchesPlayed: number
+): ResolvedStat {
+  const derivedFromTotals =
+    deriveRateFromTotals(
+      team.goalsAgainst,
+      matchesPlayed
+    );
+
+  const resolved =
+    resolveFirstStat(
       [
-        team.homeGoalsConcededPerMatch,
-        team.goalsConcededPerMatch
+        {
+          value:
+            team.homeGoalsConcededPerMatch,
+
+          source:
+            "homeGoalsConcededPerMatch"
+        },
+
+        {
+          value:
+            team.goalsConcededPerGame,
+
+          source:
+            "goalsConcededPerGame"
+        },
+
+        {
+          value:
+            team.goalsAgainstPerGame,
+
+          source:
+            "goalsAgainstPerGame"
+        },
+
+        {
+          value:
+            team.avgGoalsAgainst,
+
+          source:
+            "avgGoalsAgainst"
+        },
+
+        {
+          value:
+            team.goalsConcededPerMatch,
+
+          source:
+            "goalsConcededPerMatch"
+        },
+
+        {
+          value:
+            derivedFromTotals,
+
+          source:
+            "goalsAgainstDividedByMatches"
+        }
       ],
       fallback
-    ),
-    0,
-    6
-  );
+    );
+
+  return {
+    ...resolved,
+
+    value:
+      clamp(
+        resolved.value,
+        0,
+        6
+      )
+  };
 }
 
 function resolveAwayGoalsConceded(
   team: TeamStatsCompatibility,
-  fallback: number
-): number {
-  return clamp(
-    firstFiniteNumber(
+  fallback: number,
+  matchesPlayed: number
+): ResolvedStat {
+  const derivedFromTotals =
+    deriveRateFromTotals(
+      team.goalsAgainst,
+      matchesPlayed
+    );
+
+  const resolved =
+    resolveFirstStat(
       [
-        team.awayGoalsConcededPerMatch,
-        team.goalsConcededPerMatch
+        {
+          value:
+            team.awayGoalsConcededPerMatch,
+
+          source:
+            "awayGoalsConcededPerMatch"
+        },
+
+        {
+          value:
+            team.goalsConcededPerGame,
+
+          source:
+            "goalsConcededPerGame"
+        },
+
+        {
+          value:
+            team.goalsAgainstPerGame,
+
+          source:
+            "goalsAgainstPerGame"
+        },
+
+        {
+          value:
+            team.avgGoalsAgainst,
+
+          source:
+            "avgGoalsAgainst"
+        },
+
+        {
+          value:
+            team.goalsConcededPerMatch,
+
+          source:
+            "goalsConcededPerMatch"
+        },
+
+        {
+          value:
+            derivedFromTotals,
+
+          source:
+            "goalsAgainstDividedByMatches"
+        }
       ],
       fallback
-    ),
-    0,
-    6
-  );
+    );
+
+  return {
+    ...resolved,
+
+    value:
+      clamp(
+        resolved.value,
+        0,
+        6
+      )
+  };
+}
+
+/* ==========================================
+   RESOLUÇÃO DAS FINALIZAÇÕES
+========================================== */
+
+function resolveShotsOnTarget(
+  team:
+    TeamStatsCompatibility
+): ResolvedOptionalStat {
+  return resolveOptionalStat([
+    {
+      value:
+        team.shotsOnTargetPerGame,
+
+      source:
+        "shotsOnTargetPerGame"
+    },
+
+    {
+      value:
+        team.avgShotsOnTarget,
+
+      source:
+        "avgShotsOnTarget"
+    },
+
+    {
+      value:
+        team.shotsOnTarget,
+
+      source:
+        "shotsOnTarget"
+    },
+
+    {
+      value:
+        team.shotsOnTargetPerMatch,
+
+      source:
+        "shotsOnTargetPerMatch"
+    }
+  ]);
+}
+
+function resolveShots(
+  team:
+    TeamStatsCompatibility
+): ResolvedOptionalStat {
+  return resolveOptionalStat([
+    {
+      value:
+        team.shotsPerGame,
+
+      source:
+        "shotsPerGame"
+    },
+
+    {
+      value:
+        team.avgShots,
+
+      source:
+        "avgShots"
+    },
+
+    {
+      value:
+        team.shots,
+
+      source:
+        "shots"
+    },
+
+    {
+      value:
+        team.shotsPerMatch,
+
+      source:
+        "shotsPerMatch"
+    }
+  ]);
 }
 
 /* ==========================================
@@ -312,7 +958,7 @@ function shrinkStat(
     clamp(
       safeNumber(
         matchesPlayed,
-        10
+        0
       ),
       0,
       100
@@ -348,8 +994,12 @@ function safePower(
   exponent: number
 ): number {
   if (
-    !Number.isFinite(base) ||
-    !Number.isFinite(exponent) ||
+    !Number.isFinite(
+      base
+    ) ||
+    !Number.isFinite(
+      exponent
+    ) ||
     base <= 0
   ) {
     return 1;
@@ -361,7 +1011,9 @@ function safePower(
       exponent
     );
 
-  return Number.isFinite(result)
+  return Number.isFinite(
+    result
+  )
     ? result
     : 1;
 }
@@ -410,9 +1062,9 @@ function resolveLeagueGoalBases(
     safeAwayGoals;
 
   /*
-   * Preserva a proporção casa/fora cadastrada,
-   * mas garante que a soma corresponde ao total
-   * médio oficial da liga.
+   * Preserva a relação casa/fora configurada,
+   * garantindo que a soma corresponda à média
+   * total oficial da liga.
    */
   if (
     Number.isFinite(
@@ -464,7 +1116,9 @@ function applyUpperTotalLimit(
     lambdaAway;
 
   if (
-    !Number.isFinite(total) ||
+    !Number.isFinite(
+      total
+    ) ||
     total <= 0
   ) {
     return {
@@ -489,10 +1143,6 @@ function applyUpperTotalLimit(
     };
   }
 
-  /*
-   * Quando o total excede o limite,
-   * reduzimos proporcionalmente.
-   */
   const reductionFactor =
     MAX_TOTAL_LAMBDA /
     total;
@@ -509,13 +1159,233 @@ function applyUpperTotalLimit(
 }
 
 /* ==========================================
+   QUALIDADE DOS DADOS
+========================================== */
+
+function calculateInputQuality(
+  sources:
+    ResolvedStat[]
+): number {
+  if (
+    sources.length === 0
+  ) {
+    return 0;
+  }
+
+  let score =
+    0;
+
+  for (
+    const resolved of sources
+  ) {
+    if (
+      resolved.usedLeagueFallback
+    ) {
+      score +=
+        0;
+    } else if (
+      resolved.derivedFromTotals
+    ) {
+      score +=
+        0.8;
+    } else {
+      score +=
+        1;
+    }
+  }
+
+  return clamp(
+    score /
+      sources.length,
+    0,
+    1
+  );
+}
+
+function calculateSampleReliability(
+  homeMatches: number,
+  awayMatches: number
+): number {
+  const homeReliability =
+    clamp(
+      homeMatches /
+        MIN_RELIABLE_MATCHES,
+      0,
+      1
+    );
+
+  const awayReliability =
+    clamp(
+      awayMatches /
+        MIN_RELIABLE_MATCHES,
+      0,
+      1
+    );
+
+  return (
+    homeReliability +
+    awayReliability
+  ) / 2;
+}
+
+function buildWarnings({
+  homeMatches,
+  awayMatches,
+  homeGoals,
+  awayGoals,
+  homeConceded,
+  awayConceded,
+  homeShotsOnTarget,
+  awayShotsOnTarget,
+  leagueAverageGoals
+}: {
+  homeMatches:
+    ResolvedStat;
+
+  awayMatches:
+    ResolvedStat;
+
+  homeGoals:
+    ResolvedStat;
+
+  awayGoals:
+    ResolvedStat;
+
+  homeConceded:
+    ResolvedStat;
+
+  awayConceded:
+    ResolvedStat;
+
+  homeShotsOnTarget:
+    ResolvedOptionalStat;
+
+  awayShotsOnTarget:
+    ResolvedOptionalStat;
+
+  leagueAverageGoals:
+    number;
+}): string[] {
+  const warnings:
+    string[] = [];
+
+  if (
+    homeMatches.source ===
+    "missing"
+  ) {
+    warnings.push(
+      "MISSING_HOME_MATCHES"
+    );
+  }
+
+  if (
+    awayMatches.source ===
+    "missing"
+  ) {
+    warnings.push(
+      "MISSING_AWAY_MATCHES"
+    );
+  }
+
+  if (
+    homeMatches.value <
+    MIN_RELIABLE_MATCHES
+  ) {
+    warnings.push(
+      "LOW_HOME_SAMPLE"
+    );
+  }
+
+  if (
+    awayMatches.value <
+    MIN_RELIABLE_MATCHES
+  ) {
+    warnings.push(
+      "LOW_AWAY_SAMPLE"
+    );
+  }
+
+  if (
+    homeGoals.usedLeagueFallback
+  ) {
+    warnings.push(
+      "HOME_ATTACK_USING_LEAGUE_FALLBACK"
+    );
+  }
+
+  if (
+    awayGoals.usedLeagueFallback
+  ) {
+    warnings.push(
+      "AWAY_ATTACK_USING_LEAGUE_FALLBACK"
+    );
+  }
+
+  if (
+    homeConceded.usedLeagueFallback
+  ) {
+    warnings.push(
+      "HOME_DEFENSE_USING_LEAGUE_FALLBACK"
+    );
+  }
+
+  if (
+    awayConceded.usedLeagueFallback
+  ) {
+    warnings.push(
+      "AWAY_DEFENSE_USING_LEAGUE_FALLBACK"
+    );
+  }
+
+  if (
+    !homeShotsOnTarget.available
+  ) {
+    warnings.push(
+      "MISSING_HOME_SHOTS_ON_TARGET"
+    );
+  }
+
+  if (
+    !awayShotsOnTarget.available
+  ) {
+    warnings.push(
+      "MISSING_AWAY_SHOTS_ON_TARGET"
+    );
+  }
+
+  /*
+   * Diagnóstico importante para impedir que uma
+   * configuração anormal da liga passe despercebida.
+   */
+  if (
+    leagueAverageGoals >
+    3.8
+  ) {
+    warnings.push(
+      "SUSPICIOUS_LEAGUE_AVERAGE_GOALS"
+    );
+  }
+
+  return [
+    ...new Set(
+      warnings
+    )
+  ];
+}
+
+/* ==========================================
    BUILD LAMBDA
 ========================================== */
 
 export function buildLambda(
-  homeInput: TeamStats,
-  awayInput: TeamStats,
-  leagueKey: string
+  homeInput:
+    TeamStats,
+
+  awayInput:
+    TeamStats,
+
+  leagueKey:
+    string
 ) {
   const home =
     homeInput as
@@ -525,9 +1395,9 @@ export function buildLambda(
     awayInput as
       TeamStatsCompatibility;
 
-  /* ==========================================
+  /* ========================================
      CONFIGURAÇÃO DA LIGA
-  ========================================== */
+  ======================================== */
 
   const league =
     getLeagueStrength(
@@ -546,8 +1416,7 @@ export function buildLambda(
     );
 
   /*
-   * Deve representar somente ajuste complementar
-   * da liga. A lógica permanece centralizada em
+   * Ajuste complementar centralizado em
    * leagueStrength.ts.
    */
   const leagueAdjustment =
@@ -558,34 +1427,110 @@ export function buildLambda(
       1
     );
 
-  /* ==========================================
+  /* ========================================
      AMOSTRA
-  ========================================== */
+  ======================================== */
 
-  const homeMatchesPlayed =
+  const homeMatchesResult =
     resolveMatchesPlayed(
       home
     );
 
-  const awayMatchesPlayed =
+  const awayMatchesResult =
     resolveMatchesPlayed(
       away
     );
 
-  /* ==========================================
-     XG PROXY
-  ========================================== */
+  const homeMatchesPlayed =
+    homeMatchesResult.value;
+
+  const awayMatchesPlayed =
+    awayMatchesResult.value;
+
+  /* ========================================
+     TAXAS OBSERVADAS
+  ======================================== */
+
+  const homeGoalsResult =
+    resolveHomeGoalsScored(
+      home,
+      leagueBaseHome,
+      homeMatchesPlayed
+    );
+
+  const awayGoalsResult =
+    resolveAwayGoalsScored(
+      away,
+      leagueBaseAway,
+      awayMatchesPlayed
+    );
+
+  const homeConcededResult =
+    resolveHomeGoalsConceded(
+      home,
+      leagueBaseAway,
+      homeMatchesPlayed
+    );
+
+  const awayConcededResult =
+    resolveAwayGoalsConceded(
+      away,
+      leagueBaseHome,
+      awayMatchesPlayed
+    );
+
+  const homeGoalsRate =
+    homeGoalsResult.value;
+
+  const awayGoalsRate =
+    awayGoalsResult.value;
+
+  const homeGoalsConcededRate =
+    homeConcededResult.value;
+
+  const awayGoalsConcededRate =
+    awayConcededResult.value;
+
+  /* ========================================
+     FINALIZAÇÕES E XG PROXY
+  ======================================== */
+
+  const homeShotsOnTargetResult =
+    resolveShotsOnTarget(
+      home
+    );
+
+  const awayShotsOnTargetResult =
+    resolveShotsOnTarget(
+      away
+    );
+
+  const homeShotsResult =
+    resolveShots(
+      home
+    );
+
+  const awayShotsResult =
+    resolveShots(
+      away
+    );
 
   const homeXGResult =
     calculateXGProxyDetailed(
-      home.shotsOnTargetPerMatch,
-      home.shotsPerMatch
+      homeShotsOnTargetResult
+        .value,
+
+      homeShotsResult
+        .value
     );
 
   const awayXGResult =
     calculateXGProxyDetailed(
-      away.shotsOnTargetPerMatch,
-      away.shotsPerMatch
+      awayShotsOnTargetResult
+        .value,
+
+      awayShotsResult
+        .value
     );
 
   const homeXG =
@@ -594,47 +1539,10 @@ export function buildLambda(
   const awayXG =
     awayXGResult.xg;
 
-  /* ==========================================
-     TAXAS OBSERVADAS DE GOLS
-  ========================================== */
-
-  const homeGoalsRate =
-    resolveHomeGoalsScored(
-      home,
-      leagueBaseHome
-    );
-
-  const awayGoalsRate =
-    resolveAwayGoalsScored(
-      away,
-      leagueBaseAway
-    );
-
-  const homeGoalsConcededRate =
-    resolveHomeGoalsConceded(
-      home,
-      leagueBaseAway
-    );
-
-  const awayGoalsConcededRate =
-    resolveAwayGoalsConceded(
-      away,
-      leagueBaseHome
-    );
-
-  /* ==========================================
+  /* ========================================
      COMPOSIÇÃO OFENSIVA
-  ========================================== */
+  ======================================== */
 
-  /*
-   * Quando o xG Proxy é válido:
-   *
-   * 70% gols observados
-   * 30% proxy de xG
-   *
-   * Quando os dados de finalizações não existem,
-   * utilizamos somente os gols observados.
-   */
   const homeAttackComposite =
     homeXGResult.valid &&
     homeXG !== null
@@ -657,9 +1565,9 @@ export function buildLambda(
         )
       : awayGoalsRate;
 
-  /* ==========================================
+  /* ========================================
      SHRINKAGE DO ATAQUE
-  ========================================== */
+  ======================================== */
 
   const homeAttackRaw =
     shrinkStat(
@@ -675,17 +1583,10 @@ export function buildLambda(
       awayMatchesPlayed
     );
 
-  /* ==========================================
+  /* ========================================
      SHRINKAGE DA DEFESA
-  ========================================== */
+  ======================================== */
 
-  /*
-   * Defesa do mandante:
-   * comparada à referência ofensiva visitante.
-   *
-   * Defesa do visitante:
-   * comparada à referência ofensiva mandante.
-   */
   const homeDefenseRaw =
     shrinkStat(
       homeGoalsConcededRate,
@@ -700,9 +1601,9 @@ export function buildLambda(
       awayMatchesPlayed
     );
 
-  /* ==========================================
+  /* ========================================
      FORÇAS RELATIVAS
-  ========================================== */
+  ======================================== */
 
   const homeAttackStrength =
     safePower(
@@ -732,9 +1633,9 @@ export function buildLambda(
       DEFENSE_ELASTICITY
     );
 
-  /* ==========================================
+  /* ========================================
      LAMBDAS ESTRUTURAIS
-  ========================================== */
+  ======================================== */
 
   let lambdaHome =
     leagueBaseHome *
@@ -746,9 +1647,9 @@ export function buildLambda(
     awayAttackStrength *
     homeDefensiveFragility;
 
-  /* ==========================================
+  /* ========================================
      AJUSTE COMPLEMENTAR DA LIGA
-  ========================================== */
+  ======================================== */
 
   lambdaHome *=
     leagueAdjustment;
@@ -756,9 +1657,9 @@ export function buildLambda(
   lambdaAway *=
     leagueAdjustment;
 
-  /* ==========================================
+  /* ========================================
      PROTEÇÕES INDIVIDUAIS
-  ========================================== */
+  ======================================== */
 
   lambdaHome =
     clamp(
@@ -780,9 +1681,9 @@ export function buildLambda(
       MAX_LAMBDA
     );
 
-  /* ==========================================
+  /* ========================================
      PROTEÇÃO DO TOTAL
-  ========================================== */
+  ======================================== */
 
   const limited =
     applyUpperTotalLimit(
@@ -816,9 +1717,146 @@ export function buildLambda(
     lambdaHome +
     lambdaAway;
 
-  /* ==========================================
+  /* ========================================
+     QUALIDADE E WARNINGS
+  ======================================== */
+
+  const inputQuality =
+    calculateInputQuality([
+      homeGoalsResult,
+      awayGoalsResult,
+      homeConcededResult,
+      awayConcededResult
+    ]);
+
+  const sampleReliability =
+    calculateSampleReliability(
+      homeMatchesPlayed,
+      awayMatchesPlayed
+    );
+
+  const warnings =
+    buildWarnings({
+      homeMatches:
+        homeMatchesResult,
+
+      awayMatches:
+        awayMatchesResult,
+
+      homeGoals:
+        homeGoalsResult,
+
+      awayGoals:
+        awayGoalsResult,
+
+      homeConceded:
+        homeConcededResult,
+
+      awayConceded:
+        awayConcededResult,
+
+      homeShotsOnTarget:
+        homeShotsOnTargetResult,
+
+      awayShotsOnTarget:
+        awayShotsOnTargetResult,
+
+      leagueAverageGoals
+    });
+
+  const usedLeagueFallback =
+    homeGoalsResult
+      .usedLeagueFallback ||
+    awayGoalsResult
+      .usedLeagueFallback ||
+    homeConcededResult
+      .usedLeagueFallback ||
+    awayConcededResult
+      .usedLeagueFallback;
+
+  /* ========================================
+     LOG DE AUDITORIA
+  ======================================== */
+
+  console.group(
+    "⚽ LAMBDA BUILDER — AUDIT"
+  );
+
+  console.log(
+    "LEAGUE BASES:",
+    {
+      leagueKey,
+      leagueAverageGoals,
+      leagueBaseHome,
+      leagueBaseAway,
+      leagueAdjustment
+    }
+  );
+
+  console.log(
+    "HOME INPUT RESOLUTION:",
+    {
+      matches:
+        homeMatchesResult,
+
+      goals:
+        homeGoalsResult,
+
+      conceded:
+        homeConcededResult,
+
+      shotsOnTarget:
+        homeShotsOnTargetResult,
+
+      shots:
+        homeShotsResult
+    }
+  );
+
+  console.log(
+    "AWAY INPUT RESOLUTION:",
+    {
+      matches:
+        awayMatchesResult,
+
+      goals:
+        awayGoalsResult,
+
+      conceded:
+        awayConcededResult,
+
+      shotsOnTarget:
+        awayShotsOnTargetResult,
+
+      shots:
+        awayShotsResult
+    }
+  );
+
+  console.log(
+    "FINAL LAMBDAS:",
+    {
+      lambdaHome,
+      lambdaAway,
+      totalLambda
+    }
+  );
+
+  console.log(
+    "INPUT QUALITY:",
+    {
+      inputQuality,
+      sampleReliability,
+      usedLeagueFallback,
+      warnings
+    }
+  );
+
+  console.groupEnd();
+
+  /* ========================================
      RESULTADO
-  ========================================== */
+  ======================================== */
 
   return {
     lambdaHome:
@@ -862,29 +1900,130 @@ export function buildLambda(
           leagueAdjustment
         ),
 
-      homeMatchesPlayed,
-      awayMatchesPlayed,
+      /*
+       * Qualidade geral da entrada.
+       */
+      inputQuality:
+        roundNumber(
+          inputQuality
+        ),
 
+      sampleReliability:
+        roundNumber(
+          sampleReliability
+        ),
+
+      usedLeagueFallback,
+
+      warnings,
+
+      /*
+       * Amostra.
+       */
+      homeMatchesPlayed:
+        roundNumber(
+          homeMatchesPlayed
+        ),
+
+      awayMatchesPlayed:
+        roundNumber(
+          awayMatchesPlayed
+        ),
+
+      homeMatchesSource:
+        homeMatchesResult.source,
+
+      awayMatchesSource:
+        awayMatchesResult.source,
+
+      /*
+       * Taxas observadas e suas origens.
+       */
       homeGoalsRate:
         roundNumber(
           homeGoalsRate
         ),
+
+      homeGoalsRateSource:
+        homeGoalsResult.source,
 
       awayGoalsRate:
         roundNumber(
           awayGoalsRate
         ),
 
+      awayGoalsRateSource:
+        awayGoalsResult.source,
+
       homeGoalsConcededRate:
         roundNumber(
           homeGoalsConcededRate
         ),
+
+      homeGoalsConcededRateSource:
+        homeConcededResult.source,
 
       awayGoalsConcededRate:
         roundNumber(
           awayGoalsConcededRate
         ),
 
+      awayGoalsConcededRateSource:
+        awayConcededResult.source,
+
+      /*
+       * Indica se a média foi derivada de totais.
+       */
+      homeGoalsDerivedFromTotals:
+        homeGoalsResult
+          .derivedFromTotals,
+
+      awayGoalsDerivedFromTotals:
+        awayGoalsResult
+          .derivedFromTotals,
+
+      homeConcededDerivedFromTotals:
+        homeConcededResult
+          .derivedFromTotals,
+
+      awayConcededDerivedFromTotals:
+        awayConcededResult
+          .derivedFromTotals,
+
+      /*
+       * Finalizações.
+       */
+      homeShotsOnTarget:
+        homeShotsOnTargetResult
+          .value,
+
+      homeShotsOnTargetSource:
+        homeShotsOnTargetResult
+          .source,
+
+      awayShotsOnTarget:
+        awayShotsOnTargetResult
+          .value,
+
+      awayShotsOnTargetSource:
+        awayShotsOnTargetResult
+          .source,
+
+      homeShots:
+        homeShotsResult.value,
+
+      homeShotsSource:
+        homeShotsResult.source,
+
+      awayShots:
+        awayShotsResult.value,
+
+      awayShotsSource:
+        awayShotsResult.source,
+
+      /*
+       * xG proxy.
+       */
       homeXG:
         homeXG === null
           ? null
@@ -911,6 +2050,9 @@ export function buildLambda(
       awayXGDiagnostics:
         awayXGResult.diagnostics,
 
+      /*
+       * Construção ofensiva e defensiva.
+       */
       homeAttackComposite:
         roundNumber(
           homeAttackComposite
@@ -961,11 +2103,17 @@ export function buildLambda(
           awayDefensiveFragility
         ),
 
+      /*
+       * Configuração matemática.
+       */
       attackElasticity:
         ATTACK_ELASTICITY,
 
       defenseElasticity:
         DEFENSE_ELASTICITY,
+
+      shrinkFactor:
+        SHRINK_FACTOR,
 
       goalsWeight:
         GOALS_WEIGHT,

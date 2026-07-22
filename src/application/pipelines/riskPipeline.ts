@@ -1,5 +1,6 @@
 import {
-  calculateRiskScore
+  calculateRiskScoreDetailed,
+  type RiskScoreResult
 } from "../../domain/risk/riskScore";
 
 /* ==========================================
@@ -9,22 +10,28 @@ import {
 /*
  * Responsabilidade:
  *
- * - receber os mercados já precificados;
- * - calcular o risco-base oficial;
- * - incorporar risco estrutural do contexto;
- * - incorporar incerteza estatística;
+ * - receber mercados já precificados;
+ * - chamar o risco-base estatístico oficial;
+ * - identificar fragilidades específicas
+ *   de cada mercado;
+ * - medir divergência modelo x mercado;
+ * - incorporar erro de amostragem;
+ * - incorporar divergência modelo x simulação;
  * - incorporar correlationNet uma única vez;
  * - produzir risk e riskScore finais;
- * - registrar os componentes do risco.
+ * - registrar todos os componentes.
  *
  * Este arquivo não:
  *
  * - recalcula probabilidades;
  * - altera EV;
+ * - altera odds;
  * - altera confiança;
  * - seleciona mercados;
  * - classifica entradas;
- * - toma a decisão final.
+ * - toma a decisão final;
+ * - reduz risco porque o lambda favorece
+ *   determinado mercado.
  */
 
 /* ==========================================
@@ -40,25 +47,60 @@ export type RiskMarketType =
   | "BTTS_NO"
   | "OTHER";
 
+export type RiskComponentCategory =
+  | "CONTEXT"
+  | "UNCERTAINTY"
+  | "MARKET_DISAGREEMENT"
+  | "CORRELATION";
+
 export interface RiskComponent {
   source: string;
+
+  category:
+    RiskComponentCategory;
+
   adjustment: number;
+
   warning?: string;
+
+  metadata?: Record<
+    string,
+    unknown
+  >;
 }
 
 export interface RiskPipelineMarketDebug {
   valid: boolean;
 
+  marketName: string;
+
   marketType:
     RiskMarketType;
+
+  probability:
+    number | null;
+
+  odd:
+    number | null;
+
+  impliedProbability:
+    number | null;
+
+  probabilityEdge:
+    number | null;
+
+  absoluteMarketDisagreement:
+    number | null;
 
   baseRisk: number;
 
   contextualAdjustment: number;
   uncertaintyAdjustment: number;
+  marketDisagreementAdjustment: number;
   correlationAdjustment: number;
 
   totalAdjustment: number;
+  unclampedRisk: number;
   finalRisk: number;
 
   lambdaHome: number;
@@ -67,11 +109,25 @@ export interface RiskPipelineMarketDebug {
   lambdaDifference: number;
   minimumLambda: number;
 
+  goalExpectationScore:
+    number | null;
+
+  samplingError:
+    number | null;
+
+  modelSimulationDivergence:
+    number | null;
+
+  baseRiskDetails:
+    RiskScoreResult;
+
   components:
     RiskComponent[];
 
   warnings:
     string[];
+
+  error?: string;
 }
 
 export interface RiskPipelineDebug {
@@ -79,85 +135,152 @@ export interface RiskPipelineDebug {
 
   inputMarkets: number;
   outputMarkets: number;
+  validMarkets: number;
   invalidMarkets: number;
 
-  lambdaHome: number | null;
-  lambdaAway: number | null;
+  lambdaHome:
+    number | null;
 
-  totalLambda: number | null;
-  lambdaDifference: number | null;
+  lambdaAway:
+    number | null;
+
+  totalLambda:
+    number | null;
+
+  lambdaDifference:
+    number | null;
+
+  leagueAvgGoals:
+    number | null;
+
+  recentGoalStd:
+    number | null;
+
+  seasonGoalAvg:
+    number | null;
+
+  dataQualityScore:
+    number | null;
+
+  samplingError:
+    number | null;
+
+  modelSimulationDivergence:
+    number | null;
 
   error?: string;
 
   note:
-    "Risk is consolidated once from base risk, contextual structure, uncertainty and correlation.";
+    "Risk is consolidated once from statistical base risk, market fragility, uncertainty, market disagreement and correlation.";
 }
 
 /* ==========================================
-   CONFIGURAÇÃO PROVISÓRIA
+   POLÍTICA PROVISÓRIA
 ========================================== */
 
 /*
- * Estes valores preservam aproximadamente a
- * política operacional já existente.
- *
- * Eles devem futuramente ser validados por:
+ * Os valores abaixo precisam ser validados
+ * futuramente por:
  *
  * - Brier Score;
- * - erro por mercado;
+ * - Log Loss;
+ * - calibração por mercado;
+ * - ROI por faixa de risco;
  * - drawdown;
- * - ROI;
  * - backtest fora da amostra.
  *
- * Enquanto não houver validação histórica,
- * ficam centralizados e auditáveis.
+ * Nenhuma regra abaixo concede bônus porque
+ * determinado sinal favorece o mercado.
+ *
+ * O pipeline acrescenta apenas risco quando
+ * identifica fragilidade ou inconsistência.
+ *
+ * A única redução possível vem de
+ * correlationNet negativo, aplicado uma vez.
  */
 
 const RISK_POLICY = {
+  /* Fragilidades contextuais */
+
   balancedResult:
     0.06,
 
   balancedDoubleChance:
-    0.035,
+    0.03,
 
   balancedBttsNo:
     0.035,
 
-  lowGoalOver:
-    0.07,
+  lowGoalGameOver:
+    0.055,
 
-  veryLowGoalScoreOver:
-    0.08,
+  goalScoreContradictsOver:
+    0.065,
 
-  moderateGoalScoreOver:
-    0.04,
-
-  lowGoalScoreBttsYes:
-    0.04,
-
-  highGoalScoreBttsNo:
-    0.04,
-
-  highTotalLambdaSupportsOver:
-    -0.04,
-
-  highTotalLambdaBttsNo:
-    0.05,
-
-  highProbabilityLowOdd:
+  goalScoreModeratelyContradictsOver:
     0.035,
 
-  highSamplingError:
-    0.04,
+  goalScoreContradictsBttsYes:
+    0.05,
+
+  goalScoreContradictsBttsNo:
+    0.05,
+
+  goalScoreLambdaContradiction:
+    0.045,
+
+  extremeProbability:
+    0.02,
+
+  /* Informações ausentes */
+
+  missingSamplingError:
+    0.015,
+
+  missingModelSimulationDivergence:
+    0.015,
+
+  missingGoalExpectationScore:
+    0.01,
+
+  missingOdd:
+    0.025,
+
+  /* Erro de Monte Carlo */
 
   moderateSamplingError:
     0.02,
 
-  highModelDivergence:
+  highSamplingError:
+    0.04,
+
+  extremeSamplingError:
+    0.065,
+
+  /* Modelo analítico x simulação */
+
+  moderateModelSimulationDivergence:
+    0.025,
+
+  highModelSimulationDivergence:
     0.05,
 
-  moderateModelDivergence:
-    0.025
+  extremeModelSimulationDivergence:
+    0.075,
+
+  /* Modelo x mercado */
+
+  moderateMarketDisagreement:
+    0.025,
+
+  highMarketDisagreement:
+    0.06,
+
+  extremeMarketDisagreement:
+    0.11,
+
+  severeMarketDisagreement:
+    0.16
 } as const;
 
 /* ==========================================
@@ -174,32 +297,68 @@ const STRUCTURE_THRESHOLDS = {
   moderateGoalScore:
     0.55,
 
+  highGoalScore:
+    0.65,
+
   lowGoalScoreBtts:
     0.50,
 
   highGoalScoreBttsNo:
     0.65,
 
-  highTotalLambda:
-    3.20,
+  highLambdaGoalScore:
+    3.4,
 
-  highProbability:
-    0.84,
+  lowLambdaGoalScore:
+    2.0,
 
-  lowOdd:
-    1.45,
+  extremeProbability:
+    0.82,
 
   moderateSamplingError:
     0.006,
 
   highSamplingError:
-    0.010,
+    0.01,
 
-  moderateModelDivergence:
+  extremeSamplingError:
+    0.02,
+
+  moderateModelSimulationDivergence:
     0.05,
 
-  highModelDivergence:
-    0.10
+  highModelSimulationDivergence:
+    0.1,
+
+  extremeModelSimulationDivergence:
+    0.18,
+
+  moderateMarketDisagreement:
+    0.1,
+
+  highMarketDisagreement:
+    0.2,
+
+  extremeMarketDisagreement:
+    0.3,
+
+  severeMarketDisagreement:
+    0.4,
+
+  minimumRisk:
+    0.05,
+
+  maximumRisk:
+    0.95,
+
+  maximumCorrelationAdjustment:
+    0.15,
+
+  maximumPositivePipelineAdjustment:
+    0.45,
+
+  maximumNegativePipelineAdjustment:
+    -0.15
 } as const;
 
 /* ==========================================
@@ -210,7 +369,9 @@ export function riskPipeline(
   data: any
 ) {
   const inputMarkets =
-    Array.isArray(data?.markets)
+    Array.isArray(
+      data?.markets
+    )
       ? data.markets
       : [];
 
@@ -225,20 +386,25 @@ export function riskPipeline(
     );
 
   /*
-   * Sem lambdas oficiais não devemos inventar
-   * risco com valores como 1.20 ou 1.00.
+   * Os lambdas oficiais são obrigatórios.
+   *
+   * Não utilizamos fallbacks artificiais como:
+   *
+   * lambdaHome = 1.20
+   * lambdaAway = 1.00
    */
   if (
     lambdaHome === null ||
     lambdaAway === null
   ) {
-    return createInvalidPipelineResult(
+    return createInvalidPipelineResult({
       data,
       inputMarkets,
       lambdaHome,
       lambdaAway,
-      "INVALID_PIPELINE_LAMBDAS"
-    );
+      error:
+        "INVALID_PIPELINE_LAMBDAS"
+    });
   }
 
   const totalLambda =
@@ -257,6 +423,40 @@ export function riskPipeline(
       lambdaAway
     );
 
+  /*
+   * Todos os campos abaixo devem representar
+   * o total de gols por partida.
+   *
+   * Nenhum deles recebe totalLambda / 2 como
+   * fallback.
+   */
+  const leagueAvgGoals =
+    extractLeagueAverageGoals(
+      data
+    );
+
+  const recentGoalStd =
+    extractRecentGoalStd(
+      data
+    );
+
+  const seasonGoalAvg =
+    extractSeasonGoalAverage(
+      data
+    );
+
+  const dataQualityScore =
+    extractDataQualityScore(
+      data
+    );
+
+  /*
+   * Deve ser o score oficial produzido pelo
+   * modelPipeline.
+   *
+   * contextualGoalExpectationScore não é usado
+   * como substituto silencioso.
+   */
   const goalExpectationScore =
     parseProbability(
       data?.goalExpectationScore
@@ -267,8 +467,8 @@ export function riskPipeline(
       data
     );
 
-  const modelDivergence =
-    extractModelDivergence(
+  const modelSimulationDivergence =
+    extractModelSimulationDivergence(
       data
     );
 
@@ -291,9 +491,16 @@ export function riskPipeline(
             lambdaDifference,
             minimumLambda,
 
+            leagueAvgGoals,
+            recentGoalStd,
+            seasonGoalAvg,
+            dataQualityScore,
+
             goalExpectationScore,
+
             samplingError,
-            modelDivergence
+
+            modelSimulationDivergence
           });
 
         if (!result.valid) {
@@ -304,10 +511,13 @@ export function riskPipeline(
       }
     );
 
+  const validMarkets =
+    markets.length -
+    invalidMarkets;
+
   const pipelineValid =
-    markets.length > 0 &&
-    invalidMarkets <
-      markets.length;
+    inputMarkets.length > 0 &&
+    validMarkets > 0;
 
   const debug:
     RiskPipelineDebug = {
@@ -319,6 +529,8 @@ export function riskPipeline(
 
       outputMarkets:
         markets.length,
+
+      validMarkets,
 
       invalidMarkets,
 
@@ -342,17 +554,49 @@ export function riskPipeline(
           lambdaDifference
         ),
 
+      leagueAvgGoals:
+        roundNullableNumber(
+          leagueAvgGoals
+        ),
+
+      recentGoalStd:
+        roundNullableNumber(
+          recentGoalStd
+        ),
+
+      seasonGoalAvg:
+        roundNullableNumber(
+          seasonGoalAvg
+        ),
+
+      dataQualityScore:
+        roundNullableNumber(
+          dataQualityScore
+        ),
+
+      samplingError:
+        roundNullableNumber(
+          samplingError
+        ),
+
+      modelSimulationDivergence:
+        roundNullableNumber(
+          modelSimulationDivergence
+        ),
+
       ...(
         pipelineValid
           ? {}
           : {
               error:
-                "NO_VALID_RISK_MARKETS"
+                inputMarkets.length === 0
+                  ? "NO_INPUT_MARKETS"
+                  : "NO_VALID_RISK_MARKETS"
             }
       ),
 
       note:
-        "Risk is consolidated once from base risk, contextual structure, uncertainty and correlation."
+        "Risk is consolidated once from statistical base risk, market fragility, uncertainty, market disagreement and correlation."
     };
 
   return {
@@ -387,9 +631,16 @@ function calculateMarketRisk({
   lambdaDifference,
   minimumLambda,
 
+  leagueAvgGoals,
+  recentGoalStd,
+  seasonGoalAvg,
+  dataQualityScore,
+
   goalExpectationScore,
+
   samplingError,
-  modelDivergence
+
+  modelSimulationDivergence
 }: {
   market: any;
   data: any;
@@ -401,9 +652,19 @@ function calculateMarketRisk({
   lambdaDifference: number;
   minimumLambda: number;
 
-  goalExpectationScore: number | null;
-  samplingError: number | null;
-  modelDivergence: number | null;
+  leagueAvgGoals: number | null;
+  recentGoalStd: number | null;
+  seasonGoalAvg: number | null;
+  dataQualityScore: number | null;
+
+  goalExpectationScore:
+    number | null;
+
+  samplingError:
+    number | null;
+
+  modelSimulationDivergence:
+    number | null;
 }): {
   valid: boolean;
   market: any;
@@ -428,138 +689,177 @@ function calculateMarketRisk({
       market?.odd
     );
 
-  const warnings =
+  const existingWarnings =
     normalizeWarnings(
       market?.warnings
     );
 
   /*
-   * Uma probabilidade inválida impede o
-   * cálculo confiável de risco.
+   * Mercados não reconhecidos não devem
+   * receber risco aparentemente válido.
    */
-  if (probability === null) {
-    const invalidWarnings =
-      normalizeWarnings([
-        ...warnings,
-        "INVALID_MARKET_PROBABILITY_FOR_RISK"
-      ]);
+  if (
+    marketType === "OTHER"
+  ) {
+    return createInvalidMarketRisk({
+      market,
 
-    return {
-      valid: false,
+      marketName,
+      marketType,
 
-      market: {
-        ...market,
+      probability,
+      odd,
 
-        risk:
-          1,
-
-        riskScore:
-          1,
-
-        warnings:
-          invalidWarnings,
-
-        debug: {
-          ...(market?.debug ?? {}),
-
-          riskPipeline: {
-            valid:
-              false,
-
-            marketType,
-
-            baseRisk:
-              1,
-
-            contextualAdjustment:
-              0,
-
-            uncertaintyAdjustment:
-              0,
-
-            correlationAdjustment:
-              0,
-
-            totalAdjustment:
-              0,
-
-            finalRisk:
-              1,
-
-            lambdaHome,
-            lambdaAway,
-            totalLambda,
-            lambdaDifference,
-            minimumLambda,
-
-            components:
-              [],
-
-            warnings:
-              invalidWarnings
-          } satisfies RiskPipelineMarketDebug
-        }
-      }
-    };
-  }
-
-  const leagueAvgGoals =
-    parsePositiveNumber(
-      data?.leagueAvgGoals
-    );
-
-  const recentGoalStd =
-    parseNonNegativeNumber(
-      data?.recentGoalStd
-    );
-
-  const seasonGoalAvg =
-    parsePositiveNumber(
-      data?.seasonGoalAvg
-    );
-
-  /*
-   * Mantemos compatibilidade com o contrato
-   * atual do calculateRiskScore.
-   *
-   * Os fallbacks abaixo são utilizados apenas
-   * para variáveis auxiliares do risco, não para
-   * reconstruir lambdas.
-   */
-  const rawBaseRisk =
-    calculateRiskScore({
       lambdaHome,
       lambdaAway,
+      totalLambda,
+      lambdaDifference,
+      minimumLambda,
 
-      leagueAvgGoals:
-        leagueAvgGoals ??
-        totalLambda / 2,
+      goalExpectationScore,
+      samplingError,
+      modelSimulationDivergence,
+
+      warnings: [
+        ...existingWarnings,
+        "UNSUPPORTED_RISK_MARKET"
+      ],
+
+      error:
+        "UNSUPPORTED_RISK_MARKET"
+    });
+  }
+
+  if (
+    probability === null
+  ) {
+    return createInvalidMarketRisk({
+      market,
+
+      marketName,
+      marketType,
+
+      probability,
+      odd,
+
+      lambdaHome,
+      lambdaAway,
+      totalLambda,
+      lambdaDifference,
+      minimumLambda,
+
+      goalExpectationScore,
+      samplingError,
+      modelSimulationDivergence,
+
+      warnings: [
+        ...existingWarnings,
+        "INVALID_MARKET_PROBABILITY_FOR_RISK"
+      ],
+
+      error:
+        "INVALID_MARKET_PROBABILITY_FOR_RISK"
+    });
+  }
+
+  /*
+   * O risco-base estatístico não conhece:
+   *
+   * - mercado;
+   * - odd;
+   * - EV;
+   * - correlação;
+   * - contexto operacional.
+   */
+  const baseRiskDetails =
+    calculateRiskScoreDetailed({
+      lambdaHome,
+      lambdaAway,
 
       eventProbability:
         probability,
 
-      recentGoalStd:
-        recentGoalStd ??
-        0,
+      leagueAvgGoals,
 
-      seasonGoalAvg:
-        seasonGoalAvg ??
-        totalLambda / 2
+      recentGoalStd,
+
+      seasonGoalAvg,
+
+      dataQualityScore
     });
 
-  const parsedBaseRisk =
-    parseProbability(
-      rawBaseRisk
-    );
+  if (!baseRiskDetails.valid) {
+    return createInvalidMarketRisk({
+      market,
+
+      marketName,
+      marketType,
+
+      probability,
+      odd,
+
+      lambdaHome,
+      lambdaAway,
+      totalLambda,
+      lambdaDifference,
+      minimumLambda,
+
+      goalExpectationScore,
+      samplingError,
+      modelSimulationDivergence,
+
+      warnings: [
+        ...existingWarnings,
+        ...baseRiskDetails
+          .debug
+          .warnings,
+        "INVALID_STATISTICAL_BASE_RISK"
+      ],
+
+      error:
+        "INVALID_STATISTICAL_BASE_RISK",
+
+      baseRiskDetails
+    });
+  }
 
   const baseRisk =
-    parsedBaseRisk ??
-    1;
+    baseRiskDetails.risk;
+
+  const impliedProbability =
+    odd !== null
+      ? clampProbability(
+          1 /
+          odd
+        )
+      : null;
+
+  const probabilityEdge =
+    impliedProbability !== null
+      ? (
+          probability -
+          impliedProbability
+        )
+      : null;
+
+  /*
+   * A divergência utilizada como risco é
+   * absoluta.
+   *
+   * A direção continua preservada em
+   * probabilityEdge para diagnóstico.
+   */
+  const absoluteMarketDisagreement =
+    probabilityEdge !== null
+      ? Math.abs(
+          probabilityEdge
+        )
+      : null;
 
   const components:
     RiskComponent[] = [];
 
-  addContextualComponents({
+  addMarketFragilityComponents({
     components,
 
     marketType,
@@ -567,7 +867,6 @@ function calculateMarketRisk({
     data,
 
     probability,
-    odd,
 
     totalLambda,
     lambdaDifference,
@@ -579,7 +878,24 @@ function calculateMarketRisk({
     components,
 
     samplingError,
-    modelDivergence
+
+    modelSimulationDivergence,
+
+    goalExpectationScore
+  });
+
+  addMarketDisagreementComponents({
+    components,
+
+    probability,
+
+    odd,
+
+    impliedProbability,
+
+    probabilityEdge,
+
+    absoluteMarketDisagreement
   });
 
   /*
@@ -589,7 +905,7 @@ function calculateMarketRisk({
    * correlationBoost
    * correlationNet
    *
-   * O risco é alterado somente aqui.
+   * O risco é modificado uma única vez aqui.
    */
   addCorrelationComponent({
     components,
@@ -597,24 +913,30 @@ function calculateMarketRisk({
   });
 
   const contextualAdjustment =
-    sumComponentsByPrefix(
+    sumComponentsByCategory(
       components,
-      "CONTEXT_"
+      "CONTEXT"
     );
 
   const uncertaintyAdjustment =
-    sumComponentsByPrefix(
+    sumComponentsByCategory(
       components,
-      "UNCERTAINTY_"
+      "UNCERTAINTY"
+    );
+
+  const marketDisagreementAdjustment =
+    sumComponentsByCategory(
+      components,
+      "MARKET_DISAGREEMENT"
     );
 
   const correlationAdjustment =
-    sumComponentsByPrefix(
+    sumComponentsByCategory(
       components,
-      "CORRELATION_"
+      "CORRELATION"
     );
 
-  const totalAdjustment =
+  const rawTotalAdjustment =
     components.reduce(
       (
         total,
@@ -626,10 +948,37 @@ function calculateMarketRisk({
       0
     );
 
+  /*
+   * Proteção contra concentração excessiva de
+   * ajustes no pipeline.
+   *
+   * O risco-base continua sendo a autoridade
+   * estatística principal.
+   */
+  const totalAdjustment =
+    clamp(
+      rawTotalAdjustment,
+
+      STRUCTURE_THRESHOLDS
+        .maximumNegativePipelineAdjustment,
+
+      STRUCTURE_THRESHOLDS
+        .maximumPositivePipelineAdjustment
+    );
+
+  const unclampedRisk =
+    baseRisk +
+    totalAdjustment;
+
   const finalRisk =
-    clampProbability(
-      baseRisk +
-      totalAdjustment
+    clamp(
+      unclampedRisk,
+
+      STRUCTURE_THRESHOLDS
+        .minimumRisk,
+
+      STRUCTURE_THRESHOLDS
+        .maximumRisk
     );
 
   const componentWarnings =
@@ -647,16 +996,48 @@ function calculateMarketRisk({
 
   const finalWarnings =
     normalizeWarnings([
-      ...warnings,
+      ...existingWarnings,
+
+      ...baseRiskDetails
+        .debug
+        .warnings,
+
       ...componentWarnings
     ]);
 
   const debug:
     RiskPipelineMarketDebug = {
       valid:
-        parsedBaseRisk !== null,
+        true,
+
+      marketName,
 
       marketType,
+
+      probability:
+        roundNumber(
+          probability
+        ),
+
+      odd:
+        roundNullableNumber(
+          odd
+        ),
+
+      impliedProbability:
+        roundNullableNumber(
+          impliedProbability
+        ),
+
+      probabilityEdge:
+        roundNullableNumber(
+          probabilityEdge
+        ),
+
+      absoluteMarketDisagreement:
+        roundNullableNumber(
+          absoluteMarketDisagreement
+        ),
 
       baseRisk:
         roundNumber(
@@ -673,6 +1054,11 @@ function calculateMarketRisk({
           uncertaintyAdjustment
         ),
 
+      marketDisagreementAdjustment:
+        roundNumber(
+          marketDisagreementAdjustment
+        ),
+
       correlationAdjustment:
         roundNumber(
           correlationAdjustment
@@ -681,6 +1067,11 @@ function calculateMarketRisk({
       totalAdjustment:
         roundNumber(
           totalAdjustment
+        ),
+
+      unclampedRisk:
+        roundNumber(
+          unclampedRisk
         ),
 
       finalRisk:
@@ -713,6 +1104,23 @@ function calculateMarketRisk({
           minimumLambda
         ),
 
+      goalExpectationScore:
+        roundNullableNumber(
+          goalExpectationScore
+        ),
+
+      samplingError:
+        roundNullableNumber(
+          samplingError
+        ),
+
+      modelSimulationDivergence:
+        roundNullableNumber(
+          modelSimulationDivergence
+        ),
+
+      baseRiskDetails,
+
       components:
         components.map(
           component => ({
@@ -731,7 +1139,7 @@ function calculateMarketRisk({
 
   return {
     valid:
-      parsedBaseRisk !== null,
+      true,
 
     market: {
       ...market,
@@ -760,10 +1168,18 @@ function calculateMarketRisk({
 }
 
 /* ==========================================
-   CONTEXTO DO MERCADO
+   FRAGILIDADE DO MERCADO
 ========================================== */
 
-function addContextualComponents({
+/*
+ * Esta camada não concede bônus.
+ *
+ * Ela identifica apenas situações em que a
+ * estrutura do jogo torna o mercado mais
+ * sensível ou contraditório.
+ */
+
+function addMarketFragilityComponents({
   components,
 
   marketType,
@@ -771,26 +1187,27 @@ function addContextualComponents({
   data,
 
   probability,
-  odd,
 
   totalLambda,
   lambdaDifference,
 
   goalExpectationScore
 }: {
-  components: RiskComponent[];
+  components:
+    RiskComponent[];
 
-  marketType: RiskMarketType;
+  marketType:
+    RiskMarketType;
 
   data: any;
 
   probability: number;
-  odd: number | null;
 
   totalLambda: number;
   lambdaDifference: number;
 
-  goalExpectationScore: number | null;
+  goalExpectationScore:
+    number | null;
 }) {
   if (
     Boolean(
@@ -807,37 +1224,49 @@ function addContextualComponents({
       source:
         "CONTEXT_LOW_GOAL_GAME_OVER",
 
+      category:
+        "CONTEXT",
+
       adjustment:
-        RISK_POLICY.lowGoalOver,
+        RISK_POLICY
+          .lowGoalGameOver,
 
       warning:
         "LOW_GOAL_GAME_OVER_RISK"
     });
   }
 
+  /*
+   * O goalExpectationScore não concede bônus.
+   *
+   * Ele só aumenta risco quando contradiz o
+   * mercado ou contradiz fortemente os lambdas.
+   */
   if (
     goalExpectationScore !== null
   ) {
     if (
-      marketType ===
-        "OVER_1_5" ||
-      marketType ===
-        "OVER_2_5"
+      marketType === "OVER_1_5" ||
+      marketType === "OVER_2_5"
     ) {
       if (
         goalExpectationScore <
-        STRUCTURE_THRESHOLDS.lowGoalScore
+        STRUCTURE_THRESHOLDS
+          .lowGoalScore
       ) {
         components.push({
           source:
-            "CONTEXT_VERY_LOW_GOAL_SCORE_OVER",
+            "CONTEXT_GOAL_SCORE_CONTRADICTS_OVER",
+
+          category:
+            "CONTEXT",
 
           adjustment:
             RISK_POLICY
-              .veryLowGoalScoreOver,
+              .goalScoreContradictsOver,
 
           warning:
-            "LOW_GOAL_SCORE_OVER_RISK"
+            "GOAL_SCORE_CONTRADICTS_OVER_MARKET"
         });
       } else if (
         goalExpectationScore <
@@ -846,71 +1275,146 @@ function addContextualComponents({
       ) {
         components.push({
           source:
-            "CONTEXT_MODERATE_GOAL_SCORE_OVER",
+            "CONTEXT_GOAL_SCORE_MODERATELY_CONTRADICTS_OVER",
+
+          category:
+            "CONTEXT",
 
           adjustment:
             RISK_POLICY
-              .moderateGoalScoreOver,
+              .goalScoreModeratelyContradictsOver,
 
           warning:
-            "MODERATE_GOAL_SCORE_OVER_RISK"
+            "GOAL_SCORE_MODERATELY_CONTRADICTS_OVER"
         });
       }
     }
 
     if (
-      marketType ===
-        "BTTS_YES" &&
+      marketType === "BTTS_YES" &&
       goalExpectationScore <
         STRUCTURE_THRESHOLDS
           .lowGoalScoreBtts
     ) {
       components.push({
         source:
-          "CONTEXT_LOW_GOAL_SCORE_BTTS_YES",
+          "CONTEXT_GOAL_SCORE_CONTRADICTS_BTTS_YES",
+
+        category:
+          "CONTEXT",
 
         adjustment:
           RISK_POLICY
-            .lowGoalScoreBttsYes,
+            .goalScoreContradictsBttsYes,
 
         warning:
-          "LOW_GOAL_SCORE_BTTS_YES_RISK"
+          "GOAL_SCORE_CONTRADICTS_BTTS_YES"
       });
     }
 
     if (
-      marketType ===
-        "BTTS_NO" &&
+      marketType === "BTTS_NO" &&
       goalExpectationScore >
         STRUCTURE_THRESHOLDS
           .highGoalScoreBttsNo
     ) {
       components.push({
         source:
-          "CONTEXT_HIGH_GOAL_SCORE_BTTS_NO",
+          "CONTEXT_GOAL_SCORE_CONTRADICTS_BTTS_NO",
+
+        category:
+          "CONTEXT",
 
         adjustment:
           RISK_POLICY
-            .highGoalScoreBttsNo,
+            .goalScoreContradictsBttsNo,
 
         warning:
-          "HIGH_GOAL_SCORE_BTTS_NO_RISK"
+          "GOAL_SCORE_CONTRADICTS_BTTS_NO"
+      });
+    }
+
+    /*
+     * Inconsistência interna:
+     *
+     * lambda muito alto com score muito baixo;
+     * lambda muito baixo com score muito alto.
+     *
+     * Este componente não interpreta qual
+     * mercado é melhor. Ele detecta apenas que
+     * duas saídas estruturais do modelo estão
+     * se contradizendo.
+     */
+    const highLambdaLowGoalScore =
+      totalLambda >=
+        STRUCTURE_THRESHOLDS
+          .highLambdaGoalScore &&
+      goalExpectationScore <
+        STRUCTURE_THRESHOLDS
+          .lowGoalScore;
+
+    const lowLambdaHighGoalScore =
+      totalLambda <=
+        STRUCTURE_THRESHOLDS
+          .lowLambdaGoalScore &&
+      goalExpectationScore >
+        STRUCTURE_THRESHOLDS
+          .highGoalScore;
+
+    if (
+      highLambdaLowGoalScore ||
+      lowLambdaHighGoalScore
+    ) {
+      components.push({
+        source:
+          "CONTEXT_GOAL_SCORE_LAMBDA_CONTRADICTION",
+
+        category:
+          "CONTEXT",
+
+        adjustment:
+          RISK_POLICY
+            .goalScoreLambdaContradiction,
+
+        warning:
+          "GOAL_EXPECTATION_SCORE_LAMBDA_CONTRADICTION",
+
+        metadata: {
+          totalLambda:
+            roundNumber(
+              totalLambda
+            ),
+
+          goalExpectationScore:
+            roundNumber(
+              goalExpectationScore
+            )
+        }
       });
     }
   }
 
+  /*
+   * Jogo equilibrado aumenta fragilidade em
+   * mercados dependentes de dominância.
+   *
+   * Nenhum desconto é concedido quando há
+   * desequilíbrio.
+   */
   if (
     lambdaDifference <
     STRUCTURE_THRESHOLDS
       .balancedLambdaDifference
   ) {
     if (
-      marketType ===
-      "RESULT"
+      marketType === "RESULT"
     ) {
       components.push({
         source:
           "CONTEXT_BALANCED_RESULT",
+
+        category:
+          "CONTEXT",
 
         adjustment:
           RISK_POLICY
@@ -929,22 +1433,27 @@ function addContextualComponents({
         source:
           "CONTEXT_BALANCED_DOUBLE_CHANCE",
 
+        category:
+          "CONTEXT",
+
         adjustment:
           RISK_POLICY
             .balancedDoubleChance,
 
         warning:
-          "BALANCED_GAME_DOUBLE_RISK"
+          "BALANCED_GAME_DOUBLE_CHANCE_RISK"
       });
     }
 
     if (
-      marketType ===
-      "BTTS_NO"
+      marketType === "BTTS_NO"
     ) {
       components.push({
         source:
           "CONTEXT_BALANCED_BTTS_NO",
+
+        category:
+          "CONTEXT",
 
         adjustment:
           RISK_POLICY
@@ -956,74 +1465,44 @@ function addContextualComponents({
     }
   }
 
-  if (
-    totalLambda >
-    STRUCTURE_THRESHOLDS
-      .highTotalLambda
-  ) {
-    if (
-      marketType ===
-        "OVER_1_5" ||
-      marketType ===
-        "OVER_2_5"
-    ) {
-      components.push({
-        source:
-          "CONTEXT_HIGH_TOTAL_LAMBDA_OVER",
-
-        adjustment:
-          RISK_POLICY
-            .highTotalLambdaSupportsOver,
-
-        warning:
-          "HIGH_TOTAL_LAMBDA_SUPPORTS_OVER"
-      });
-    }
-
-    if (
-      marketType ===
-      "BTTS_NO"
-    ) {
-      components.push({
-        source:
-          "CONTEXT_HIGH_TOTAL_LAMBDA_BTTS_NO",
-
-        adjustment:
-          RISK_POLICY
-            .highTotalLambdaBttsNo,
-
-        warning:
-          "HIGH_TOTAL_LAMBDA_BTTS_NO_RISK"
-      });
-    }
-  }
-
   /*
-   * Alta probabilidade em odd baixa é sensível
-   * a pequenos erros de estimação.
+   * Probabilidade extrema exige histórico de
+   * calibração.
    *
-   * O risco não invalida o EV; apenas registra
-   * a fragilidade operacional.
+   * Esta penalização é pequena porque:
+   *
+   * eventLossRisk já considera a probabilidade;
+   * marketDisagreement será analisado em outro
+   * componente.
+   *
+   * O objetivo aqui é apenas registrar
+   * sensibilidade a excesso de confiança.
    */
   if (
-    odd !== null &&
-    probability >
-      STRUCTURE_THRESHOLDS
-        .highProbability &&
-    odd <
-      STRUCTURE_THRESHOLDS
-        .lowOdd
+    probability >=
+    STRUCTURE_THRESHOLDS
+      .extremeProbability
   ) {
     components.push({
       source:
-        "CONTEXT_HIGH_PROBABILITY_LOW_ODD",
+        "CONTEXT_EXTREME_MODEL_PROBABILITY",
+
+      category:
+        "CONTEXT",
 
       adjustment:
         RISK_POLICY
-          .highProbabilityLowOdd,
+          .extremeProbability,
 
       warning:
-        "HIGH_PROB_LOW_ODD_SENSITIVITY"
+        "EXTREME_MODEL_PROBABILITY_REQUIRES_CALIBRATION",
+
+      metadata: {
+        probability:
+          roundNumber(
+            probability
+          )
+      }
     });
   }
 }
@@ -1034,87 +1513,419 @@ function addContextualComponents({
 
 function addUncertaintyComponents({
   components,
+
   samplingError,
-  modelDivergence
+
+  modelSimulationDivergence,
+
+  goalExpectationScore
 }: {
-  components: RiskComponent[];
-  samplingError: number | null;
-  modelDivergence: number | null;
+  components:
+    RiskComponent[];
+
+  samplingError:
+    number | null;
+
+  modelSimulationDivergence:
+    number | null;
+
+  goalExpectationScore:
+    number | null;
 }) {
   if (
-    samplingError !== null
+    samplingError === null
   ) {
-    if (
-      samplingError >=
-      STRUCTURE_THRESHOLDS
-        .highSamplingError
-    ) {
-      components.push({
-        source:
-          "UNCERTAINTY_HIGH_MONTE_CARLO_ERROR",
+    components.push({
+      source:
+        "UNCERTAINTY_MISSING_MONTE_CARLO_ERROR",
 
-        adjustment:
-          RISK_POLICY
-            .highSamplingError,
+      category:
+        "UNCERTAINTY",
 
-        warning:
-          "HIGH_MONTE_CARLO_SAMPLING_ERROR"
-      });
-    } else if (
-      samplingError >=
-      STRUCTURE_THRESHOLDS
-        .moderateSamplingError
-    ) {
-      components.push({
-        source:
-          "UNCERTAINTY_MODERATE_MONTE_CARLO_ERROR",
+      adjustment:
+        RISK_POLICY
+          .missingSamplingError,
 
-        adjustment:
-          RISK_POLICY
-            .moderateSamplingError,
+      warning:
+        "MISSING_MONTE_CARLO_SAMPLING_ERROR"
+    });
+  } else if (
+    samplingError >=
+    STRUCTURE_THRESHOLDS
+      .extremeSamplingError
+  ) {
+    components.push({
+      source:
+        "UNCERTAINTY_EXTREME_MONTE_CARLO_ERROR",
 
-        warning:
-          "MODERATE_MONTE_CARLO_SAMPLING_ERROR"
-      });
-    }
+      category:
+        "UNCERTAINTY",
+
+      adjustment:
+        RISK_POLICY
+          .extremeSamplingError,
+
+      warning:
+        "EXTREME_MONTE_CARLO_SAMPLING_ERROR",
+
+      metadata: {
+        samplingError:
+          roundNumber(
+            samplingError
+          )
+      }
+    });
+  } else if (
+    samplingError >=
+    STRUCTURE_THRESHOLDS
+      .highSamplingError
+  ) {
+    components.push({
+      source:
+        "UNCERTAINTY_HIGH_MONTE_CARLO_ERROR",
+
+      category:
+        "UNCERTAINTY",
+
+      adjustment:
+        RISK_POLICY
+          .highSamplingError,
+
+      warning:
+        "HIGH_MONTE_CARLO_SAMPLING_ERROR",
+
+      metadata: {
+        samplingError:
+          roundNumber(
+            samplingError
+          )
+      }
+    });
+  } else if (
+    samplingError >=
+    STRUCTURE_THRESHOLDS
+      .moderateSamplingError
+  ) {
+    components.push({
+      source:
+        "UNCERTAINTY_MODERATE_MONTE_CARLO_ERROR",
+
+      category:
+        "UNCERTAINTY",
+
+      adjustment:
+        RISK_POLICY
+          .moderateSamplingError,
+
+      warning:
+        "MODERATE_MONTE_CARLO_SAMPLING_ERROR",
+
+      metadata: {
+        samplingError:
+          roundNumber(
+            samplingError
+          )
+      }
+    });
   }
 
   if (
-    modelDivergence !== null
+    modelSimulationDivergence === null
   ) {
-    if (
-      modelDivergence >=
-      STRUCTURE_THRESHOLDS
-        .highModelDivergence
-    ) {
-      components.push({
-        source:
-          "UNCERTAINTY_HIGH_MODEL_DIVERGENCE",
+    components.push({
+      source:
+        "UNCERTAINTY_MISSING_MODEL_SIMULATION_DIVERGENCE",
 
-        adjustment:
-          RISK_POLICY
-            .highModelDivergence,
+      category:
+        "UNCERTAINTY",
 
-        warning:
-          "HIGH_MODEL_PROBABILITY_DIVERGENCE"
-      });
-    } else if (
-      modelDivergence >=
-      STRUCTURE_THRESHOLDS
-        .moderateModelDivergence
-    ) {
-      components.push({
-        source:
-          "UNCERTAINTY_MODERATE_MODEL_DIVERGENCE",
+      adjustment:
+        RISK_POLICY
+          .missingModelSimulationDivergence,
 
-        adjustment:
-          RISK_POLICY
-            .moderateModelDivergence,
+      warning:
+        "MISSING_MODEL_SIMULATION_DIVERGENCE"
+    });
+  } else if (
+    modelSimulationDivergence >=
+    STRUCTURE_THRESHOLDS
+      .extremeModelSimulationDivergence
+  ) {
+    components.push({
+      source:
+        "UNCERTAINTY_EXTREME_MODEL_SIMULATION_DIVERGENCE",
 
-        warning:
-          "MODERATE_MODEL_PROBABILITY_DIVERGENCE"
-      });
-    }
+      category:
+        "UNCERTAINTY",
+
+      adjustment:
+        RISK_POLICY
+          .extremeModelSimulationDivergence,
+
+      warning:
+        "EXTREME_MODEL_SIMULATION_DIVERGENCE",
+
+      metadata: {
+        modelSimulationDivergence:
+          roundNumber(
+            modelSimulationDivergence
+          )
+      }
+    });
+  } else if (
+    modelSimulationDivergence >=
+    STRUCTURE_THRESHOLDS
+      .highModelSimulationDivergence
+  ) {
+    components.push({
+      source:
+        "UNCERTAINTY_HIGH_MODEL_SIMULATION_DIVERGENCE",
+
+      category:
+        "UNCERTAINTY",
+
+      adjustment:
+        RISK_POLICY
+          .highModelSimulationDivergence,
+
+      warning:
+        "HIGH_MODEL_SIMULATION_DIVERGENCE",
+
+      metadata: {
+        modelSimulationDivergence:
+          roundNumber(
+            modelSimulationDivergence
+          )
+      }
+    });
+  } else if (
+    modelSimulationDivergence >=
+    STRUCTURE_THRESHOLDS
+      .moderateModelSimulationDivergence
+  ) {
+    components.push({
+      source:
+        "UNCERTAINTY_MODERATE_MODEL_SIMULATION_DIVERGENCE",
+
+      category:
+        "UNCERTAINTY",
+
+      adjustment:
+        RISK_POLICY
+          .moderateModelSimulationDivergence,
+
+      warning:
+        "MODERATE_MODEL_SIMULATION_DIVERGENCE",
+
+      metadata: {
+        modelSimulationDivergence:
+          roundNumber(
+            modelSimulationDivergence
+          )
+      }
+    });
+  }
+
+  if (
+    goalExpectationScore === null
+  ) {
+    components.push({
+      source:
+        "UNCERTAINTY_MISSING_GOAL_EXPECTATION_SCORE",
+
+      category:
+        "UNCERTAINTY",
+
+      adjustment:
+        RISK_POLICY
+          .missingGoalExpectationScore,
+
+      warning:
+        "MISSING_OFFICIAL_GOAL_EXPECTATION_SCORE"
+    });
+  }
+}
+
+/* ==========================================
+   DIVERGÊNCIA MODELO X MERCADO
+========================================== */
+
+function addMarketDisagreementComponents({
+  components,
+
+  probability,
+
+  odd,
+
+  impliedProbability,
+
+  probabilityEdge,
+
+  absoluteMarketDisagreement
+}: {
+  components:
+    RiskComponent[];
+
+  probability: number;
+
+  odd: number | null;
+
+  impliedProbability:
+    number | null;
+
+  probabilityEdge:
+    number | null;
+
+  absoluteMarketDisagreement:
+    number | null;
+}) {
+  if (
+    odd === null ||
+    impliedProbability === null ||
+    probabilityEdge === null ||
+    absoluteMarketDisagreement === null
+  ) {
+    components.push({
+      source:
+        "MARKET_DISAGREEMENT_MISSING_ODD",
+
+      category:
+        "MARKET_DISAGREEMENT",
+
+      adjustment:
+        RISK_POLICY
+          .missingOdd,
+
+      warning:
+        "MARKET_DISAGREEMENT_NOT_MEASURED_WITHOUT_VALID_ODD"
+    });
+
+    return;
+  }
+
+  const metadata = {
+    probability:
+      roundNumber(
+        probability
+      ),
+
+    odd:
+      roundNumber(
+        odd
+      ),
+
+    impliedProbability:
+      roundNumber(
+        impliedProbability
+      ),
+
+    probabilityEdge:
+      roundNumber(
+        probabilityEdge
+      ),
+
+    absoluteMarketDisagreement:
+      roundNumber(
+        absoluteMarketDisagreement
+      )
+  };
+
+  if (
+    absoluteMarketDisagreement >=
+    STRUCTURE_THRESHOLDS
+      .severeMarketDisagreement
+  ) {
+    components.push({
+      source:
+        "MARKET_DISAGREEMENT_SEVERE",
+
+      category:
+        "MARKET_DISAGREEMENT",
+
+      adjustment:
+        RISK_POLICY
+          .severeMarketDisagreement,
+
+      warning:
+        "SEVERE_MODEL_MARKET_DISAGREEMENT",
+
+      metadata
+    });
+
+    return;
+  }
+
+  if (
+    absoluteMarketDisagreement >=
+    STRUCTURE_THRESHOLDS
+      .extremeMarketDisagreement
+  ) {
+    components.push({
+      source:
+        "MARKET_DISAGREEMENT_EXTREME",
+
+      category:
+        "MARKET_DISAGREEMENT",
+
+      adjustment:
+        RISK_POLICY
+          .extremeMarketDisagreement,
+
+      warning:
+        "EXTREME_MODEL_MARKET_DISAGREEMENT",
+
+      metadata
+    });
+
+    return;
+  }
+
+  if (
+    absoluteMarketDisagreement >=
+    STRUCTURE_THRESHOLDS
+      .highMarketDisagreement
+  ) {
+    components.push({
+      source:
+        "MARKET_DISAGREEMENT_HIGH",
+
+      category:
+        "MARKET_DISAGREEMENT",
+
+      adjustment:
+        RISK_POLICY
+          .highMarketDisagreement,
+
+      warning:
+        "HIGH_MODEL_MARKET_DISAGREEMENT",
+
+      metadata
+    });
+
+    return;
+  }
+
+  if (
+    absoluteMarketDisagreement >=
+    STRUCTURE_THRESHOLDS
+      .moderateMarketDisagreement
+  ) {
+    components.push({
+      source:
+        "MARKET_DISAGREEMENT_MODERATE",
+
+      category:
+        "MARKET_DISAGREEMENT",
+
+      adjustment:
+        RISK_POLICY
+          .moderateMarketDisagreement,
+
+      warning:
+        "MODERATE_MODEL_MARKET_DISAGREEMENT",
+
+      metadata
+    });
   }
 }
 
@@ -1126,7 +1937,9 @@ function addCorrelationComponent({
   components,
   market
 }: {
-  components: RiskComponent[];
+  components:
+    RiskComponent[];
+
   market: any;
 }) {
   const correlationNet =
@@ -1144,20 +1957,32 @@ function addCorrelationComponent({
   }
 
   /*
-   * Proteção contra um engine mal configurado.
+   * correlationNet positivo:
+   * aumenta risco.
    *
-   * A correlação não pode dominar todo o risco.
+   * correlationNet negativo:
+   * reduz risco.
+   *
+   * O ajuste é limitado para impedir que a
+   * correlação domine o risco estatístico.
    */
   const boundedAdjustment =
     clamp(
       correlationNet,
-      -0.15,
-      0.15
+
+      -STRUCTURE_THRESHOLDS
+        .maximumCorrelationAdjustment,
+
+      STRUCTURE_THRESHOLDS
+        .maximumCorrelationAdjustment
     );
 
   components.push({
     source:
       "CORRELATION_ENGINE_NET",
+
+    category:
+      "CORRELATION",
 
     adjustment:
       boundedAdjustment,
@@ -1165,21 +1990,246 @@ function addCorrelationComponent({
     warning:
       boundedAdjustment > 0
         ? "CORRELATION_INCREASES_RISK"
-        : "CORRELATION_SUPPORTS_MARKET"
+        : "CORRELATION_SUPPORTS_MARKET",
+
+    metadata: {
+      rawCorrelationNet:
+        roundNumber(
+          correlationNet
+        ),
+
+      boundedCorrelationNet:
+        roundNumber(
+          boundedAdjustment
+        )
+    }
   });
 }
 
 /* ==========================================
-   RESULTADO INVÁLIDO
+   RESULTADO INVÁLIDO DO MERCADO
 ========================================== */
 
-function createInvalidPipelineResult(
-  data: any,
-  inputMarkets: any[],
-  lambdaHome: number | null,
-  lambdaAway: number | null,
-  error: string
-) {
+function createInvalidMarketRisk({
+  market,
+
+  marketName,
+  marketType,
+
+  probability,
+  odd,
+
+  lambdaHome,
+  lambdaAway,
+  totalLambda,
+  lambdaDifference,
+  minimumLambda,
+
+  goalExpectationScore,
+  samplingError,
+  modelSimulationDivergence,
+
+  warnings,
+  error,
+
+  baseRiskDetails
+}: {
+  market: any;
+
+  marketName: string;
+  marketType: RiskMarketType;
+
+  probability: number | null;
+  odd: number | null;
+
+  lambdaHome: number;
+  lambdaAway: number;
+  totalLambda: number;
+  lambdaDifference: number;
+  minimumLambda: number;
+
+  goalExpectationScore:
+    number | null;
+
+  samplingError:
+    number | null;
+
+  modelSimulationDivergence:
+    number | null;
+
+  warnings:
+    string[];
+
+  error:
+    string;
+
+  baseRiskDetails?:
+    RiskScoreResult;
+}): {
+  valid: false;
+  market: any;
+} {
+  const finalWarnings =
+    normalizeWarnings(
+      warnings
+    );
+
+  const fallbackBaseRiskDetails =
+    baseRiskDetails ??
+    createUnavailableBaseRiskDetails();
+
+  const debug:
+    RiskPipelineMarketDebug = {
+      valid:
+        false,
+
+      marketName,
+
+      marketType,
+
+      probability:
+        roundNullableNumber(
+          probability
+        ),
+
+      odd:
+        roundNullableNumber(
+          odd
+        ),
+
+      impliedProbability:
+        odd !== null
+          ? roundNumber(
+              1 /
+              odd
+            )
+          : null,
+
+      probabilityEdge:
+        null,
+
+      absoluteMarketDisagreement:
+        null,
+
+      baseRisk:
+        0.95,
+
+      contextualAdjustment:
+        0,
+
+      uncertaintyAdjustment:
+        0,
+
+      marketDisagreementAdjustment:
+        0,
+
+      correlationAdjustment:
+        0,
+
+      totalAdjustment:
+        0,
+
+      unclampedRisk:
+        0.95,
+
+      finalRisk:
+        0.95,
+
+      lambdaHome:
+        roundNumber(
+          lambdaHome
+        ),
+
+      lambdaAway:
+        roundNumber(
+          lambdaAway
+        ),
+
+      totalLambda:
+        roundNumber(
+          totalLambda
+        ),
+
+      lambdaDifference:
+        roundNumber(
+          lambdaDifference
+        ),
+
+      minimumLambda:
+        roundNumber(
+          minimumLambda
+        ),
+
+      goalExpectationScore:
+        roundNullableNumber(
+          goalExpectationScore
+        ),
+
+      samplingError:
+        roundNullableNumber(
+          samplingError
+        ),
+
+      modelSimulationDivergence:
+        roundNullableNumber(
+          modelSimulationDivergence
+        ),
+
+      baseRiskDetails:
+        fallbackBaseRiskDetails,
+
+      components:
+        [],
+
+      warnings:
+        finalWarnings,
+
+      error
+    };
+
+  return {
+    valid:
+      false,
+
+    market: {
+      ...market,
+
+      risk:
+        0.95,
+
+      riskScore:
+        0.95,
+
+      warnings:
+        finalWarnings,
+
+      debug: {
+        ...(market?.debug ?? {}),
+
+        riskPipeline:
+          debug
+      }
+    }
+  };
+}
+
+/* ==========================================
+   RESULTADO INVÁLIDO DO PIPELINE
+========================================== */
+
+function createInvalidPipelineResult({
+  data,
+  inputMarkets,
+  lambdaHome,
+  lambdaAway,
+  error
+}: {
+  data: any;
+  inputMarkets: any[];
+  lambdaHome: number | null;
+  lambdaAway: number | null;
+  error: string;
+}) {
   const markets =
     inputMarkets.map(
       (market: any) => {
@@ -1196,10 +2246,10 @@ function createInvalidPipelineResult(
           ...market,
 
           risk:
-            1,
+            0.95,
 
           riskScore:
-            1,
+            0.95,
 
           warnings,
 
@@ -1213,7 +2263,7 @@ function createInvalidPipelineResult(
               error,
 
               finalRisk:
-                1,
+                0.95,
 
               warnings
             }
@@ -1233,11 +2283,21 @@ function createInvalidPipelineResult(
       outputMarkets:
         markets.length,
 
+      validMarkets:
+        0,
+
       invalidMarkets:
         markets.length,
 
-      lambdaHome,
-      lambdaAway,
+      lambdaHome:
+        roundNullableNumber(
+          lambdaHome
+        ),
+
+      lambdaAway:
+        roundNullableNumber(
+          lambdaAway
+        ),
 
       totalLambda:
         null,
@@ -1245,10 +2305,28 @@ function createInvalidPipelineResult(
       lambdaDifference:
         null,
 
+      leagueAvgGoals:
+        null,
+
+      recentGoalStd:
+        null,
+
+      seasonGoalAvg:
+        null,
+
+      dataQualityScore:
+        null,
+
+      samplingError:
+        null,
+
+      modelSimulationDivergence:
+        null,
+
       error,
 
       note:
-        "Risk is consolidated once from base risk, contextual structure, uncertainty and correlation."
+        "Risk is consolidated once from statistical base risk, market fragility, uncertainty, market disagreement and correlation."
     };
 
   return {
@@ -1269,7 +2347,124 @@ function createInvalidPipelineResult(
 }
 
 /* ==========================================
-   MERCADO
+   RESULTADO-BASE INDISPONÍVEL
+========================================== */
+
+function createUnavailableBaseRiskDetails():
+  RiskScoreResult {
+  return {
+    valid:
+      false,
+
+    risk:
+      0.95,
+
+    riskScore:
+      0.95,
+
+    components: {
+      eventLossRisk:
+        1,
+
+      goalDispersionRisk:
+        1,
+
+      volatilityRisk:
+        1,
+
+      lambdaAnomalyRisk:
+        1,
+
+      dataQualityRisk:
+        1
+    },
+
+    weightedComponents: {
+      eventLossRisk:
+        0,
+
+      goalDispersionRisk:
+        0,
+
+      volatilityRisk:
+        0,
+
+      lambdaAnomalyRisk:
+        0,
+
+      dataQualityRisk:
+        0
+    },
+
+    weights: {
+      eventLossRisk:
+        0,
+
+      goalDispersionRisk:
+        0,
+
+      volatilityRisk:
+        0,
+
+      lambdaAnomalyRisk:
+        0,
+
+      dataQualityRisk:
+        0
+    },
+
+    debug: {
+      valid:
+        false,
+
+      lambdaHome:
+        null,
+
+      lambdaAway:
+        null,
+
+      totalLambda:
+        null,
+
+      eventProbability:
+        null,
+
+      leagueAvgGoals:
+        null,
+
+      recentGoalStd:
+        null,
+
+      seasonGoalAvg:
+        null,
+
+      dataQualityScore:
+        null,
+
+      expectedGoalStd:
+        null,
+
+      volatilityRatio:
+        null,
+
+      lambdaToLeagueRatio:
+        null,
+
+      missingFields:
+        [],
+
+      warnings: [
+        "BASE_RISK_DETAILS_UNAVAILABLE"
+      ],
+
+      error:
+        "BASE_RISK_DETAILS_UNAVAILABLE"
+    }
+  };
+}
+
+/* ==========================================
+   MERCADOS
 ========================================== */
 
 function normalizeMarketName(
@@ -1279,7 +2474,9 @@ function normalizeMarketName(
     market ?? ""
   )
     .trim()
-    .toUpperCase();
+    .toUpperCase()
+    .replace(/\s+/g, "_")
+    .replace(/\./g, "_");
 }
 
 function getMarketType(
@@ -1319,6 +2516,99 @@ function getMarketType(
 }
 
 /* ==========================================
+   EXTRAÇÃO DAS MÉDIAS
+========================================== */
+
+function extractLeagueAverageGoals(
+  data: any
+): number | null {
+  const candidates = [
+    data?.leagueAvgGoals,
+
+    data?.leagueAverageGoals,
+
+    data?.leagueConfig
+      ?.averageGoals,
+
+    data?.leagueConfig
+      ?.avgGoals,
+
+    data?.debug
+      ?.modelPipeline
+      ?.leagueAvgGoals
+  ];
+
+  return firstPositiveNumber(
+    candidates
+  );
+}
+
+function extractRecentGoalStd(
+  data: any
+): number | null {
+  const candidates = [
+    data?.recentGoalStd,
+
+    data?.recentTotalGoalsStd,
+
+    data?.volatility
+      ?.recentGoalStd,
+
+    data?.debug
+      ?.contextPipeline
+      ?.recentGoalStd
+  ];
+
+  return firstNonNegativeNumber(
+    candidates
+  );
+}
+
+function extractSeasonGoalAverage(
+  data: any
+): number | null {
+  const candidates = [
+    data?.seasonGoalAvg,
+
+    data?.seasonAverageGoals,
+
+    data?.seasonTotalGoalsAverage,
+
+    data?.debug
+      ?.contextPipeline
+      ?.seasonGoalAvg
+  ];
+
+  return firstPositiveNumber(
+    candidates
+  );
+}
+
+function extractDataQualityScore(
+  data: any
+): number | null {
+  const candidates = [
+    data?.dataQualityScore,
+
+    data?.inputQualityScore,
+
+    data?.statisticalDataQuality,
+
+    data?.debug
+      ?.dataNormalizer
+      ?.qualityScore,
+
+    data?.debug
+      ?.contextPipeline
+      ?.dataQualityScore
+  ];
+
+  return firstProbability(
+    candidates
+  );
+}
+
+/* ==========================================
    EXTRAÇÃO DE INCERTEZA
 ========================================== */
 
@@ -1339,26 +2629,21 @@ function extractSamplingError(
       ?.maxSamplingError
   ];
 
-  for (
-    const candidate of candidates
-  ) {
-    const parsed =
-      parseNonNegativeNumber(
-        candidate
-      );
-
-    if (parsed !== null) {
-      return parsed;
-    }
-  }
-
-  return null;
+  return firstNonNegativeNumber(
+    candidates
+  );
 }
 
-function extractModelDivergence(
+function extractModelSimulationDivergence(
   data: any
 ): number | null {
   const candidates = [
+    data?.modelSimulationDivergence
+      ?.maximum,
+
+    data?.modelSimulationDivergence
+      ?.average,
+
     data?.modelDivergence
       ?.maximum,
 
@@ -1382,6 +2667,56 @@ function extractModelDivergence(
       ?.average
   ];
 
+  return firstNonNegativeNumber(
+    candidates
+  );
+}
+
+/* ==========================================
+   HELPERS DE COLEÇÃO
+========================================== */
+
+function firstProbability(
+  candidates: unknown[]
+): number | null {
+  for (
+    const candidate of candidates
+  ) {
+    const parsed =
+      parseProbability(
+        candidate
+      );
+
+    if (parsed !== null) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
+function firstPositiveNumber(
+  candidates: unknown[]
+): number | null {
+  for (
+    const candidate of candidates
+  ) {
+    const parsed =
+      parsePositiveNumber(
+        candidate
+      );
+
+    if (parsed !== null) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
+function firstNonNegativeNumber(
+  candidates: unknown[]
+): number | null {
   for (
     const candidate of candidates
   ) {
@@ -1399,20 +2734,19 @@ function extractModelDivergence(
 }
 
 /* ==========================================
-   HELPERS
+   SOMATÓRIO DOS COMPONENTES
 ========================================== */
 
-function sumComponentsByPrefix(
+function sumComponentsByCategory(
   components: RiskComponent[],
-  prefix: string
+  category:
+    RiskComponentCategory
 ): number {
   return components
     .filter(
       component =>
-        component.source
-          .startsWith(
-            prefix
-          )
+        component.category ===
+        category
     )
     .reduce(
       (
@@ -1425,6 +2759,10 @@ function sumComponentsByPrefix(
       0
     );
 }
+
+/* ==========================================
+   WARNINGS
+========================================== */
 
 function normalizeWarnings(
   value: unknown
@@ -1450,14 +2788,20 @@ function normalizeWarnings(
   ];
 }
 
+/* ==========================================
+   PARSERS
+========================================== */
+
 function parseProbability(
   value: unknown
 ): number | null {
   const parsed =
-    Number(value);
+    parseFiniteNumber(
+      value
+    );
 
   if (
-    !Number.isFinite(parsed) ||
+    parsed === null ||
     parsed < 0 ||
     parsed > 1
   ) {
@@ -1471,10 +2815,12 @@ function parsePositiveNumber(
   value: unknown
 ): number | null {
   const parsed =
-    Number(value);
+    parseFiniteNumber(
+      value
+    );
 
   if (
-    !Number.isFinite(parsed) ||
+    parsed === null ||
     parsed <= 0
   ) {
     return null;
@@ -1487,11 +2833,31 @@ function parseNonNegativeNumber(
   value: unknown
 ): number | null {
   const parsed =
-    Number(value);
+    parseFiniteNumber(
+      value
+    );
 
   if (
-    !Number.isFinite(parsed) ||
+    parsed === null ||
     parsed < 0
+  ) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function parseOdd(
+  value: unknown
+): number | null {
+  const parsed =
+    parseFiniteNumber(
+      value
+    );
+
+  if (
+    parsed === null ||
+    parsed <= 1
   ) {
     return null;
   }
@@ -1502,29 +2868,30 @@ function parseNonNegativeNumber(
 function parseFiniteNumber(
   value: unknown
 ): number | null {
-  const parsed =
-    Number(value);
-
-  return Number.isFinite(parsed)
-    ? parsed
-    : null;
-}
-
-function parseOdd(
-  value: unknown
-): number | null {
-  const parsed =
-    Number(value);
-
   if (
-    !Number.isFinite(parsed) ||
-    parsed <= 1
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    typeof value === "boolean"
   ) {
     return null;
   }
 
-  return parsed;
+  const parsed =
+    Number(
+      value
+    );
+
+  return Number.isFinite(
+    parsed
+  )
+    ? parsed
+    : null;
 }
+
+/* ==========================================
+   HELPERS NUMÉRICOS
+========================================== */
 
 function clampProbability(
   value: number
@@ -1541,7 +2908,9 @@ function clamp(
   minimum: number,
   maximum: number
 ): number {
-  if (!Number.isFinite(value)) {
+  if (
+    !Number.isFinite(value)
+  ) {
     return maximum;
   }
 
@@ -1554,11 +2923,27 @@ function clamp(
   );
 }
 
+function roundNullableNumber(
+  value: number | null,
+  decimals = 6
+): number | null {
+  if (value === null) {
+    return null;
+  }
+
+  return roundNumber(
+    value,
+    decimals
+  );
+}
+
 function roundNumber(
   value: number,
   decimals = 6
 ): number {
-  if (!Number.isFinite(value)) {
+  if (
+    !Number.isFinite(value)
+  ) {
     return 0;
   }
 

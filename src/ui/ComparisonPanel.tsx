@@ -1,4 +1,5 @@
 import {
+  useMemo,
   useState,
   type ChangeEvent,
   type ReactNode
@@ -13,32 +14,116 @@ import {
  *
  * - receber estatísticas comparativas;
  * - permitir preenchimento manual;
- * - destacar visualmente o maior valor;
- * - converter os valores para número no envio;
- * - encaminhar o payload ao InputPanel.
+ * - destacar visualmente diferenças;
+ * - validar consistência dos dados;
+ * - converter números somente no envio;
+ * - encaminhar apenas valores realmente
+ *   preenchidos ao InputPanel;
+ * - impedir contaminação por estado antigo.
  *
  * Este componente não:
  *
  * - calcula probabilidades;
  * - calcula lambdas;
- * - normaliza estatísticas;
- * - toma decisões;
- * - aplica regras de mercado.
+ * - calcula EV;
+ * - normaliza estatísticas do modelo;
+ * - aplica regras de mercado;
+ * - toma decisões operacionais.
  */
 
 /* ==========================================
-   CONTRATOS
+   CONTRATO DOS CAMPOS
 ========================================== */
 
-type ComparisonForm = Record<
-  string,
-  string
->;
+export type ComparisonField =
+  | "homeRating"
+  | "awayRating"
 
-type ComparisonPayload = Record<
-  string,
-  number
->;
+  | "homeMatches"
+  | "awayMatches"
+
+  | "homeGoals"
+  | "awayGoals"
+
+  | "homeConceded"
+  | "awayConceded"
+
+  | "homeAssists"
+  | "awayAssists"
+
+  | "homeGoalsPG"
+  | "awayGoalsPG"
+
+  | "homeShotsOnTarget"
+  | "awayShotsOnTarget"
+
+  | "homeBigChances"
+  | "awayBigChances"
+
+  | "homeBigChancesMissed"
+  | "awayBigChancesMissed"
+
+  | "homePossession"
+  | "awayPossession"
+
+  | "homePasses"
+  | "awayPasses"
+
+  | "homeLongBalls"
+  | "awayLongBalls"
+
+  | "homeCleanSheets"
+  | "awayCleanSheets"
+
+  | "homeConcededPG"
+  | "awayConcededPG"
+
+  | "homeInterceptions"
+  | "awayInterceptions"
+
+  | "homeTackles"
+  | "awayTackles"
+
+  | "homeClearances"
+  | "awayClearances"
+
+  | "homeSaves"
+  | "awaySaves"
+
+  | "homeFouls"
+  | "awayFouls"
+
+  | "homeOffsides"
+  | "awayOffsides"
+
+  | "homeThrowIns"
+  | "awayThrowIns"
+
+  | "homeYellow"
+  | "awayYellow"
+
+  | "homeRed"
+  | "awayRed";
+
+type ComparisonForm =
+  Partial<
+    Record<
+      ComparisonField,
+      string
+    >
+  >;
+
+export type ComparisonPayload =
+  Partial<
+    Record<
+      ComparisonField,
+      number
+    >
+  >;
+
+/* ==========================================
+   PROPS
+========================================== */
 
 interface ComparisonPanelProps {
   onLoadData: (
@@ -50,10 +135,10 @@ interface ComparisonRowProps {
   label: string;
 
   home:
-    string;
+    ComparisonField;
 
   away:
-    string;
+    ComparisonField;
 
   form:
     ComparisonForm;
@@ -62,11 +147,32 @@ interface ComparisonRowProps {
     event:
       ChangeEvent<HTMLInputElement>
   ) => void;
+
+  integer?: boolean;
+  percentage?: boolean;
 }
 
 interface SectionProps {
   title: string;
   children: ReactNode;
+}
+
+/* ==========================================
+   DIAGNÓSTICO
+========================================== */
+
+interface ComparisonDiagnostics {
+  complete: boolean;
+  partial: boolean;
+
+  missingRequiredFields:
+    ComparisonField[];
+
+  warnings:
+    string[];
+
+  errors:
+    string[];
 }
 
 /* ==========================================
@@ -76,6 +182,96 @@ interface SectionProps {
 const INPUT_CLASS =
   "inputElite";
 
+const REQUIRED_FIELDS:
+  ComparisonField[] = [
+    "homeMatches",
+    "awayMatches",
+
+    "homeGoals",
+    "awayGoals",
+
+    "homeConceded",
+    "awayConceded",
+
+    "homeGoalsPG",
+    "awayGoalsPG",
+
+    "homeConcededPG",
+    "awayConcededPG"
+  ];
+
+const ALL_FIELDS:
+  ComparisonField[] = [
+    "homeRating",
+    "awayRating",
+
+    "homeMatches",
+    "awayMatches",
+
+    "homeGoals",
+    "awayGoals",
+
+    "homeConceded",
+    "awayConceded",
+
+    "homeAssists",
+    "awayAssists",
+
+    "homeGoalsPG",
+    "awayGoalsPG",
+
+    "homeShotsOnTarget",
+    "awayShotsOnTarget",
+
+    "homeBigChances",
+    "awayBigChances",
+
+    "homeBigChancesMissed",
+    "awayBigChancesMissed",
+
+    "homePossession",
+    "awayPossession",
+
+    "homePasses",
+    "awayPasses",
+
+    "homeLongBalls",
+    "awayLongBalls",
+
+    "homeCleanSheets",
+    "awayCleanSheets",
+
+    "homeConcededPG",
+    "awayConcededPG",
+
+    "homeInterceptions",
+    "awayInterceptions",
+
+    "homeTackles",
+    "awayTackles",
+
+    "homeClearances",
+    "awayClearances",
+
+    "homeSaves",
+    "awaySaves",
+
+    "homeFouls",
+    "awayFouls",
+
+    "homeOffsides",
+    "awayOffsides",
+
+    "homeThrowIns",
+    "awayThrowIns",
+
+    "homeYellow",
+    "awayYellow",
+
+    "homeRed",
+    "awayRed"
+  ];
+
 /* ==========================================
    COMPONENTE PRINCIPAL
 ========================================== */
@@ -84,19 +280,50 @@ export default function ComparisonPanel({
   onLoadData
 }: ComparisonPanelProps) {
   /*
-   * Mantemos strings no estado para permitir:
+   * Strings são preservadas durante a digitação
+   * para permitir:
    *
    * - campo vazio;
-   * - digitação decimal;
-   * - apagar o valor sem virar zero;
-   *
-   * A conversão para número acontece apenas
-   * no momento do envio.
+   * - casas decimais;
+   * - apagar valor;
+   * - digitar "1.";
+   * - utilizar vírgula decimal.
    */
   const [
     form,
     setForm
-  ] = useState<ComparisonForm>({});
+  ] = useState<ComparisonForm>(
+    {}
+  );
+
+  const [
+    validationError,
+    setValidationError
+  ] = useState<
+    string | null
+  >(null);
+
+  const [
+    successMessage,
+    setSuccessMessage
+  ] = useState<
+    string | null
+  >(null);
+
+  const diagnostics =
+    useMemo(
+      () =>
+        inspectComparisonForm(
+          form
+        ),
+      [
+        form
+      ]
+    );
+
+  /* ========================================
+     ALTERAÇÃO DOS CAMPOS
+  ======================================== */
 
   function handleChange(
     event:
@@ -107,35 +334,238 @@ export default function ComparisonPanel({
       value
     } = event.target;
 
+    if (
+      !isComparisonField(
+        name
+      )
+    ) {
+      console.warn(
+        "UNKNOWN_COMPARISON_FIELD:",
+        name
+      );
+
+      return;
+    }
+
+    setValidationError(
+      null
+    );
+
+    setSuccessMessage(
+      null
+    );
+
+    const sanitizedValue =
+      sanitizeNumericInput(
+        value
+      );
+
     setForm(
       previous => ({
         ...previous,
 
         [name]:
-          sanitizeNumericInput(
-            value
-          )
+          sanitizedValue
       })
     );
   }
 
+  /* ========================================
+     ENVIO
+  ======================================== */
+
   function handleLoad() {
+    setValidationError(
+      null
+    );
+
+    setSuccessMessage(
+      null
+    );
+
+    const currentDiagnostics =
+      inspectComparisonForm(
+        form
+      );
+
+    console.group(
+      "📊 COMPARISON PANEL — LOAD DATA"
+    );
+
+    console.log(
+      "FORM STATE:",
+      form
+    );
+
+    console.log(
+      "DIAGNOSTICS:",
+      currentDiagnostics
+    );
+
+    if (
+      currentDiagnostics
+        .errors
+        .length > 0
+    ) {
+      console.error(
+        "COMPARISON VALIDATION ERRORS:",
+        currentDiagnostics.errors
+      );
+
+      console.groupEnd();
+
+      setValidationError(
+        currentDiagnostics
+          .errors
+          .join(" ")
+      );
+
+      return;
+    }
+
+    if (
+      currentDiagnostics
+        .missingRequiredFields
+        .length > 0
+    ) {
+      console.warn(
+        "MISSING REQUIRED FIELDS:",
+        currentDiagnostics
+          .missingRequiredFields
+      );
+
+      console.groupEnd();
+
+      setValidationError(
+        "Preencha os campos essenciais de partidas, gols, gols sofridos e respectivas médias dos dois times."
+      );
+
+      return;
+    }
+
     const payload =
       convertFormToPayload(
         form
       );
 
+    /*
+     * Proteção final:
+     *
+     * Não envia payload vazio e não envia
+     * campos ausentes como zero.
+     */
+    if (
+      Object.keys(
+        payload
+      ).length === 0
+    ) {
+      console.warn(
+        "EMPTY_COMPARISON_PAYLOAD"
+      );
+
+      console.groupEnd();
+
+      setValidationError(
+        "Nenhuma estatística válida foi informada."
+      );
+
+      return;
+    }
+
+    console.log(
+      "FINAL COMPARISON PAYLOAD:",
+      payload
+    );
+
+    console.log(
+      "AWAY GOALS TRACE:",
+      {
+        raw:
+          form.awayGoals,
+
+        parsed:
+          parseOptionalNumber(
+            form.awayGoals
+          ),
+
+        payload:
+          payload.awayGoals
+      }
+    );
+
+    console.log(
+      "HOME GOALS TRACE:",
+      {
+        raw:
+          form.homeGoals,
+
+        parsed:
+          parseOptionalNumber(
+            form.homeGoals
+          ),
+
+        payload:
+          payload.homeGoals
+      }
+    );
+
+    console.groupEnd();
+
     onLoadData(
       payload
+    );
+
+    setSuccessMessage(
+      "Dados enviados para o painel de análise."
+    );
+  }
+
+  /* ========================================
+     LIMPEZA
+  ======================================== */
+
+  function handleClear() {
+    console.group(
+      "🧹 COMPARISON PANEL — CLEAR"
+    );
+
+    console.log(
+      "FORM BEFORE CLEAR:",
+      form
+    );
+
+    console.log(
+      "ALL COMPARISON FIELDS CLEARED:",
+      ALL_FIELDS
+    );
+
+    console.groupEnd();
+
+    setForm(
+      {}
+    );
+
+    setValidationError(
+      null
+    );
+
+    setSuccessMessage(
+      null
     );
   }
 
   return (
     <div className="p-6 bg-black text-white rounded-2xl space-y-6">
 
-      <h2 className="text-lg font-bold">
-        📊 Comparação estilo SofaScore
-      </h2>
+      <div className="flex flex-col gap-2">
+        <h2 className="text-lg font-bold">
+          📊 Comparação estilo SofaScore
+        </h2>
+
+        <p className="text-xs text-zinc-500">
+          Preencha os dados dos dois times antes de enviar para a análise.
+        </p>
+      </div>
 
       <div className="grid grid-cols-3 gap-4 text-[11px] uppercase tracking-wide text-zinc-500 px-1">
         <span className="text-left">
@@ -168,6 +598,7 @@ export default function ComparisonPanel({
           away="awayMatches"
           form={form}
           onChange={handleChange}
+          integer
         />
 
         <ComparisonRow
@@ -176,6 +607,7 @@ export default function ComparisonPanel({
           away="awayGoals"
           form={form}
           onChange={handleChange}
+          integer
         />
 
         <ComparisonRow
@@ -184,6 +616,7 @@ export default function ComparisonPanel({
           away="awayConceded"
           form={form}
           onChange={handleChange}
+          integer
         />
 
         <ComparisonRow
@@ -240,6 +673,7 @@ export default function ComparisonPanel({
           away="awayPossession"
           form={form}
           onChange={handleChange}
+          percentage
         />
 
         <ComparisonRow
@@ -355,13 +789,64 @@ export default function ComparisonPanel({
         />
       </Section>
 
-      <button
-        type="button"
-        onClick={handleLoad}
-        className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 transition rounded-xl font-bold"
-      >
-        🚀 Usar no Input
-      </button>
+      {/* DIAGNÓSTICO */}
+
+      {diagnostics.partial &&
+        diagnostics.warnings.length > 0 && (
+          <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-4 text-sm text-yellow-300">
+            <div className="font-bold mb-2">
+              ⚠️ Dados incompletos
+            </div>
+
+            <ul className="space-y-1">
+              {diagnostics.warnings.map(
+                warning => (
+                  <li key={warning}>
+                    • {formatWarning(
+                      warning
+                    )}
+                  </li>
+                )
+              )}
+            </ul>
+          </div>
+        )}
+
+      {validationError && (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-400">
+          ⚠️ {validationError}
+        </div>
+      )}
+
+      {successMessage && (
+        <div className="rounded-xl border border-green-500/30 bg-green-500/10 p-4 text-sm text-green-400">
+          ✅ {successMessage}
+        </div>
+      )}
+
+      {/* AÇÕES */}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <button
+          type="button"
+          onClick={
+            handleClear
+          }
+          className="w-full py-3 bg-zinc-800 hover:bg-zinc-700 transition rounded-xl font-bold"
+        >
+          🧹 Limpar comparação
+        </button>
+
+        <button
+          type="button"
+          onClick={
+            handleLoad
+          }
+          className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 transition rounded-xl font-bold"
+        >
+          🚀 Usar no Input
+        </button>
+      </div>
 
     </div>
   );
@@ -376,7 +861,9 @@ function ComparisonRow({
   home,
   away,
   form,
-  onChange
+  onChange,
+  integer = false,
+  percentage = false
 }: ComparisonRowProps) {
   const homeValue =
     parseOptionalNumber(
@@ -407,15 +894,30 @@ function ComparisonRow({
 
       <input
         type="number"
-        inputMode="decimal"
-        step="any"
+        inputMode={
+          integer
+            ? "numeric"
+            : "decimal"
+        }
+        step={
+          integer
+            ? "1"
+            : "any"
+        }
         min="0"
+        max={
+          percentage
+            ? "100"
+            : undefined
+        }
         name={home}
         value={
           form[home] ??
           ""
         }
-        onChange={onChange}
+        onChange={
+          onChange
+        }
         aria-label={`${label} do mandante`}
         className={
           `${INPUT_CLASS} ${
@@ -432,15 +934,30 @@ function ComparisonRow({
 
       <input
         type="number"
-        inputMode="decimal"
-        step="any"
+        inputMode={
+          integer
+            ? "numeric"
+            : "decimal"
+        }
+        step={
+          integer
+            ? "1"
+            : "any"
+        }
         min="0"
+        max={
+          percentage
+            ? "100"
+            : undefined
+        }
         name={away}
         value={
           form[away] ??
           ""
         }
-        onChange={onChange}
+        onChange={
+          onChange
+        }
         aria-label={`${label} do visitante`}
         className={
           `${INPUT_CLASS} ${
@@ -475,6 +992,244 @@ function Section({
 }
 
 /* ==========================================
+   INSPEÇÃO DO FORMULÁRIO
+========================================== */
+
+function inspectComparisonForm(
+  form:
+    ComparisonForm
+): ComparisonDiagnostics {
+  const missingRequiredFields =
+    REQUIRED_FIELDS.filter(
+      field =>
+        parseOptionalNumber(
+          form[field]
+        ) === null
+    );
+
+  const warnings:
+    string[] = [];
+
+  const errors:
+    string[] = [];
+
+  if (
+    missingRequiredFields.length > 0
+  ) {
+    warnings.push(
+      "COMPARISON_DATA_PARTIAL"
+    );
+
+    for (
+      const field of missingRequiredFields
+    ) {
+      warnings.push(
+        `MISSING_${field.toUpperCase()}`
+      );
+    }
+  }
+
+  errors.push(
+    ...validateTeamConsistency({
+      side:
+        "home",
+
+      matches:
+        parseOptionalNumber(
+          form.homeMatches
+        ),
+
+      goalsFor:
+        parseOptionalNumber(
+          form.homeGoals
+        ),
+
+      goalsPerGame:
+        parseOptionalNumber(
+          form.homeGoalsPG
+        ),
+
+      goalsAgainst:
+        parseOptionalNumber(
+          form.homeConceded
+        ),
+
+      goalsConcededPerGame:
+        parseOptionalNumber(
+          form.homeConcededPG
+        )
+    })
+  );
+
+  errors.push(
+    ...validateTeamConsistency({
+      side:
+        "away",
+
+      matches:
+        parseOptionalNumber(
+          form.awayMatches
+        ),
+
+      goalsFor:
+        parseOptionalNumber(
+          form.awayGoals
+        ),
+
+      goalsPerGame:
+        parseOptionalNumber(
+          form.awayGoalsPG
+        ),
+
+      goalsAgainst:
+        parseOptionalNumber(
+          form.awayConceded
+        ),
+
+      goalsConcededPerGame:
+        parseOptionalNumber(
+          form.awayConcededPG
+        )
+    })
+  );
+
+  return {
+    complete:
+      missingRequiredFields.length === 0 &&
+      errors.length === 0,
+
+    partial:
+      missingRequiredFields.length > 0,
+
+    missingRequiredFields,
+
+    warnings:
+      normalizeWarnings(
+        warnings
+      ),
+
+    errors:
+      normalizeWarnings(
+        errors
+      )
+  };
+}
+
+/* ==========================================
+   VALIDAÇÃO DE COERÊNCIA
+========================================== */
+
+function validateTeamConsistency({
+  side,
+  matches,
+  goalsFor,
+  goalsPerGame,
+  goalsAgainst,
+  goalsConcededPerGame
+}: {
+  side:
+    "home" | "away";
+
+  matches:
+    number | null;
+
+  goalsFor:
+    number | null;
+
+  goalsPerGame:
+    number | null;
+
+  goalsAgainst:
+    number | null;
+
+  goalsConcededPerGame:
+    number | null;
+}): string[] {
+  const errors:
+    string[] = [];
+
+  const teamLabel =
+    side === "home"
+      ? "Mandante"
+      : "Visitante";
+
+  if (
+    matches !== null &&
+    matches <= 0
+  ) {
+    errors.push(
+      `${teamLabel}: a quantidade de partidas deve ser maior que zero.`
+    );
+
+    return errors;
+  }
+
+  if (
+    matches !== null &&
+    goalsFor !== null &&
+    goalsPerGame !== null
+  ) {
+    const calculated =
+      goalsFor /
+      matches;
+
+    const difference =
+      Math.abs(
+        calculated -
+        goalsPerGame
+      );
+
+    /*
+     * Aceita diferenças normais de arredondamento.
+     *
+     * Exemplo:
+     *
+     * 28 / 18 = 1,555...
+     * valor exibido = 1,6
+     */
+    if (
+      difference > 0.2
+    ) {
+      errors.push(
+        `${teamLabel}: gols por jogo inconsistentes. ` +
+        `${goalsFor} gols em ${matches} partidas equivalem a ` +
+        `${calculated.toFixed(2)}, mas foi informado ` +
+        `${goalsPerGame.toFixed(2)}.`
+      );
+    }
+  }
+
+  if (
+    matches !== null &&
+    goalsAgainst !== null &&
+    goalsConcededPerGame !== null
+  ) {
+    const calculated =
+      goalsAgainst /
+      matches;
+
+    const difference =
+      Math.abs(
+        calculated -
+        goalsConcededPerGame
+      );
+
+    if (
+      difference > 0.2
+    ) {
+      errors.push(
+        `${teamLabel}: gols sofridos por jogo inconsistentes. ` +
+        `${goalsAgainst} gols sofridos em ${matches} partidas equivalem a ` +
+        `${calculated.toFixed(2)}, mas foi informado ` +
+        `${goalsConcededPerGame.toFixed(2)}.`
+      );
+    }
+  }
+
+  return errors;
+}
+
+/* ==========================================
    CONVERSÃO DO FORMULÁRIO
 ========================================== */
 
@@ -486,28 +1241,34 @@ function convertFormToPayload(
     ComparisonPayload = {};
 
   for (
-    const [
-      key,
-      rawValue
-    ] of Object.entries(
-      form
-    )
+    const field of ALL_FIELDS
   ) {
+    const rawValue =
+      form[field];
+
     const parsed =
       parseOptionalNumber(
         rawValue
       );
 
     /*
-     * Mantemos compatibilidade com o contrato
-     * anterior: campos vazios são enviados como 0.
+     * Campo vazio ou inválido não é enviado.
      *
-     * A diferença é que isso acontece apenas no
-     * envio, e não enquanto o usuário digita.
+     * Não fazemos:
+     *
+     * parsed ?? 0
+     *
+     * porque ausência de dado não significa
+     * valor estatístico igual a zero.
      */
-    payload[key] =
-      parsed ??
-      0;
+    if (
+      parsed === null
+    ) {
+      continue;
+    }
+
+    payload[field] =
+      parsed;
   }
 
   return payload;
@@ -518,18 +1279,38 @@ function convertFormToPayload(
 ========================================== */
 
 function parseOptionalNumber(
-  value: unknown
+  value:
+    unknown
 ): number | null {
   if (
     value === "" ||
     value === null ||
-    value === undefined
+    value === undefined ||
+    typeof value === "boolean"
+  ) {
+    return null;
+  }
+
+  const normalized =
+    String(
+      value
+    )
+      .replace(
+        ",",
+        "."
+      )
+      .trim();
+
+  if (
+    normalized === ""
   ) {
     return null;
   }
 
   const parsed =
-    Number(value);
+    Number(
+      normalized
+    );
 
   return Number.isFinite(
     parsed
@@ -539,23 +1320,24 @@ function parseOptionalNumber(
 }
 
 /*
- * Aceita apenas:
+ * Aceita:
  *
  * - números;
- * - sinal decimal;
- * - ponto ou vírgula;
- *
- * A vírgula é convertida em ponto para facilitar
- * o preenchimento em português.
+ * - ponto;
+ * - vírgula;
+ * - estados intermediários como "1.".
  */
 function sanitizeNumericInput(
-  value: string
+  value:
+    string
 ): string {
   const normalized =
-    value.replace(
-      ",",
-      "."
-    );
+    value
+      .replace(
+        ",",
+        "."
+      )
+      .trim();
 
   if (
     normalized === ""
@@ -563,10 +1345,6 @@ function sanitizeNumericInput(
     return "";
   }
 
-  /*
-   * Permite valores numéricos intermediários,
-   * como "1." durante a digitação.
-   */
   if (
     /^\d*\.?\d*$/.test(
       normalized
@@ -583,5 +1361,65 @@ function sanitizeNumericInput(
     .replace(
       /(\..*)\./g,
       "$1"
+    );
+}
+
+/* ==========================================
+   FIELD GUARD
+========================================== */
+
+const COMPARISON_FIELD_SET =
+  new Set<ComparisonField>(
+    ALL_FIELDS
+  );
+
+function isComparisonField(
+  value:
+    string
+): value is ComparisonField {
+  return COMPARISON_FIELD_SET.has(
+    value as ComparisonField
+  );
+}
+
+/* ==========================================
+   WARNINGS
+========================================== */
+
+function normalizeWarnings(
+  values:
+    string[]
+): string[] {
+  return [
+    ...new Set(
+      values
+        .map(
+          value =>
+            String(
+              value ??
+              ""
+            ).trim()
+        )
+        .filter(
+          Boolean
+        )
+    )
+  ];
+}
+
+function formatWarning(
+  warning:
+    string
+): string {
+  return warning
+    .replace(
+      /_/g,
+      " "
+    )
+    .toLowerCase()
+    .replace(
+      /^./,
+      character =>
+        character.toUpperCase()
     );
 }

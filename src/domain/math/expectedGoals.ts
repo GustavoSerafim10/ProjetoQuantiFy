@@ -7,22 +7,24 @@
  *
  * - produzir uma estimativa auxiliar simples;
  * - comparar ataque da equipe com defesa adversária;
- * - servir como diagnóstico do lambda oficial;
- * - detectar possíveis divergências estruturais.
+ * - servir como diagnóstico independente;
+ * - detectar divergência em relação ao lambda oficial.
  *
  * Este arquivo NÃO:
  *
- * - produz o lambda oficial do sistema;
+ * - produz o lambda oficial;
  * - aplica shrinkage;
- * - aplica ajuste de liga;
+ * - aplica ajuste da liga;
  * - aplica vantagem de casa;
  * - utiliza xG Proxy;
- * - substitui o lambdaBuilder.
+ * - calcula probabilidades;
+ * - calcula EV;
+ * - toma decisões.
  *
- * A fonte oficial dos lambdas é:
+ * A fonte oficial das lambdas é:
  *
  * buildLambda()
- * em lambdaBuilder.ts
+ * em lambdaBuilder.ts.
  */
 
 /* ==========================================
@@ -30,50 +32,117 @@
 ========================================== */
 
 export interface TeamStats {
-  matches: number;
+  matchesPlayed?: number;
+  matches?: number;
 
-  goalsPerMatch: number;
+  goalsFor?: number;
+  goalsAgainst?: number;
 
-  goalsConcededPerMatch: number;
+  goalsPerGame?: number;
+  goalsForPerGame?: number;
+  avgGoals?: number;
+  goalsPerMatch?: number;
+
+  goalsConcededPerGame?: number;
+  goalsAgainstPerGame?: number;
+  avgGoalsAgainst?: number;
+  goalsConcededPerMatch?: number;
+
+  homeGoalsScoredPerMatch?: number;
+  homeGoalsConcededPerMatch?: number;
+
+  awayGoalsScoredPerMatch?: number;
+  awayGoalsConcededPerMatch?: number;
 }
 
 export interface ExpectedGoalsConfig {
   /*
-   * Utilizado apenas como fallback quando uma
-   * estatística válida não estiver disponível.
+   * Média por equipe, não média total da partida.
    *
-   * Este valor não regulariza os dados observados.
+   * Exemplo:
+   *
+   * liga com 2.55 gols por partida
+   * ≈ 1.275 por equipe.
    */
   leagueAverageGoalsPerTeam?: number;
 
   minLambda?: number;
-
   maxLambda?: number;
+}
+
+type RateSource =
+  | "homeGoalsScoredPerMatch"
+  | "awayGoalsScoredPerMatch"
+
+  | "homeGoalsConcededPerMatch"
+  | "awayGoalsConcededPerMatch"
+
+  | "goalsPerGame"
+  | "goalsForPerGame"
+  | "avgGoals"
+  | "goalsPerMatch"
+
+  | "goalsConcededPerGame"
+  | "goalsAgainstPerGame"
+  | "avgGoalsAgainst"
+  | "goalsConcededPerMatch"
+
+  | "goalsForDividedByMatches"
+  | "goalsAgainstDividedByMatches"
+
+  | "leagueFallback";
+
+interface ResolvedRate {
+  value: number;
+  source: RateSource;
+
+  usedFallback: boolean;
+  derivedFromTotals: boolean;
 }
 
 export interface ExpectedGoalsResult {
   lambdaHome: number;
-
   lambdaAway: number;
-
   totalLambda: number;
 
+  /*
+   * Validade numérica da operação.
+   */
   valid: boolean;
 
+  /*
+   * Indica se ao menos parte relevante dos dados
+   * veio das equipes.
+   */
+  dataValid: boolean;
+
   diagnostics: {
-    homeAttackRate: number | null;
+    homeAttackObserved: number | null;
+    awayAttackObserved: number | null;
 
-    awayAttackRate: number | null;
+    homeDefensiveObserved: number | null;
+    awayDefensiveObserved: number | null;
 
-    homeDefensiveRate: number | null;
+    homeAttackRateUsed: number;
+    awayAttackRateUsed: number;
 
-    awayDefensiveRate: number | null;
+    homeDefensiveRateUsed: number;
+    awayDefensiveRateUsed: number;
+
+    homeAttackSource: RateSource;
+    awayAttackSource: RateSource;
+
+    homeDefensiveSource: RateSource;
+    awayDefensiveSource: RateSource;
 
     homeRawLambda: number;
-
     awayRawLambda: number;
 
+    inputQuality: number;
+    usedOnlyFallbacks: boolean;
+
     usedFallbacks: string[];
+    warnings: string[];
 
     note:
       "Diagnostic baseline only. Official lambdas must come from buildLambda().";
@@ -94,12 +163,15 @@ export function calculateExpectedGoals(
   const usedFallbacks:
     string[] = [];
 
+  const warnings:
+    string[] = [];
+
   const leagueAverageGoalsPerTeam =
     clamp(
       parsePositiveNumber(
         config
           .leagueAverageGoalsPerTeam
-      ) ?? 1.35,
+      ) ?? 1.275,
 
       0.60,
 
@@ -128,113 +200,101 @@ export function calculateExpectedGoals(
       6
     );
 
-  const homeAttackObserved =
-    parseNonNegativeNumber(
-      home?.goalsPerMatch
-    );
-
-  const awayAttackObserved =
-    parseNonNegativeNumber(
-      away?.goalsPerMatch
-    );
-
-  const homeDefenseObserved =
-    parseNonNegativeNumber(
+  const homeMatches =
+    resolveMatches(
       home
-        ?.goalsConcededPerMatch
     );
 
-  const awayDefenseObserved =
-    parseNonNegativeNumber(
+  const awayMatches =
+    resolveMatches(
       away
-        ?.goalsConcededPerMatch
     );
 
-  const homeAttackRate =
-    resolveRate(
-      homeAttackObserved,
-
-      leagueAverageGoalsPerTeam,
-
-      "HOME_ATTACK_FALLBACK",
-
-      usedFallbacks
+  const homeAttack =
+    resolveHomeAttackRate(
+      home,
+      homeMatches,
+      leagueAverageGoalsPerTeam
     );
 
-  const awayAttackRate =
-    resolveRate(
-      awayAttackObserved,
-
-      leagueAverageGoalsPerTeam,
-
-      "AWAY_ATTACK_FALLBACK",
-
-      usedFallbacks
+  const awayAttack =
+    resolveAwayAttackRate(
+      away,
+      awayMatches,
+      leagueAverageGoalsPerTeam
     );
 
-  const homeDefensiveRate =
-    resolveRate(
-      homeDefenseObserved,
-
-      leagueAverageGoalsPerTeam,
-
-      "HOME_DEFENSE_FALLBACK",
-
-      usedFallbacks
+  const homeDefense =
+    resolveHomeDefensiveRate(
+      home,
+      homeMatches,
+      leagueAverageGoalsPerTeam
     );
 
-  const awayDefensiveRate =
-    resolveRate(
-      awayDefenseObserved,
-
-      leagueAverageGoalsPerTeam,
-
-      "AWAY_DEFENSE_FALLBACK",
-
-      usedFallbacks
+  const awayDefense =
+    resolveAwayDefensiveRate(
+      away,
+      awayMatches,
+      leagueAverageGoalsPerTeam
     );
+
+  registerFallback(
+    homeAttack,
+    "HOME_ATTACK_FALLBACK",
+    usedFallbacks
+  );
+
+  registerFallback(
+    awayAttack,
+    "AWAY_ATTACK_FALLBACK",
+    usedFallbacks
+  );
+
+  registerFallback(
+    homeDefense,
+    "HOME_DEFENSE_FALLBACK",
+    usedFallbacks
+  );
+
+  registerFallback(
+    awayDefense,
+    "AWAY_DEFENSE_FALLBACK",
+    usedFallbacks
+  );
 
   /*
-   * Baseline simples:
+   * Baseline diagnóstica:
    *
-   * ataque do time
+   * ataque da equipe
    * ×
-   * fragilidade defensiva adversária
+   * fragilidade defensiva adversária.
    *
-   * A média geométrica reduz a influência de um
-   * único valor extremo.
-   *
-   * Não existe shrinkage neste arquivo.
+   * A média geométrica reduz a dominância
+   * de um único valor extremo.
    */
   const homeRawLambda =
     geometricMean(
-      homeAttackRate,
-
-      awayDefensiveRate
+      homeAttack.value,
+      awayDefense.value
     );
 
   const awayRawLambda =
     geometricMean(
-      awayAttackRate,
-
-      homeDefensiveRate
+      awayAttack.value,
+      homeDefense.value
     );
 
   const lambdaHome =
     clamp(
       homeRawLambda,
-
       minLambda,
-
       maxLambda
     );
 
   const lambdaAway =
     clamp(
       awayRawLambda,
-
       minLambda,
-
       maxLambda
     );
 
@@ -242,7 +302,7 @@ export function calculateExpectedGoals(
     lambdaHome +
     lambdaAway;
 
-  const valid =
+  const numericValid =
     Number.isFinite(
       lambdaHome
     ) &&
@@ -251,6 +311,106 @@ export function calculateExpectedGoals(
     ) &&
     lambdaHome > 0 &&
     lambdaAway > 0;
+
+  const resolvedRates = [
+    homeAttack,
+    awayAttack,
+    homeDefense,
+    awayDefense
+  ];
+
+  const realDataCount =
+    resolvedRates.filter(
+      rate =>
+        !rate.usedFallback
+    ).length;
+
+  const inputQuality =
+    realDataCount /
+    resolvedRates.length;
+
+  const usedOnlyFallbacks =
+    realDataCount === 0;
+
+  const dataValid =
+    realDataCount > 0;
+
+  if (
+    usedOnlyFallbacks
+  ) {
+    warnings.push(
+      "EXPECTED_GOALS_USING_ONLY_LEAGUE_FALLBACKS"
+    );
+  }
+
+  if (
+    inputQuality < 0.5
+  ) {
+    warnings.push(
+      "LOW_EXPECTED_GOALS_INPUT_QUALITY"
+    );
+  }
+
+  if (
+    homeMatches <= 0
+  ) {
+    warnings.push(
+      "MISSING_HOME_MATCH_SAMPLE"
+    );
+  }
+
+  if (
+    awayMatches <= 0
+  ) {
+    warnings.push(
+      "MISSING_AWAY_MATCH_SAMPLE"
+    );
+  }
+
+  console.group(
+    "📐 EXPECTED GOALS — DIAGNOSTIC"
+  );
+
+  console.log(
+    "HOME RESOLUTION:",
+    {
+      matches:
+        homeMatches,
+
+      attack:
+        homeAttack,
+
+      defense:
+        homeDefense
+    }
+  );
+
+  console.log(
+    "AWAY RESOLUTION:",
+    {
+      matches:
+        awayMatches,
+
+      attack:
+        awayAttack,
+
+      defense:
+        awayDefense
+    }
+  );
+
+  console.log(
+    "EXPECTED GOALS RESULT:",
+    {
+      lambdaHome,
+      lambdaAway,
+      totalLambda,
+      inputQuality,
+      usedOnlyFallbacks
+    }
+  );
+
+  console.groupEnd();
 
   return {
     lambdaHome:
@@ -268,20 +428,63 @@ export function calculateExpectedGoals(
         totalLambda
       ),
 
-    valid,
+    valid:
+      numericValid,
+
+    dataValid,
 
     diagnostics: {
-      homeAttackRate:
-        homeAttackObserved,
+      homeAttackObserved:
+        extractObservedRate(
+          homeAttack
+        ),
 
-      awayAttackRate:
-        awayAttackObserved,
+      awayAttackObserved:
+        extractObservedRate(
+          awayAttack
+        ),
 
-      homeDefensiveRate:
-        homeDefenseObserved,
+      homeDefensiveObserved:
+        extractObservedRate(
+          homeDefense
+        ),
 
-      awayDefensiveRate:
-        awayDefenseObserved,
+      awayDefensiveObserved:
+        extractObservedRate(
+          awayDefense
+        ),
+
+      homeAttackRateUsed:
+        roundNumber(
+          homeAttack.value
+        ),
+
+      awayAttackRateUsed:
+        roundNumber(
+          awayAttack.value
+        ),
+
+      homeDefensiveRateUsed:
+        roundNumber(
+          homeDefense.value
+        ),
+
+      awayDefensiveRateUsed:
+        roundNumber(
+          awayDefense.value
+        ),
+
+      homeAttackSource:
+        homeAttack.source,
+
+      awayAttackSource:
+        awayAttack.source,
+
+      homeDefensiveSource:
+        homeDefense.source,
+
+      awayDefensiveSource:
+        awayDefense.source,
 
       homeRawLambda:
         roundNumber(
@@ -293,9 +496,21 @@ export function calculateExpectedGoals(
           awayRawLambda
         ),
 
+      inputQuality:
+        roundNumber(
+          inputQuality
+        ),
+
+      usedOnlyFallbacks,
+
       usedFallbacks:
         normalizeStrings(
           usedFallbacks
+        ),
+
+      warnings:
+        normalizeStrings(
+          warnings
         ),
 
       note:
@@ -305,39 +520,421 @@ export function calculateExpectedGoals(
 }
 
 /* ==========================================
-   RESOLUÇÃO DE TAXAS
+   RESOLUÇÃO DA AMOSTRA
+========================================== */
+
+function resolveMatches(
+  team: TeamStats
+): number {
+  const matchesPlayed =
+    parseNonNegativeNumber(
+      team.matchesPlayed
+    );
+
+  if (
+    matchesPlayed !== null
+  ) {
+    return matchesPlayed;
+  }
+
+  const matches =
+    parseNonNegativeNumber(
+      team.matches
+    );
+
+  return matches ?? 0;
+}
+
+/* ==========================================
+   RESOLUÇÃO DO ATAQUE
+========================================== */
+
+function resolveHomeAttackRate(
+  team: TeamStats,
+  matches: number,
+  fallback: number
+): ResolvedRate {
+  return resolveRate(
+    [
+      {
+        value:
+          team.homeGoalsScoredPerMatch,
+
+        source:
+          "homeGoalsScoredPerMatch"
+      },
+
+      {
+        value:
+          team.goalsPerGame,
+
+        source:
+          "goalsPerGame"
+      },
+
+      {
+        value:
+          team.goalsForPerGame,
+
+        source:
+          "goalsForPerGame"
+      },
+
+      {
+        value:
+          team.avgGoals,
+
+        source:
+          "avgGoals"
+      },
+
+      {
+        value:
+          team.goalsPerMatch,
+
+        source:
+          "goalsPerMatch"
+      },
+
+      {
+        value:
+          deriveRate(
+            team.goalsFor,
+            matches
+          ),
+
+        source:
+          "goalsForDividedByMatches"
+      }
+    ],
+
+    fallback
+  );
+}
+
+function resolveAwayAttackRate(
+  team: TeamStats,
+  matches: number,
+  fallback: number
+): ResolvedRate {
+  return resolveRate(
+    [
+      {
+        value:
+          team.awayGoalsScoredPerMatch,
+
+        source:
+          "awayGoalsScoredPerMatch"
+      },
+
+      {
+        value:
+          team.goalsPerGame,
+
+        source:
+          "goalsPerGame"
+      },
+
+      {
+        value:
+          team.goalsForPerGame,
+
+        source:
+          "goalsForPerGame"
+      },
+
+      {
+        value:
+          team.avgGoals,
+
+        source:
+          "avgGoals"
+      },
+
+      {
+        value:
+          team.goalsPerMatch,
+
+        source:
+          "goalsPerMatch"
+      },
+
+      {
+        value:
+          deriveRate(
+            team.goalsFor,
+            matches
+          ),
+
+        source:
+          "goalsForDividedByMatches"
+      }
+    ],
+
+    fallback
+  );
+}
+
+/* ==========================================
+   RESOLUÇÃO DA DEFESA
+========================================== */
+
+function resolveHomeDefensiveRate(
+  team: TeamStats,
+  matches: number,
+  fallback: number
+): ResolvedRate {
+  return resolveRate(
+    [
+      {
+        value:
+          team.homeGoalsConcededPerMatch,
+
+        source:
+          "homeGoalsConcededPerMatch"
+      },
+
+      {
+        value:
+          team.goalsConcededPerGame,
+
+        source:
+          "goalsConcededPerGame"
+      },
+
+      {
+        value:
+          team.goalsAgainstPerGame,
+
+        source:
+          "goalsAgainstPerGame"
+      },
+
+      {
+        value:
+          team.avgGoalsAgainst,
+
+        source:
+          "avgGoalsAgainst"
+      },
+
+      {
+        value:
+          team.goalsConcededPerMatch,
+
+        source:
+          "goalsConcededPerMatch"
+      },
+
+      {
+        value:
+          deriveRate(
+            team.goalsAgainst,
+            matches
+          ),
+
+        source:
+          "goalsAgainstDividedByMatches"
+      }
+    ],
+
+    fallback
+  );
+}
+
+function resolveAwayDefensiveRate(
+  team: TeamStats,
+  matches: number,
+  fallback: number
+): ResolvedRate {
+  return resolveRate(
+    [
+      {
+        value:
+          team.awayGoalsConcededPerMatch,
+
+        source:
+          "awayGoalsConcededPerMatch"
+      },
+
+      {
+        value:
+          team.goalsConcededPerGame,
+
+        source:
+          "goalsConcededPerGame"
+      },
+
+      {
+        value:
+          team.goalsAgainstPerGame,
+
+        source:
+          "goalsAgainstPerGame"
+      },
+
+      {
+        value:
+          team.avgGoalsAgainst,
+
+        source:
+          "avgGoalsAgainst"
+      },
+
+      {
+        value:
+          team.goalsConcededPerMatch,
+
+        source:
+          "goalsConcededPerMatch"
+      },
+
+      {
+        value:
+          deriveRate(
+            team.goalsAgainst,
+            matches
+          ),
+
+        source:
+          "goalsAgainstDividedByMatches"
+      }
+    ],
+
+    fallback
+  );
+}
+
+/* ==========================================
+   RESOLVEDOR GENÉRICO
 ========================================== */
 
 function resolveRate(
-  observed:
-    number | null,
+  candidates: Array<{
+    value: unknown;
+    source: RateSource;
+  }>,
 
-  fallback:
-    number,
+  fallback: number
+): ResolvedRate {
+  for (
+    const candidate of candidates
+  ) {
+    const parsed =
+      parseNonNegativeNumber(
+        candidate.value
+      );
+
+    if (
+      parsed !== null
+    ) {
+      return {
+        value:
+          clamp(
+            parsed,
+            0,
+            6
+          ),
+
+        source:
+          candidate.source,
+
+        usedFallback:
+          false,
+
+        derivedFromTotals:
+          candidate.source ===
+            "goalsForDividedByMatches" ||
+          candidate.source ===
+            "goalsAgainstDividedByMatches"
+      };
+    }
+  }
+
+  return {
+    value:
+      fallback,
+
+    source:
+      "leagueFallback",
+
+    usedFallback:
+      true,
+
+    derivedFromTotals:
+      false
+  };
+}
+
+/* ==========================================
+   MÉDIA DERIVADA DE TOTAIS
+========================================== */
+
+function deriveRate(
+  total:
+    unknown,
+
+  matches:
+    number
+): number | null {
+  const parsedTotal =
+    parseNonNegativeNumber(
+      total
+    );
+
+  if (
+    parsedTotal === null ||
+    !Number.isFinite(
+      matches
+    ) ||
+    matches <= 0
+  ) {
+    return null;
+  }
+
+  const result =
+    parsedTotal /
+    matches;
+
+  return Number.isFinite(
+    result
+  )
+    ? result
+    : null;
+}
+
+/* ==========================================
+   REGISTRO DE FALLBACK
+========================================== */
+
+function registerFallback(
+  rate:
+    ResolvedRate,
 
   warning:
     string,
 
   usedFallbacks:
     string[]
-): number {
+): void {
   if (
-    observed !== null
+    rate.usedFallback
   ) {
-    return clamp(
-      observed,
-
-      0,
-
-      6
+    usedFallbacks.push(
+      warning
     );
   }
+}
 
-  usedFallbacks.push(
-    warning
-  );
-
-  return fallback;
+function extractObservedRate(
+  rate:
+    ResolvedRate
+): number | null {
+  return rate.usedFallback
+    ? null
+    : roundNumber(
+        rate.value
+      );
 }
 
 /* ==========================================
@@ -345,11 +942,8 @@ function resolveRate(
 ========================================== */
 
 function geometricMean(
-  first:
-    number,
-
-  second:
-    number
+  first: number,
+  second: number
 ): number {
   if (
     !Number.isFinite(
@@ -375,8 +969,7 @@ function geometricMean(
 ========================================== */
 
 function parseNonNegativeNumber(
-  value:
-    unknown
+  value: unknown
 ): number | null {
   if (
     value === null ||
@@ -389,7 +982,9 @@ function parseNonNegativeNumber(
   }
 
   const parsed =
-    Number(value);
+    Number(
+      value
+    );
 
   if (
     !Number.isFinite(
@@ -404,8 +999,7 @@ function parseNonNegativeNumber(
 }
 
 function parsePositiveNumber(
-  value:
-    unknown
+  value: unknown
 ): number | null {
   if (
     value === null ||
@@ -418,7 +1012,9 @@ function parsePositiveNumber(
   }
 
   const parsed =
-    Number(value);
+    Number(
+      value
+    );
 
   if (
     !Number.isFinite(
@@ -437,14 +1033,9 @@ function parsePositiveNumber(
 ========================================== */
 
 function clamp(
-  value:
-    number,
-
-  minimum:
-    number,
-
-  maximum:
-    number
+  value: number,
+  minimum: number,
+  maximum: number
 ): number {
   if (
     !Number.isFinite(
@@ -456,21 +1047,16 @@ function clamp(
 
   return Math.max(
     minimum,
-
     Math.min(
       value,
-
       maximum
     )
   );
 }
 
 function roundNumber(
-  value:
-    number,
-
-  decimals =
-    4
+  value: number,
+  decimals = 4
 ): number {
   if (
     !Number.isFinite(
@@ -481,8 +1067,7 @@ function roundNumber(
   }
 
   const factor =
-    10 **
-    decimals;
+    10 ** decimals;
 
   return (
     Math.round(
@@ -494,8 +1079,7 @@ function roundNumber(
 }
 
 function normalizeStrings(
-  values:
-    string[]
+  values: string[]
 ): string[] {
   return [
     ...new Set(
@@ -507,7 +1091,9 @@ function normalizeStrings(
               ""
             ).trim()
         )
-        .filter(Boolean)
+        .filter(
+          Boolean
+        )
     )
   ];
 }
