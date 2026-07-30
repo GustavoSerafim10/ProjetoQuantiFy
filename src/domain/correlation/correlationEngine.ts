@@ -141,17 +141,6 @@ export function applyCorrelationAdjustments(
       const correlationNet =
         0;
 
-      const diagnosticWarnings =
-        diagnostics.map(
-          diagnostic =>
-            diagnostic.code
-        );
-
-      const warnings =
-        normalizeWarnings([
-          ...existingWarnings,
-          ...diagnosticWarnings
-        ]);
 
       const debug:
         CorrelationEngineMarketDebug = {
@@ -188,45 +177,44 @@ export function applyCorrelationAdjustments(
         };
 
       return {
-        ...market,
+  ...market,
 
-        /*
-         * Não sobrescrevemos:
-         *
-         * risk
-         * riskScore
-         * confidence
-         */
+  correlationPenalty,
+  correlationBoost,
+  correlationNet,
 
-        correlationPenalty,
-        correlationBoost,
-        correlationNet,
+  // Apenas informa que o engine foi executado
+  correlationEvaluated: true,
 
-        correlationAdjusted:
-          true,
+  // Só será true quando realmente existir ajuste
+  correlationAdjusted:
+    correlationNet !== 0,
 
-        correlationMode:
-          "CANDIDATE_DIAGNOSTIC",
+  correlationMode:
+    "CANDIDATE_DIAGNOSTIC",
 
-        correlationPortfolioApplied:
-          false,
+  // Ainda não existe análise de carteira
+  correlationPortfolioApplied:
+    false,
 
-        warnings,
+  // Mantém apenas os warnings que já existiam
+  warnings:
+    existingWarnings,
 
-        debug: {
-          ...(market?.debug ?? {}),
+  debug: {
+    ...(market?.debug ?? {}),
 
-          correlationEngine: {
-            ...debug,
+    correlationEngine: {
+      ...debug,
 
-            marketIndex:
-              index,
+      marketIndex:
+        index,
 
-            market:
-              marketName
-          }
-        }
-      };
+      market:
+        marketName
+    }
+  }
+};
     }
   );
 }
@@ -587,6 +575,15 @@ function normalizeWarnings(
 function parseProbability(
   value: unknown
 ): number | null {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    typeof value === "boolean"
+  ) {
+    return null;
+  }
+
   const parsed =
     Number(value);
 
@@ -600,10 +597,18 @@ function parseProbability(
 
   return parsed;
 }
-
 function parsePositiveNumber(
   value: unknown
 ): number | null {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    typeof value === "boolean"
+  ) {
+    return null;
+  }
+
   const parsed =
     Number(value);
 
@@ -616,7 +621,6 @@ function parsePositiveNumber(
 
   return parsed;
 }
-
 function roundNumber(
   value: number,
   decimals = 6

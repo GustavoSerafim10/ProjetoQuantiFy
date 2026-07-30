@@ -12,6 +12,20 @@ import {
 } from "../math/xgProxy";
 
 /* ==========================================
+   LAMBDA BUILDER — QUANTIFY V7.2 ELITE
+
+   Objetivo da V7.2:
+   - preservar a natureza estatística da entrada;
+   - distinguir splits reais de médias gerais;
+   - normalizar médias gerais contra uma base neutra;
+   - aplicar o mando uma única vez nas bases finais;
+   - impedir zero falso em finalizações totais;
+   - ampliar diagnósticos de proveniência;
+   - reduzir o viés estrutural de X2 gerado por
+     normalização incompatível entre fonte e base.
+========================================== */
+
+/* ==========================================
    PARÂMETROS ESTRUTURAIS
 ========================================== */
 
@@ -69,10 +83,31 @@ const MAX_TOTAL_LAMBDA =
  * - pressão defensiva.
  */
 const GOALS_WEIGHT =
-  0.70;
+  0.58;
 
 const XG_PROXY_WEIGHT =
-  0.30;
+  0.22;
+
+const SHOT_QUALITY_WEIGHT =
+  0.20;
+
+const DOMINANCE_ELASTICITY =
+  0.18;
+
+const RECENT_FORM_MAX_ADJUSTMENT =
+  0.12;
+
+const VARIANCE_MAX_ADJUSTMENT =
+  0.08;
+
+const SHOT_QUALITY_MAX_ADJUSTMENT =
+  0.14;
+
+const MIN_ADAPTIVE_SHRINK =
+  4;
+
+const MAX_ADAPTIVE_SHRINK =
+  18;
 
 /*
  * Referência mínima para considerar uma amostra
@@ -115,6 +150,16 @@ type StatSource =
   | "shots"
   | "shotsPerMatch"
 
+  | "bigChancesPerGame"
+  | "avgBigChances"
+  | "bigChances"
+  | "bigChancesPerMatch"
+
+  | "recentGoalsPerGame"
+  | "recentFormFactor"
+  | "goalVariance"
+  | "conversionRate"
+
   | "matchesPlayed"
   | "matches"
 
@@ -147,6 +192,23 @@ interface ResolvedOptionalStat {
 interface LimitedLambdas {
   home: number;
   away: number;
+}
+
+interface ContextualAttackFactors {
+  recentFormFactor: number;
+  varianceFactor: number;
+  shotQualityFactor: number;
+
+  recentGoalsPerGame: number | null;
+  goalVariance: number | null;
+  bigChancesPerGame: number | null;
+  conversionRate: number | null;
+
+  diagnostics: {
+    recentFormAvailable: boolean;
+    varianceAvailable: boolean;
+    shotQualityAvailable: boolean;
+  };
 }
 
 interface TeamStatsCompatibility {
@@ -200,6 +262,17 @@ interface TeamStatsCompatibility {
   avgShots?: number;
   shots?: number;
   shotsPerMatch?: number;
+
+  bigChancesPerGame?: number;
+  avgBigChances?: number;
+  bigChances?: number;
+  bigChancesPerMatch?: number;
+
+  recentGoalsPerGame?: number;
+  recentFormFactor?: number;
+  goalVariance?: number;
+
+  conversionRate?: number;
 }
 
 /* ==========================================
@@ -929,14 +1002,410 @@ function resolveShots(
   ]);
 }
 
+function resolveBigChances(
+  team:
+    TeamStatsCompatibility
+): ResolvedOptionalStat {
+  return resolveOptionalStat([
+    {
+      value:
+        team.bigChancesPerGame,
+
+      source:
+        "bigChancesPerGame"
+    },
+
+    {
+      value:
+        team.avgBigChances,
+
+      source:
+        "avgBigChances"
+    },
+
+    {
+      value:
+        team.bigChances,
+
+      source:
+        "bigChances"
+    },
+
+    {
+      value:
+        team.bigChancesPerMatch,
+
+      source:
+        "bigChancesPerMatch"
+    }
+  ]);
+}
+
+function calculateRecentFormFactor({
+  currentGoalsRate,
+  recentGoalsPerGame,
+  providedFactor
+}: {
+  currentGoalsRate: number;
+  recentGoalsPerGame: number | null;
+  providedFactor: number | null;
+}): number {
+  if (
+    providedFactor !== null &&
+    providedFactor > 0
+  ) {
+    return clamp(
+      providedFactor,
+      1 - RECENT_FORM_MAX_ADJUSTMENT,
+      1 + RECENT_FORM_MAX_ADJUSTMENT
+    );
+  }
+
+  if (
+    recentGoalsPerGame === null ||
+    currentGoalsRate <= 0
+  ) {
+    return 1;
+  }
+
+  const rawRatio =
+    recentGoalsPerGame /
+    currentGoalsRate;
+
+  const compressed =
+    1 +
+    (
+      rawRatio -
+      1
+    ) *
+    0.35;
+
+  return clamp(
+    compressed,
+    1 - RECENT_FORM_MAX_ADJUSTMENT,
+    1 + RECENT_FORM_MAX_ADJUSTMENT
+  );
+}
+
+function calculateVarianceFactor(
+  variance: number | null
+): number {
+  if (
+    variance === null ||
+    variance < 0
+  ) {
+    return 1;
+  }
+
+  const normalizedVariance =
+    clamp(
+      variance / 2.5,
+      0,
+      1
+    );
+
+  return (
+    1 -
+    normalizedVariance *
+      VARIANCE_MAX_ADJUSTMENT
+  );
+}
+
+function calculateShotQualityFactor({
+  goalsRate,
+  shotsOnTarget,
+  shots,
+  bigChances,
+  providedConversionRate
+}: {
+  goalsRate: number;
+  shotsOnTarget: number | null;
+  shots: number | null;
+  bigChances: number | null;
+  providedConversionRate: number | null;
+}): {
+  factor: number;
+  conversionRate: number | null;
+  valid: boolean;
+} {
+  const conversionRate =
+    providedConversionRate !== null &&
+    providedConversionRate >= 0
+      ? providedConversionRate
+      : shots !== null &&
+        shots > 0
+        ? goalsRate / shots
+        : shotsOnTarget !== null &&
+          shotsOnTarget > 0
+          ? goalsRate /
+            shotsOnTarget
+          : null;
+
+  const sotQuality =
+    shotsOnTarget !== null
+      ? clamp(
+          shotsOnTarget / 5,
+          0,
+          1.6
+        )
+      : null;
+
+  const bigChanceQuality =
+    bigChances !== null
+      ? clamp(
+          bigChances / 2,
+          0,
+          1.6
+        )
+      : null;
+
+  const conversionQuality =
+    conversionRate !== null
+      ? clamp(
+          conversionRate / 0.12,
+          0,
+          1.6
+        )
+      : null;
+
+  const components = [
+    sotQuality,
+    bigChanceQuality,
+    conversionQuality
+  ].filter(
+    (
+      value
+    ): value is number =>
+      value !== null
+  );
+
+  if (
+    components.length === 0
+  ) {
+    return {
+      factor: 1,
+      conversionRate,
+      valid: false
+    };
+  }
+
+  const averageQuality =
+    components.reduce(
+      (
+        sum,
+        value
+      ) =>
+        sum +
+        value,
+      0
+    ) /
+    components.length;
+
+  const compressed =
+    1 +
+    (
+      averageQuality -
+      1
+    ) *
+    SHOT_QUALITY_MAX_ADJUSTMENT;
+
+  return {
+    factor:
+      clamp(
+        compressed,
+        1 - SHOT_QUALITY_MAX_ADJUSTMENT,
+        1 + SHOT_QUALITY_MAX_ADJUSTMENT
+      ),
+
+    conversionRate,
+
+    valid: true
+  };
+}
+
+function buildContextualAttackFactors({
+  team,
+  goalsRate,
+  shotsOnTarget,
+  shots,
+  bigChances
+}: {
+  team: TeamStatsCompatibility;
+  goalsRate: number;
+  shotsOnTarget: number | null;
+  shots: number | null;
+  bigChances: number | null;
+}): ContextualAttackFactors {
+  const recentGoalsPerGame =
+    parseFiniteNumber(
+      team.recentGoalsPerGame
+    );
+
+  const providedRecentFormFactor =
+    parseFiniteNumber(
+      team.recentFormFactor
+    );
+
+  const goalVariance =
+    parseFiniteNumber(
+      team.goalVariance
+    );
+
+  const providedConversionRate =
+    parseFiniteNumber(
+      team.conversionRate
+    );
+
+  const recentFormFactor =
+    calculateRecentFormFactor({
+      currentGoalsRate:
+        goalsRate,
+
+      recentGoalsPerGame,
+
+      providedFactor:
+        providedRecentFormFactor
+    });
+
+  const varianceFactor =
+    calculateVarianceFactor(
+      goalVariance
+    );
+
+  const shotQuality =
+    calculateShotQualityFactor({
+      goalsRate,
+      shotsOnTarget,
+      shots,
+      bigChances,
+      providedConversionRate
+    });
+
+  return {
+    recentFormFactor,
+    varianceFactor,
+
+    shotQualityFactor:
+      shotQuality.factor,
+
+    recentGoalsPerGame,
+    goalVariance,
+    bigChancesPerGame:
+      bigChances,
+
+    conversionRate:
+      shotQuality.conversionRate,
+
+    diagnostics: {
+      recentFormAvailable:
+        recentGoalsPerGame !== null ||
+        providedRecentFormFactor !== null,
+
+      varianceAvailable:
+        goalVariance !== null,
+
+      shotQualityAvailable:
+        shotQuality.valid
+    }
+  };
+}
+
+/* ==========================================
+   PROVENIÊNCIA DE MANDO
+========================================== */
+
+/*
+ * Um split de mando só é considerado verdadeiro
+ * quando sua origem é explicitamente específica
+ * de casa ou de fora.
+ *
+ * Médias gerais como goalsPerGame não podem ser
+ * normalizadas contra leagueBaseHome ou
+ * leagueBaseAway, pois isso favoreceria
+ * artificialmente um dos lados.
+ */
+function isTrueVenueAttackSource(
+  source: StatSource
+): boolean {
+  return (
+    source ===
+      "homeGoalsScoredPerMatch" ||
+    source ===
+      "awayGoalsScoredPerMatch"
+  );
+}
+
+function isTrueVenueDefenseSource(
+  source: StatSource
+): boolean {
+  return (
+    source ===
+      "homeGoalsConcededPerMatch" ||
+    source ===
+      "awayGoalsConcededPerMatch"
+  );
+}
+
 /* ==========================================
    SHRINKAGE
 ========================================== */
 
+function calculateAdaptiveShrinkFactor(
+  matchesPlayed: number,
+  inputQuality: number
+): number {
+  const safeMatches =
+    clamp(
+      matchesPlayed,
+      0,
+      100
+    );
+
+  const safeQuality =
+    clamp(
+      inputQuality,
+      0,
+      1
+    );
+
+  const sampleComponent =
+    safeMatches <= 5
+      ? 1
+      : safeMatches >= 30
+        ? 0
+        : 1 -
+          (
+            safeMatches - 5
+          ) /
+          25;
+
+  const qualityComponent =
+    1 -
+    safeQuality;
+
+  const blendedSeverity =
+    clamp(
+      sampleComponent * 0.70 +
+      qualityComponent * 0.30,
+      0,
+      1
+    );
+
+  return (
+    MIN_ADAPTIVE_SHRINK +
+    (
+      MAX_ADAPTIVE_SHRINK -
+      MIN_ADAPTIVE_SHRINK
+    ) *
+    blendedSeverity
+  );
+}
+
 function shrinkStat(
   raw: unknown,
   leagueAverage: number,
-  matchesPlayed: unknown
+  matchesPlayed: unknown,
+  inputQuality = 1
 ): number {
   const safeLeagueAverage =
     safePositiveNumber(
@@ -964,9 +1433,15 @@ function shrinkStat(
       100
     );
 
+  const adaptiveShrink =
+    calculateAdaptiveShrinkFactor(
+      safeMatches,
+      inputQuality
+    );
+
   const denominator =
     safeMatches +
-    SHRINK_FACTOR;
+    adaptiveShrink;
 
   const sampleWeight =
     denominator > 0
@@ -988,6 +1463,45 @@ function shrinkStat(
 /* ==========================================
    POTÊNCIA SEGURA
 ========================================== */
+
+function calculateDominanceFactor(
+  ownAttackStrength: number,
+  opponentAttackStrength: number,
+  opponentDefensiveFragility: number,
+  ownDefensiveFragility: number
+): number {
+  const offensiveRatio =
+    ownAttackStrength /
+    Math.max(
+      opponentAttackStrength,
+      0.01
+    );
+
+  const matchupRatio =
+    opponentDefensiveFragility /
+    Math.max(
+      ownDefensiveFragility,
+      0.01
+    );
+
+  const combinedRatio =
+    Math.sqrt(
+      Math.max(
+        offensiveRatio *
+        matchupRatio,
+        0.01
+      )
+    );
+
+  return clamp(
+    safePower(
+      combinedRatio,
+      DOMINANCE_ELASTICITY
+    ),
+    0.88,
+    1.12
+  );
+}
 
 function safePower(
   base: number,
@@ -1162,6 +1676,89 @@ function applyUpperTotalLimit(
    QUALIDADE DOS DADOS
 ========================================== */
 
+function getSourceQuality(
+  source: StatSource
+): number {
+  switch (
+    source
+  ) {
+    /*
+     * Splits específicos e reais de mando.
+     */
+    case "homeGoalsScoredPerMatch":
+    case "awayGoalsScoredPerMatch":
+    case "homeGoalsConcededPerMatch":
+    case "awayGoalsConcededPerMatch":
+      return 1;
+
+    /*
+     * Médias gerais por partida.
+     *
+     * São dados reais, mas menos específicos
+     * para o contexto casa/fora.
+     */
+    case "goalsPerGame":
+    case "goalsForPerGame":
+    case "avgGoals":
+    case "goalsPerMatch":
+    case "goalsConcededPerGame":
+    case "goalsAgainstPerGame":
+    case "avgGoalsAgainst":
+    case "goalsConcededPerMatch":
+      return 0.78;
+
+    /*
+     * Médias derivadas de totais.
+     */
+    case "goalsForDividedByMatches":
+    case "goalsAgainstDividedByMatches":
+      return 0.72;
+
+    /*
+     * Amostra.
+     */
+    case "matchesPlayed":
+    case "matches":
+      return 0.90;
+
+    /*
+     * Dados opcionais de finalização.
+     */
+    case "shotsOnTargetPerGame":
+    case "avgShotsOnTarget":
+    case "shotsOnTargetPerMatch":
+    case "shotsOnTarget":
+    case "shotsPerGame":
+    case "avgShots":
+    case "shotsPerMatch":
+    case "shots":
+    case "bigChancesPerGame":
+    case "avgBigChances":
+    case "bigChancesPerMatch":
+    case "bigChances":
+      return 0.75;
+
+    /*
+     * Contexto recente.
+     */
+    case "recentGoalsPerGame":
+    case "recentFormFactor":
+    case "goalVariance":
+    case "conversionRate":
+      return 0.70;
+
+    /*
+     * Ausência ou fallback.
+     */
+    case "leagueFallback":
+    case "missing":
+      return 0;
+
+    default:
+      return 0.65;
+  }
+}
+
 function calculateInputQuality(
   sources:
     ResolvedStat[]
@@ -1172,30 +1769,48 @@ function calculateInputQuality(
     return 0;
   }
 
-  let score =
-    0;
+  const totalQuality =
+    sources.reduce(
+      (
+        total,
+        resolved
+      ) => {
+        if (
+          resolved
+            .usedLeagueFallback
+        ) {
+          return total;
+        }
 
-  for (
-    const resolved of sources
-  ) {
-    if (
-      resolved.usedLeagueFallback
-    ) {
-      score +=
-        0;
-    } else if (
-      resolved.derivedFromTotals
-    ) {
-      score +=
-        0.8;
-    } else {
-      score +=
-        1;
-    }
-  }
+        const sourceQuality =
+          getSourceQuality(
+            resolved.source
+          );
+
+        /*
+         * Proteção adicional caso algum campo
+         * derivado de totais tenha origem antiga
+         * ou incompatível.
+         */
+        const adjustedQuality =
+          resolved
+            .derivedFromTotals
+            ? Math.min(
+                sourceQuality,
+                0.72
+              )
+            : sourceQuality;
+
+        return (
+          total +
+          adjustedQuality
+        );
+      },
+      0
+    );
 
   return clamp(
-    score /
+    totalQuality /
       sources.length,
     0,
     1
@@ -1416,6 +2031,16 @@ export function buildLambda(
     );
 
   /*
+   * Base neutra por equipe.
+   *
+   * Usada sempre que a estatística recebida for
+   * uma média geral e não um split real de mando.
+   */
+  const leagueTeamBase =
+    leagueAverageGoals /
+    2;
+
+  /*
    * Ajuste complementar centralizado em
    * leagueStrength.ts.
    */
@@ -1515,13 +2140,57 @@ export function buildLambda(
       away
     );
 
+  const homeBigChancesResult =
+    resolveBigChances(
+      home
+    );
+
+  const awayBigChancesResult =
+    resolveBigChances(
+      away
+    );
+
+  /*
+   * Zero em chutes totais com chutes no alvo
+   * positivos é tratado como ausência de dado.
+   *
+   * Exemplo impossível:
+   * shots = 0 e shotsOnTarget = 4.3.
+   */
+  const homeShotsForModel =
+    homeShotsResult.value !== null &&
+    homeShotsResult.value > 0
+      ? homeShotsResult.value
+      : homeShotsOnTargetResult.value !== null &&
+        homeShotsOnTargetResult.value > 0
+        ? null
+        : homeShotsResult.value;
+
+  const awayShotsForModel =
+    awayShotsResult.value !== null &&
+    awayShotsResult.value > 0
+      ? awayShotsResult.value
+      : awayShotsOnTargetResult.value !== null &&
+        awayShotsOnTargetResult.value > 0
+        ? null
+        : awayShotsResult.value;
+
+  const homeFalseZeroShotsDetected =
+    homeShotsResult.value === 0 &&
+    homeShotsOnTargetResult.value !== null &&
+    homeShotsOnTargetResult.value > 0;
+
+  const awayFalseZeroShotsDetected =
+    awayShotsResult.value === 0 &&
+    awayShotsOnTargetResult.value !== null &&
+    awayShotsOnTargetResult.value > 0;
+
   const homeXGResult =
     calculateXGProxyDetailed(
       homeShotsOnTargetResult
         .value,
 
-      homeShotsResult
-        .value
+      homeShotsForModel
     );
 
   const awayXGResult =
@@ -1529,8 +2198,7 @@ export function buildLambda(
       awayShotsOnTargetResult
         .value,
 
-      awayShotsResult
-        .value
+      awayShotsForModel
     );
 
   const homeXG =
@@ -1539,31 +2207,163 @@ export function buildLambda(
   const awayXG =
     awayXGResult.xg;
 
+  const homeContextualFactors =
+    buildContextualAttackFactors({
+      team:
+        home,
+
+      goalsRate:
+        homeGoalsRate,
+
+      shotsOnTarget:
+        homeShotsOnTargetResult
+          .value,
+
+      shots:
+        homeShotsForModel,
+
+      bigChances:
+        homeBigChancesResult
+          .value
+    });
+
+  const awayContextualFactors =
+    buildContextualAttackFactors({
+      team:
+        away,
+
+      goalsRate:
+        awayGoalsRate,
+
+      shotsOnTarget:
+        awayShotsOnTargetResult
+          .value,
+
+      shots:
+        awayShotsForModel,
+
+      bigChances:
+        awayBigChancesResult
+          .value
+    });
+
   /* ========================================
      COMPOSIÇÃO OFENSIVA
   ======================================== */
 
-  const homeAttackComposite =
+  const homeShotQualityProxy =
+    homeGoalsRate *
+    homeContextualFactors
+      .shotQualityFactor;
+
+  const awayShotQualityProxy =
+    awayGoalsRate *
+    awayContextualFactors
+      .shotQualityFactor;
+
+  const homeAttackBaseComposite =
     homeXGResult.valid &&
     homeXG !== null
       ? (
           homeGoalsRate *
             GOALS_WEIGHT +
           homeXG *
-            XG_PROXY_WEIGHT
+            XG_PROXY_WEIGHT +
+          homeShotQualityProxy *
+            SHOT_QUALITY_WEIGHT
         )
-      : homeGoalsRate;
+      : (
+          homeGoalsRate *
+            (
+              GOALS_WEIGHT +
+              XG_PROXY_WEIGHT
+            ) +
+          homeShotQualityProxy *
+            SHOT_QUALITY_WEIGHT
+        );
 
-  const awayAttackComposite =
+  const awayAttackBaseComposite =
     awayXGResult.valid &&
     awayXG !== null
       ? (
           awayGoalsRate *
             GOALS_WEIGHT +
           awayXG *
-            XG_PROXY_WEIGHT
+            XG_PROXY_WEIGHT +
+          awayShotQualityProxy *
+            SHOT_QUALITY_WEIGHT
         )
-      : awayGoalsRate;
+      : (
+          awayGoalsRate *
+            (
+              GOALS_WEIGHT +
+              XG_PROXY_WEIGHT
+            ) +
+          awayShotQualityProxy *
+            SHOT_QUALITY_WEIGHT
+        );
+
+  const homeAttackComposite =
+    homeAttackBaseComposite *
+    homeContextualFactors
+      .recentFormFactor *
+    homeContextualFactors
+      .varianceFactor;
+
+  const awayAttackComposite =
+    awayAttackBaseComposite *
+    awayContextualFactors
+      .recentFormFactor *
+    awayContextualFactors
+      .varianceFactor;
+
+  const preliminaryInputQuality =
+    calculateInputQuality([
+      homeGoalsResult,
+      awayGoalsResult,
+      homeConcededResult,
+      awayConcededResult
+    ]);
+
+  /* ========================================
+     REFERÊNCIAS ESTATÍSTICAS V7.2
+  ======================================== */
+
+  /*
+   * Splits reais usam bases específicas de mando.
+   *
+   * Médias gerais usam a base neutra por equipe.
+   * Isso impede que goalsPerGame do visitante seja
+   * dividido por uma base visitante artificialmente
+   * menor, criando força ofensiva falsa.
+   */
+  const homeAttackReference =
+    isTrueVenueAttackSource(
+      homeGoalsResult.source
+    )
+      ? leagueBaseHome
+      : leagueTeamBase;
+
+  const awayAttackReference =
+    isTrueVenueAttackSource(
+      awayGoalsResult.source
+    )
+      ? leagueBaseAway
+      : leagueTeamBase;
+
+  const homeDefenseReference =
+    isTrueVenueDefenseSource(
+      homeConcededResult.source
+    )
+      ? leagueBaseAway
+      : leagueTeamBase;
+
+  const awayDefenseReference =
+    isTrueVenueDefenseSource(
+      awayConcededResult.source
+    )
+      ? leagueBaseHome
+      : leagueTeamBase;
 
   /* ========================================
      SHRINKAGE DO ATAQUE
@@ -1572,15 +2372,17 @@ export function buildLambda(
   const homeAttackRaw =
     shrinkStat(
       homeAttackComposite,
-      leagueBaseHome,
-      homeMatchesPlayed
+      homeAttackReference,
+      homeMatchesPlayed,
+      preliminaryInputQuality
     );
 
   const awayAttackRaw =
     shrinkStat(
       awayAttackComposite,
-      leagueBaseAway,
-      awayMatchesPlayed
+      awayAttackReference,
+      awayMatchesPlayed,
+      preliminaryInputQuality
     );
 
   /* ========================================
@@ -1590,15 +2392,17 @@ export function buildLambda(
   const homeDefenseRaw =
     shrinkStat(
       homeGoalsConcededRate,
-      leagueBaseAway,
-      homeMatchesPlayed
+      homeDefenseReference,
+      homeMatchesPlayed,
+      preliminaryInputQuality
     );
 
   const awayDefenseRaw =
     shrinkStat(
       awayGoalsConcededRate,
-      leagueBaseHome,
-      awayMatchesPlayed
+      awayDefenseReference,
+      awayMatchesPlayed,
+      preliminaryInputQuality
     );
 
   /* ========================================
@@ -1608,29 +2412,45 @@ export function buildLambda(
   const homeAttackStrength =
     safePower(
       homeAttackRaw /
-        leagueBaseHome,
+        homeAttackReference,
       ATTACK_ELASTICITY
     );
 
   const awayAttackStrength =
     safePower(
       awayAttackRaw /
-        leagueBaseAway,
+        awayAttackReference,
       ATTACK_ELASTICITY
     );
 
   const homeDefensiveFragility =
     safePower(
       homeDefenseRaw /
-        leagueBaseAway,
+        homeDefenseReference,
       DEFENSE_ELASTICITY
     );
 
   const awayDefensiveFragility =
     safePower(
       awayDefenseRaw /
-        leagueBaseHome,
+        awayDefenseReference,
       DEFENSE_ELASTICITY
+    );
+
+  const homeDominanceFactor =
+    calculateDominanceFactor(
+      homeAttackStrength,
+      awayAttackStrength,
+      awayDefensiveFragility,
+      homeDefensiveFragility
+    );
+
+  const awayDominanceFactor =
+    calculateDominanceFactor(
+      awayAttackStrength,
+      homeAttackStrength,
+      homeDefensiveFragility,
+      awayDefensiveFragility
     );
 
   /* ========================================
@@ -1640,12 +2460,14 @@ export function buildLambda(
   let lambdaHome =
     leagueBaseHome *
     homeAttackStrength *
-    awayDefensiveFragility;
+    awayDefensiveFragility *
+    homeDominanceFactor;
 
   let lambdaAway =
     leagueBaseAway *
     awayAttackStrength *
-    homeDefensiveFragility;
+    homeDefensiveFragility *
+    awayDominanceFactor;
 
   /* ========================================
      AJUSTE COMPLEMENTAR DA LIGA
@@ -1722,12 +2544,7 @@ export function buildLambda(
   ======================================== */
 
   const inputQuality =
-    calculateInputQuality([
-      homeGoalsResult,
-      awayGoalsResult,
-      homeConcededResult,
-      awayConcededResult
-    ]);
+    preliminaryInputQuality;
 
   const sampleReliability =
     calculateSampleReliability(
@@ -1736,33 +2553,51 @@ export function buildLambda(
     );
 
   const warnings =
-    buildWarnings({
-      homeMatches:
-        homeMatchesResult,
+    [
+      ...buildWarnings({
+        homeMatches:
+          homeMatchesResult,
 
-      awayMatches:
-        awayMatchesResult,
+        awayMatches:
+          awayMatchesResult,
 
-      homeGoals:
-        homeGoalsResult,
+        homeGoals:
+          homeGoalsResult,
 
-      awayGoals:
-        awayGoalsResult,
+        awayGoals:
+          awayGoalsResult,
 
-      homeConceded:
-        homeConcededResult,
+        homeConceded:
+          homeConcededResult,
 
-      awayConceded:
-        awayConcededResult,
+        awayConceded:
+          awayConcededResult,
 
-      homeShotsOnTarget:
-        homeShotsOnTargetResult,
+        homeShotsOnTarget:
+          homeShotsOnTargetResult,
 
-      awayShotsOnTarget:
-        awayShotsOnTargetResult,
+        awayShotsOnTarget:
+          awayShotsOnTargetResult,
 
-      leagueAverageGoals
-    });
+        leagueAverageGoals
+      }),
+
+      ...(
+        homeFalseZeroShotsDetected
+          ? [
+              "HOME_SHOTS_ZERO_TREATED_AS_MISSING"
+            ]
+          : []
+      ),
+
+      ...(
+        awayFalseZeroShotsDetected
+          ? [
+              "AWAY_SHOTS_ZERO_TREATED_AS_MISSING"
+            ]
+          : []
+      )
+    ];
 
   const usedLeagueFallback =
     homeGoalsResult
@@ -1789,6 +2624,7 @@ export function buildLambda(
       leagueAverageGoals,
       leagueBaseHome,
       leagueBaseAway,
+      leagueTeamBase,
       leagueAdjustment
     }
   );
@@ -1809,7 +2645,13 @@ export function buildLambda(
         homeShotsOnTargetResult,
 
       shots:
-        homeShotsResult
+        homeShotsResult,
+
+      bigChances:
+        homeBigChancesResult,
+
+      contextualFactors:
+        homeContextualFactors
     }
   );
 
@@ -1829,7 +2671,13 @@ export function buildLambda(
         awayShotsOnTargetResult,
 
       shots:
-        awayShotsResult
+        awayShotsResult,
+
+      bigChances:
+        awayBigChancesResult,
+
+      contextualFactors:
+        awayContextualFactors
     }
   );
 
@@ -1838,7 +2686,10 @@ export function buildLambda(
     {
       lambdaHome,
       lambdaAway,
-      totalLambda
+      totalLambda,
+
+      homeDominanceFactor,
+      awayDominanceFactor
     }
   );
 
@@ -1893,6 +2744,11 @@ export function buildLambda(
       leagueBaseAway:
         roundNumber(
           leagueBaseAway
+        ),
+
+      leagueTeamBase:
+        roundNumber(
+          leagueTeamBase
         ),
 
       leagueAdjustment:
@@ -2021,6 +2877,22 @@ export function buildLambda(
       awayShotsSource:
         awayShotsResult.source,
 
+      homeBigChances:
+        homeBigChancesResult
+          .value,
+
+      homeBigChancesSource:
+        homeBigChancesResult
+          .source,
+
+      awayBigChances:
+        awayBigChancesResult
+          .value,
+
+      awayBigChancesSource:
+        awayBigChancesResult
+          .source,
+
       /*
        * xG proxy.
        */
@@ -2063,6 +2935,126 @@ export function buildLambda(
           awayAttackComposite
         ),
 
+      homeAttackBaseComposite:
+        roundNumber(
+          homeAttackBaseComposite
+        ),
+
+      awayAttackBaseComposite:
+        roundNumber(
+          awayAttackBaseComposite
+        ),
+
+      homeRecentFormFactor:
+        roundNumber(
+          homeContextualFactors
+            .recentFormFactor
+        ),
+
+      awayRecentFormFactor:
+        roundNumber(
+          awayContextualFactors
+            .recentFormFactor
+        ),
+
+      homeVarianceFactor:
+        roundNumber(
+          homeContextualFactors
+            .varianceFactor
+        ),
+
+      awayVarianceFactor:
+        roundNumber(
+          awayContextualFactors
+            .varianceFactor
+        ),
+
+      homeShotQualityFactor:
+        roundNumber(
+          homeContextualFactors
+            .shotQualityFactor
+        ),
+
+      awayShotQualityFactor:
+        roundNumber(
+          awayContextualFactors
+            .shotQualityFactor
+        ),
+
+      homeRecentGoalsPerGame:
+        homeContextualFactors
+          .recentGoalsPerGame,
+
+      awayRecentGoalsPerGame:
+        awayContextualFactors
+          .recentGoalsPerGame,
+
+      homeGoalVariance:
+        homeContextualFactors
+          .goalVariance,
+
+      awayGoalVariance:
+        awayContextualFactors
+          .goalVariance,
+
+      homeConversionRate:
+        homeContextualFactors
+          .conversionRate,
+
+      awayConversionRate:
+        awayContextualFactors
+          .conversionRate,
+
+      homeAttackReference:
+        roundNumber(
+          homeAttackReference
+        ),
+
+      awayAttackReference:
+        roundNumber(
+          awayAttackReference
+        ),
+
+      homeDefenseReference:
+        roundNumber(
+          homeDefenseReference
+        ),
+
+      awayDefenseReference:
+        roundNumber(
+          awayDefenseReference
+        ),
+
+      homeAttackUsesTrueVenueSplit:
+        isTrueVenueAttackSource(
+          homeGoalsResult.source
+        ),
+
+      awayAttackUsesTrueVenueSplit:
+        isTrueVenueAttackSource(
+          awayGoalsResult.source
+        ),
+
+      homeDefenseUsesTrueVenueSplit:
+        isTrueVenueDefenseSource(
+          homeConcededResult.source
+        ),
+
+      awayDefenseUsesTrueVenueSplit:
+        isTrueVenueDefenseSource(
+          awayConcededResult.source
+        ),
+
+      homeFalseZeroShotsDetected,
+
+      awayFalseZeroShotsDetected,
+
+      homeShotsUsedByModel:
+        homeShotsForModel,
+
+      awayShotsUsedByModel:
+        awayShotsForModel,
+
       homeAttackRaw:
         roundNumber(
           homeAttackRaw
@@ -2103,6 +3095,32 @@ export function buildLambda(
           awayDefensiveFragility
         ),
 
+      homeDominanceFactor:
+        roundNumber(
+          homeDominanceFactor
+        ),
+
+      awayDominanceFactor:
+        roundNumber(
+          awayDominanceFactor
+        ),
+
+      homeAdaptiveShrinkFactor:
+        roundNumber(
+          calculateAdaptiveShrinkFactor(
+            homeMatchesPlayed,
+            inputQuality
+          )
+        ),
+
+      awayAdaptiveShrinkFactor:
+        roundNumber(
+          calculateAdaptiveShrinkFactor(
+            awayMatchesPlayed,
+            inputQuality
+          )
+        ),
+
       /*
        * Configuração matemática.
        */
@@ -2112,14 +3130,42 @@ export function buildLambda(
       defenseElasticity:
         DEFENSE_ELASTICITY,
 
+      /*
+       * Campo legado mantido para compatibilidade.
+       * O shrink efetivo é adaptativo.
+       */
       shrinkFactor:
         SHRINK_FACTOR,
+
+      shrinkMode:
+        "ADAPTIVE_V7_2",
 
       goalsWeight:
         GOALS_WEIGHT,
 
       xgProxyWeight:
         XG_PROXY_WEIGHT,
+
+      shotQualityWeight:
+        SHOT_QUALITY_WEIGHT,
+
+      dominanceElasticity:
+        DOMINANCE_ELASTICITY,
+
+      recentFormMaxAdjustment:
+        RECENT_FORM_MAX_ADJUSTMENT,
+
+      varianceMaxAdjustment:
+        VARIANCE_MAX_ADJUSTMENT,
+
+      shotQualityMaxAdjustment:
+        SHOT_QUALITY_MAX_ADJUSTMENT,
+
+      minAdaptiveShrink:
+        MIN_ADAPTIVE_SHRINK,
+
+      maxAdaptiveShrink:
+        MAX_ADAPTIVE_SHRINK,
 
       minLambda:
         MIN_LAMBDA,

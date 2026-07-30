@@ -52,10 +52,18 @@ function sampleResult(
     }
   }
 
-  return {
-    homeGoals: 0,
-    awayGoals: 0
-  };
+const lastCell =
+  matrix[
+    matrix.length - 1
+  ];
+
+return {
+  homeGoals:
+    lastCell?.homeGoals ?? 0,
+
+  awayGoals:
+    lastCell?.awayGoals ?? 0
+};
 }
 
 /* ===========================

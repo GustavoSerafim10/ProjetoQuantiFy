@@ -3,7 +3,7 @@ import {
 } from "../../domain/value/expectedValue";
 
 /* ==========================================
-   VALUE PIPELINE — QUANTIFY V7
+   VALUE PIPELINE — QUANTIFY V7.2 ELITE
 ========================================== */
 
 /*
@@ -85,14 +85,25 @@ export interface ValueMarketResult {
   valueStatus: ValueStatus;
 
   debug: {
+    version: "V7.2_ELITE";
+
+    probabilitySource: string;
     sourceProbability: number;
+
+    oddAlias: string;
     sourceOdd: number;
 
     fairOddCalculation: number;
     impliedProbabilityCalculation: number;
 
     expectedValueCalculation: number;
+    expectedValueDirectCheck: number;
+    expectedValueDifference: number;
+    evFormulaVerified: boolean;
+
     probabilityEdgeCalculation: number;
+
+    warnings: string[];
   };
 }
 
@@ -103,11 +114,15 @@ export interface RejectedValueMarket {
     | "UNSUPPORTED_MARKET"
     | "INVALID_PROBABILITY"
     | "ODD_NOT_FOUND"
-    | "INVALID_ODD";
+    | "INVALID_ODD"
+    | "INVALID_EXPECTED_VALUE"
+    | "EXPECTED_VALUE_FUNCTION_MISMATCH";
 }
 
 export interface ValuePipelineDebug {
   valid: boolean;
+
+  version: "V7.2_ELITE";
 
   probabilityValid: boolean;
 
@@ -115,7 +130,7 @@ export interface ValuePipelineDebug {
   generatedMarkets: number;
   rejectedMarkets: number;
 
-  receivedOdds: Record<string, number>;
+  receivedOdds: Record<string, unknown>;
 
   rejected: RejectedValueMarket[];
 
@@ -221,6 +236,9 @@ export function valuePipeline(
     const debug:
       ValuePipelineDebug = {
         valid: false,
+
+        version:
+          "V7.2_ELITE",
 
         probabilityValid:
           false,
@@ -355,7 +373,38 @@ export function valuePipeline(
         market,
 
         reason:
-          "INVALID_PROBABILITY"
+          "INVALID_EXPECTED_VALUE"
+      });
+
+      continue;
+    }
+
+    /*
+     * Verificação independente da fórmula oficial:
+     *
+     * EV = probability × odd - 1
+     */
+    const directEv =
+      probability *
+      odd -
+      1;
+
+    const evDifference =
+      Math.abs(
+        ev -
+        directEv
+      );
+
+    const evFormulaVerified =
+      evDifference <=
+      1e-10;
+
+    if (!evFormulaVerified) {
+      rejected.push({
+        market,
+
+        reason:
+          "EXPECTED_VALUE_FUNCTION_MISMATCH"
       });
 
       continue;
@@ -433,8 +482,17 @@ export function valuePipeline(
       valueStatus,
 
       debug: {
+        version:
+          "V7.2_ELITE",
+
+        probabilitySource:
+          `data.probs.${market}`,
+
         sourceProbability:
           probability,
+
+        oddAlias:
+          oddLookup.alias,
 
         sourceOdd:
           odd,
@@ -448,8 +506,18 @@ export function valuePipeline(
         expectedValueCalculation:
           ev,
 
+        expectedValueDirectCheck:
+          directEv,
+
+        expectedValueDifference:
+          evDifference,
+
+        evFormulaVerified,
+
         probabilityEdgeCalculation:
-          probabilityEdge
+          probabilityEdge,
+
+        warnings: []
       }
     });
   }
@@ -461,6 +529,9 @@ export function valuePipeline(
     ValuePipelineDebug = {
       valid:
         valueValid,
+
+      version:
+        "V7.2_ELITE",
 
       probabilityValid:
         true,

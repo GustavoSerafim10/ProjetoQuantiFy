@@ -283,13 +283,8 @@ const ranked =
      * procuram topScores. A nova simulação pode
      * não produzir placares exatos.
      */
-    topScores:
-      Array.isArray(
-        simulation?.topScores
-      )
-        ? simulation.topScores
-        : [],
 
+    
     /*
      * IA desativada por enquanto.
      */

@@ -1,12 +1,12 @@
 /* ==========================================
-   RANKING PIPELINE — QUANTIFY V7
+   RANKING PIPELINE — QUANTIFY V7.1
 ========================================== */
 
 /*
  * Responsabilidade:
  *
  * - receber mercados já precificados;
- * - receber risco já consolidado;
+ * - receber risco e confiança já consolidados;
  * - calcular uma pontuação comparável;
  * - ordenar os mercados;
  * - registrar os componentes do ranking.
@@ -18,7 +18,15 @@
  * - recalcula risco;
  * - altera confiança;
  * - elimina mercados;
+ * - classifica entradas;
+ * - calcula stake;
  * - toma a decisão final.
+ *
+ * Princípio:
+ *
+ * Ranking ordena qualidade relativa.
+ * Decision define elegibilidade.
+ * BestOnly apenas escolhe entre candidatos aprovados.
  */
 
 /* ==========================================
@@ -26,19 +34,22 @@
 ========================================== */
 
 export interface RankingComponents {
-  ev: number;
-  probabilityEdge: number;
+  valueQuality: number;
   safety: number;
   confidence: number;
   probability: number;
 }
 
 export interface RankingWeights {
-  ev: number;
-  probabilityEdge: number;
+  valueQuality: number;
   safety: number;
   confidence: number;
   probability: number;
+}
+
+export interface RankingValueBreakdown {
+  ev: number;
+  probabilityEdge: number;
 }
 
 export interface RankingMarketDebug {
@@ -54,11 +65,15 @@ export interface RankingMarketDebug {
 
   normalized: RankingComponents;
 
+  valueBreakdown: RankingValueBreakdown;
+
   weights: RankingWeights;
 
   contributions: RankingComponents;
 
-  score: number;
+  rankingScore: number | null;
+
+  missingFields: string[];
 
   warnings: string[];
 }
@@ -76,7 +91,7 @@ export interface RankingPipelineDebug {
   topScore: number | null;
 
   note:
-    "Ranking orders candidates by value adjusted for risk; it does not make the final betting decision.";
+    "Ranking orders valid candidates by value quality, safety, confidence and probability; it does not make the final betting decision.";
 }
 
 /* ==========================================
@@ -84,51 +99,65 @@ export interface RankingPipelineDebug {
 ========================================== */
 
 /*
- * O EV recebe o maior peso porque o objetivo
- * econômico do sistema é encontrar valor.
+ * EV e probabilityEdge pertencem à mesma dimensão:
  *
- * O risco já inclui os componentes estruturais,
- * de incerteza e de correlação.
+ * valor econômico.
  *
- * Estes pesos devem futuramente ser validados
- * por backtest fora da amostra.
+ * Eles são combinados primeiro em valueQuality
+ * para evitar dupla contagem excessiva.
+ *
+ * Os pesos devem ser calibrados futuramente por:
+ *
+ * - ROI por faixa;
+ * - hit rate por faixa;
+ * - drawdown;
+ * - estabilidade fora da amostra;
+ * - análise por mercado e por liga.
  */
+
 const RANKING_WEIGHTS:
   RankingWeights = {
-    ev:
-      0.45,
-
-    probabilityEdge:
-      0.20,
+    valueQuality:
+      0.40,
 
     safety:
-      0.20,
+      0.25,
 
     confidence:
-      0.10,
+      0.20,
 
     probability:
-      0.05
+      0.15
   };
 
 /*
- * Escalas usadas somente para normalização
- * de ranking.
+ * Peso interno da dimensão econômica.
  *
- * Elas não modificam os valores originais.
+ * EV continua sendo a principal medida de valor,
+ * mas probabilityEdge atua como confirmação.
+ */
+const VALUE_QUALITY_WEIGHTS = {
+  ev:
+    0.65,
+
+  probabilityEdge:
+    0.35
+} as const;
+
+/*
+ * Tetos defensivos de normalização.
+ *
+ * EV e edge iguais ou menores que zero não recebem
+ * contribuição positiva.
+ *
+ * Os valores originais são preservados.
  */
 const NORMALIZATION_POLICY = {
-  evMinimum:
-    -0.10,
+  evPositiveMaximum:
+    0.25,
 
-  evMaximum:
-    0.30,
-
-  probabilityEdgeMinimum:
-    -0.10,
-
-  probabilityEdgeMaximum:
-    0.15
+  probabilityEdgePositiveMaximum:
+    0.12
 } as const;
 
 /* ==========================================
@@ -143,11 +172,8 @@ export function rankingPipeline(
       ? data.markets
       : [];
 
-  let validMarkets =
-    0;
-
-  let invalidMarkets =
-    0;
+  let validMarkets = 0;
+  let invalidMarkets = 0;
 
   const rankedMarkets =
     inputMarkets.map(
@@ -161,9 +187,7 @@ export function rankingPipeline(
             originalIndex
           );
 
-        if (
-          ranked.rankingValid
-        ) {
+        if (ranked.rankingValid) {
           validMarkets++;
         } else {
           invalidMarkets++;
@@ -176,123 +200,62 @@ export function rankingPipeline(
   /*
    * Ordenação determinística:
    *
-   * 1. score
-   * 2. EV
-   * 3. menor risco
-   * 4. maior probabilidade
-   * 5. posição original
+   * 1. mercados válidos;
+   * 2. maior rankingScore;
+   * 3. maior EV;
+   * 4. maior probabilityEdge;
+   * 5. menor risco;
+   * 6. maior confiança;
+   * 7. maior probabilidade;
+   * 8. posição original.
    */
   rankedMarkets.sort(
     (
       first: any,
       second: any
-    ) => {
-      const scoreDifference =
-        safeFiniteNumber(
-          second?.score,
-          Number.NEGATIVE_INFINITY
-        ) -
-        safeFiniteNumber(
-          first?.score,
-          Number.NEGATIVE_INFINITY
-        );
-
-      if (
-        Math.abs(
-          scoreDifference
-        ) > 1e-12
-      ) {
-        return scoreDifference;
-      }
-
-      const evDifference =
-        safeFiniteNumber(
-          second?.ev,
-          Number.NEGATIVE_INFINITY
-        ) -
-        safeFiniteNumber(
-          first?.ev,
-          Number.NEGATIVE_INFINITY
-        );
-
-      if (
-        Math.abs(
-          evDifference
-        ) > 1e-12
-      ) {
-        return evDifference;
-      }
-
-      const riskDifference =
-        safeFiniteNumber(
-          first?.risk,
-          1
-        ) -
-        safeFiniteNumber(
-          second?.risk,
-          1
-        );
-
-      if (
-        Math.abs(
-          riskDifference
-        ) > 1e-12
-      ) {
-        return riskDifference;
-      }
-
-      const probabilityDifference =
-        safeFiniteNumber(
-          second?.probability,
-          0
-        ) -
-        safeFiniteNumber(
-          first?.probability,
-          0
-        );
-
-      if (
-        Math.abs(
-          probabilityDifference
-        ) > 1e-12
-      ) {
-        return probabilityDifference;
-      }
-
-      return (
-        safeFiniteNumber(
-          first?.rankingOriginalIndex,
-          0
-        ) -
-        safeFiniteNumber(
-          second?.rankingOriginalIndex,
-          0
-        )
-      );
-    }
+    ) =>
+      compareRankedMarkets(
+        first,
+        second
+      )
   );
 
   /*
-   * Após ordenar, registramos a posição final.
+   * Mercados inválidos permanecem no array,
+   * mas não recebem posição numérica.
    */
+  let currentValidRank = 0;
+
   const markets =
     rankedMarkets.map(
-      (
-        market: any,
-        index: number
-      ) => ({
-        ...market,
+      (market: any) => {
+        if (!market?.rankingValid) {
+          return {
+            ...market,
 
-        rank:
-          index + 1
-      })
+            rank:
+              null
+          };
+        }
+
+        currentValidRank++;
+
+        return {
+          ...market,
+
+          rank:
+            currentValidRank
+        };
+      }
     );
 
   const topMarket =
-    markets[0] ?? null;
+    markets.find(
+      (market: any) =>
+        market?.rankingValid === true
+    ) ?? null;
 
   const pipelineValid =
-    markets.length > 0 &&
     validMarkets > 0;
 
   const debug:
@@ -311,28 +274,20 @@ export function rankingPipeline(
 
       topMarket:
         topMarket
-          ? String(
-              topMarket.market ??
-              ""
+          ? normalizeMarketLabel(
+              topMarket?.market
             )
           : null,
 
       topScore:
-        topMarket &&
-        Number.isFinite(
-          Number(
-            topMarket.score
-          )
-        )
-          ? roundNumber(
-              Number(
-                topMarket.score
-              )
+        topMarket
+          ? parseProbability(
+              topMarket?.rankingScore
             )
           : null,
 
       note:
-        "Ranking orders candidates by value adjusted for risk; it does not make the final betting decision."
+        "Ranking orders valid candidates by value quality, safety, confidence and probability; it does not make the final betting decision."
     };
 
   return {
@@ -360,45 +315,49 @@ function rankMarket(
   market: any,
   originalIndex: number
 ) {
-  const warnings =
+  const originalWarnings =
     normalizeWarnings(
       market?.warnings
     );
 
   const probability =
-    parseProbability(
-      market?.probability
-    );
+    firstProbability([
+      market?.probability,
+      market?.calibratedProbability,
+      market?.modelProbability
+    ]);
 
   const ev =
     parseFiniteNumber(
       market?.ev
     );
 
-  /*
-   * O novo valuePipeline usa:
-   *
-   * probabilityEdge
-   *
-   * O campo edge fica como fallback temporário
-   * para compatibilidade.
-   */
+  const canonicalProbabilityEdge =
+    parseFiniteNumber(
+      market?.probabilityEdge
+    );
+
+  const legacyEdge =
+    canonicalProbabilityEdge === null
+      ? parseFiniteNumber(
+          market?.edge
+        )
+      : null;
+
   const probabilityEdge =
-    firstFiniteNumber([
-      market?.probabilityEdge,
-      market?.edge
-    ]);
+    canonicalProbabilityEdge ??
+    legacyEdge;
 
   const risk =
-    firstProbability([
-      market?.riskScore,
-      market?.risk
-    ]);
+    getMarketRisk(
+      market
+    );
 
   const confidence =
-    parseProbability(
-      market?.confidence
-    );
+    firstProbability([
+      market?.confidence,
+      market?.marketConfidence
+    ]);
 
   const missingFields:
     string[] = [];
@@ -415,9 +374,7 @@ function rankMarket(
     );
   }
 
-  if (
-    probabilityEdge === null
-  ) {
+  if (probabilityEdge === null) {
     missingFields.push(
       "probabilityEdge"
     );
@@ -429,29 +386,35 @@ function rankMarket(
     );
   }
 
-  /*
-   * Confidence pode não existir em alguns
-   * mercados antigos.
-   *
-   * Nesse caso usamos valor neutro apenas no
-   * ranking, sem alterar o mercado original.
-   */
-  const effectiveConfidence =
-    confidence ??
-    0.5;
+  if (confidence === null) {
+    missingFields.push(
+      "confidence"
+    );
+  }
+
+  const legacyWarnings =
+    legacyEdge !== null
+      ? [
+          "RANKING_LEGACY_EDGE_FALLBACK"
+        ]
+      : [];
 
   const rankingValid =
-    probability !== null &&
-    ev !== null &&
-    probabilityEdge !== null &&
-    risk !== null;
+    missingFields.length === 0;
 
   if (!rankingValid) {
-    const invalidWarnings =
+    const warnings =
       normalizeWarnings([
-        ...warnings,
+        ...originalWarnings,
 
-        "INVALID_RANKING_INPUT"
+        ...legacyWarnings,
+
+        "INVALID_RANKING_INPUT",
+
+        ...missingFields.map(
+          field =>
+            `MISSING_RANKING_${field.toUpperCase()}`
+        )
       ]);
 
     const debug:
@@ -468,13 +431,25 @@ function rankMarket(
         },
 
         normalized: {
-          ev: 0,
-          probabilityEdge: 0,
-          safety: 0,
+          valueQuality:
+            0,
+
+          safety:
+            0,
+
           confidence:
-            effectiveConfidence,
+            0,
+
           probability:
-            probability ?? 0
+            0
+        },
+
+        valueBreakdown: {
+          ev:
+            0,
+
+          probabilityEdge:
+            0
         },
 
         weights: {
@@ -482,27 +457,41 @@ function rankMarket(
         },
 
         contributions: {
-          ev: 0,
-          probabilityEdge: 0,
-          safety: 0,
-          confidence: 0,
-          probability: 0
+          valueQuality:
+            0,
+
+          safety:
+            0,
+
+          confidence:
+            0,
+
+          probability:
+            0
         },
 
-        score: 0,
+        rankingScore:
+          null,
 
-        warnings:
-          invalidWarnings
+        missingFields,
+
+        warnings
       };
 
     return {
       ...market,
 
-      score:
-        Number.NEGATIVE_INFINITY,
-
+      /*
+       * rankingScore nulo diferencia:
+       *
+       * mercado inválido
+       *
+       * de
+       *
+       * mercado válido com score baixo.
+       */
       rankingScore:
-        Number.NEGATIVE_INFINITY,
+        null,
 
       rankingValid:
         false,
@@ -510,69 +499,90 @@ function rankMarket(
       rankingOriginalIndex:
         originalIndex,
 
-      warnings:
-        invalidWarnings,
+      rank:
+        null,
+
+      warnings,
 
       debug: {
         ...(market?.debug ?? {}),
 
-        rankingPipeline: {
-          ...debug,
-
-          missingFields
-        }
+        rankingPipeline:
+          debug
       }
     };
   }
 
+  /*
+   * Após rankingValid, estes valores são números.
+   */
+  const validProbability =
+    probability as number;
+
+  const validEv =
+    ev as number;
+
+  const validProbabilityEdge =
+    probabilityEdge as number;
+
+  const validRisk =
+    risk as number;
+
+  const validConfidence =
+    confidence as number;
+
   const normalizedEv =
-    normalizeRange(
-      ev,
+    normalizePositiveSignal(
+      validEv,
       NORMALIZATION_POLICY
-        .evMinimum,
-      NORMALIZATION_POLICY
-        .evMaximum
+        .evPositiveMaximum
     );
 
   const normalizedProbabilityEdge =
-    normalizeRange(
-      probabilityEdge,
+    normalizePositiveSignal(
+      validProbabilityEdge,
       NORMALIZATION_POLICY
-        .probabilityEdgeMinimum,
-      NORMALIZATION_POLICY
-        .probabilityEdgeMaximum
+        .probabilityEdgePositiveMaximum
+    );
+
+  const valueQuality =
+    (
+      normalizedEv *
+      VALUE_QUALITY_WEIGHTS.ev
+    ) +
+    (
+      normalizedProbabilityEdge *
+      VALUE_QUALITY_WEIGHTS
+        .probabilityEdge
     );
 
   const safety =
-    1 - risk;
+    clampProbability(
+      1 -
+      validRisk
+    );
 
   const normalized:
     RankingComponents = {
-      ev:
-        normalizedEv,
+      valueQuality:
+        clampProbability(
+          valueQuality
+        ),
 
-      probabilityEdge:
-        normalizedProbabilityEdge,
-
-      safety:
-        safety,
+      safety,
 
       confidence:
-        effectiveConfidence,
+        validConfidence,
 
-      probability
+      probability:
+        validProbability
     };
 
   const contributions:
     RankingComponents = {
-      ev:
-        normalized.ev *
-        RANKING_WEIGHTS.ev,
-
-      probabilityEdge:
-        normalized.probabilityEdge *
-        RANKING_WEIGHTS
-          .probabilityEdge,
+      valueQuality:
+        normalized.valueQuality *
+        RANKING_WEIGHTS.valueQuality,
 
       safety:
         normalized.safety *
@@ -587,26 +597,40 @@ function rankMarket(
         RANKING_WEIGHTS.probability
     };
 
-  const rawScore =
-    contributions.ev +
-    contributions.probabilityEdge +
+  const rawRankingScore =
+    contributions.valueQuality +
     contributions.safety +
     contributions.confidence +
     contributions.probability;
 
-  const score =
+  const rankingScore =
     clampProbability(
-      rawScore
+      rawRankingScore
     );
 
-  const finalWarnings =
-    confidence === null
-      ? normalizeWarnings([
-          ...warnings,
+  const warnings =
+    normalizeWarnings([
+      ...originalWarnings,
 
-          "RANKING_CONFIDENCE_FALLBACK"
-        ])
-      : warnings;
+      ...legacyWarnings,
+
+      ...buildRankingDiagnosticWarnings({
+        ev:
+          validEv,
+
+        probabilityEdge:
+          validProbabilityEdge,
+
+        risk:
+          validRisk,
+
+        confidence:
+          validConfidence,
+
+        probability:
+          validProbability
+      })
+    ]);
 
   const debug:
     RankingMarketDebug = {
@@ -614,23 +638,26 @@ function rankMarket(
         true,
 
       raw: {
-        ev,
-        probabilityEdge,
-        risk,
-        confidence,
-        probability
+        ev:
+          validEv,
+
+        probabilityEdge:
+          validProbabilityEdge,
+
+        risk:
+          validRisk,
+
+        confidence:
+          validConfidence,
+
+        probability:
+          validProbability
       },
 
       normalized: {
-        ev:
+        valueQuality:
           roundNumber(
-            normalized.ev
-          ),
-
-        probabilityEdge:
-          roundNumber(
-            normalized
-              .probabilityEdge
+            normalized.valueQuality
           ),
 
         safety:
@@ -649,20 +676,26 @@ function rankMarket(
           )
       },
 
+      valueBreakdown: {
+        ev:
+          roundNumber(
+            normalizedEv
+          ),
+
+        probabilityEdge:
+          roundNumber(
+            normalizedProbabilityEdge
+          )
+      },
+
       weights: {
         ...RANKING_WEIGHTS
       },
 
       contributions: {
-        ev:
+        valueQuality:
           roundNumber(
-            contributions.ev
-          ),
-
-        probabilityEdge:
-          roundNumber(
-            contributions
-              .probabilityEdge
+            contributions.valueQuality
           ),
 
         safety:
@@ -681,26 +714,29 @@ function rankMarket(
           )
       },
 
-      score:
+      rankingScore:
         roundNumber(
-          score
+          rankingScore
         ),
 
-      warnings:
-        finalWarnings
+      missingFields:
+        [],
+
+      warnings
     };
 
   return {
     ...market,
 
-    score:
-      roundNumber(
-        score
-      ),
-
+    /*
+     * rankingScore é o campo canônico.
+     *
+     * O alias genérico score não é mais escrito para
+     * evitar colisão semântica com outros módulos.
+     */
     rankingScore:
       roundNumber(
-        score
+        rankingScore
       ),
 
     rankingValid:
@@ -709,8 +745,7 @@ function rankMarket(
     rankingOriginalIndex:
       originalIndex,
 
-    warnings:
-      finalWarnings,
+    warnings,
 
     debug: {
       ...(market?.debug ?? {}),
@@ -722,42 +757,304 @@ function rankMarket(
 }
 
 /* ==========================================
+   COMPARAÇÃO
+========================================== */
+
+function compareRankedMarkets(
+  first: any,
+  second: any
+): number {
+  const firstValid =
+    first?.rankingValid === true;
+
+  const secondValid =
+    second?.rankingValid === true;
+
+  if (
+    firstValid !==
+    secondValid
+  ) {
+    return firstValid
+      ? -1
+      : 1;
+  }
+
+  if (
+    !firstValid &&
+    !secondValid
+  ) {
+    return (
+      safeFiniteNumber(
+        first?.rankingOriginalIndex,
+        0
+      ) -
+      safeFiniteNumber(
+        second?.rankingOriginalIndex,
+        0
+      )
+    );
+  }
+
+  const scoreDifference =
+    safeFiniteNumber(
+      second?.rankingScore,
+      Number.NEGATIVE_INFINITY
+    ) -
+    safeFiniteNumber(
+      first?.rankingScore,
+      Number.NEGATIVE_INFINITY
+    );
+
+  if (
+    Math.abs(
+      scoreDifference
+    ) >
+    1e-12
+  ) {
+    return scoreDifference;
+  }
+
+  const evDifference =
+    safeFiniteNumber(
+      second?.ev,
+      Number.NEGATIVE_INFINITY
+    ) -
+    safeFiniteNumber(
+      first?.ev,
+      Number.NEGATIVE_INFINITY
+    );
+
+  if (
+    Math.abs(
+      evDifference
+    ) >
+    1e-12
+  ) {
+    return evDifference;
+  }
+
+  const edgeDifference =
+    getMarketProbabilityEdge(
+      second,
+      Number.NEGATIVE_INFINITY
+    ) -
+    getMarketProbabilityEdge(
+      first,
+      Number.NEGATIVE_INFINITY
+    );
+
+  if (
+    Math.abs(
+      edgeDifference
+    ) >
+    1e-12
+  ) {
+    return edgeDifference;
+  }
+
+  const riskDifference =
+    getMarketRisk(
+      first,
+      1
+    ) -
+    getMarketRisk(
+      second,
+      1
+    );
+
+  if (
+    Math.abs(
+      riskDifference
+    ) >
+    1e-12
+  ) {
+    return riskDifference;
+  }
+
+  const confidenceDifference =
+    safeFiniteNumber(
+      second?.confidence,
+      0
+    ) -
+    safeFiniteNumber(
+      first?.confidence,
+      0
+    );
+
+  if (
+    Math.abs(
+      confidenceDifference
+    ) >
+    1e-12
+  ) {
+    return confidenceDifference;
+  }
+
+  const probabilityDifference =
+    safeFiniteNumber(
+      second?.probability,
+      0
+    ) -
+    safeFiniteNumber(
+      first?.probability,
+      0
+    );
+
+  if (
+    Math.abs(
+      probabilityDifference
+    ) >
+    1e-12
+  ) {
+    return probabilityDifference;
+  }
+
+  return (
+    safeFiniteNumber(
+      first?.rankingOriginalIndex,
+      0
+    ) -
+    safeFiniteNumber(
+      second?.rankingOriginalIndex,
+      0
+    )
+  );
+}
+
+/* ==========================================
+   DIAGNÓSTICOS
+========================================== */
+
+/*
+ * Estes warnings são informativos.
+ *
+ * Eles não eliminam o mercado e não modificam
+ * rankingScore.
+ */
+function buildRankingDiagnosticWarnings({
+  ev,
+  probabilityEdge,
+  risk,
+  confidence,
+  probability
+}: {
+  ev: number;
+  probabilityEdge: number;
+  risk: number;
+  confidence: number;
+  probability: number;
+}): string[] {
+  const warnings:
+    string[] = [];
+
+  if (ev <= 0) {
+    warnings.push(
+      "RANKING_NON_POSITIVE_EV"
+    );
+  }
+
+  if (probabilityEdge <= 0) {
+    warnings.push(
+      "RANKING_NON_POSITIVE_EDGE"
+    );
+  }
+
+  if (risk >= 0.65) {
+    warnings.push(
+      "RANKING_HIGH_RISK"
+    );
+  }
+
+  if (confidence < 0.50) {
+    warnings.push(
+      "RANKING_LOW_CONFIDENCE"
+    );
+  }
+
+  if (probability < 0.45) {
+    warnings.push(
+      "RANKING_LOW_PROBABILITY"
+    );
+  }
+
+  return warnings;
+}
+
+/* ==========================================
    NORMALIZAÇÃO
 ========================================== */
 
 /*
- * Converte uma variável de intervalo conhecido
- * para a escala 0–1.
+ * Sinais econômicos iguais ou menores que zero
+ * recebem contribuição zero.
  *
- * Não altera o valor original do mercado.
+ * Isso não elimina o mercado e não altera EV/edge.
  */
-function normalizeRange(
+function normalizePositiveSignal(
   value: number,
-  minimum: number,
-  maximum: number
+  positiveMaximum: number
 ): number {
   if (
     !Number.isFinite(value) ||
-    !Number.isFinite(minimum) ||
-    !Number.isFinite(maximum) ||
-    maximum <= minimum
+    !Number.isFinite(
+      positiveMaximum
+    ) ||
+    positiveMaximum <= 0 ||
+    value <= 0
   ) {
     return 0;
   }
 
-  const normalized =
-    (
-      value -
-      minimum
-    ) /
-    (
-      maximum -
-      minimum
-    );
-
   return clampProbability(
-    normalized
+    value /
+    positiveMaximum
   );
+}
+
+/* ==========================================
+   EXTRAÇÃO DE MÉTRICAS
+========================================== */
+
+function getMarketRisk(
+  market: any
+): number | null;
+
+function getMarketRisk(
+  market: any,
+  fallback: number
+): number;
+
+function getMarketRisk(
+  market: any,
+  fallback?: number
+): number | null {
+  const parsed =
+    firstProbability([
+      market?.riskScore,
+      market?.risk
+    ]);
+
+  if (parsed !== null) {
+    return parsed;
+  }
+
+  return fallback ??
+    null;
+}
+
+function getMarketProbabilityEdge(
+  market: any,
+  fallback:
+    number
+): number {
+  const parsed =
+    firstFiniteNumber([
+      market?.probabilityEdge,
+      market?.edge
+    ]);
+
+  return parsed ??
+    fallback;
 }
 
 /* ==========================================
@@ -805,11 +1102,23 @@ function firstProbability(
 function parseProbability(
   value: unknown
 ): number | null {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    typeof value ===
+      "boolean"
+  ) {
+    return null;
+  }
+
   const parsed =
     Number(value);
 
   if (
-    !Number.isFinite(parsed) ||
+    !Number.isFinite(
+      parsed
+    ) ||
     parsed < 0 ||
     parsed > 1
   ) {
@@ -822,10 +1131,22 @@ function parseProbability(
 function parseFiniteNumber(
   value: unknown
 ): number | null {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    typeof value ===
+      "boolean"
+  ) {
+    return null;
+  }
+
   const parsed =
     Number(value);
 
-  return Number.isFinite(parsed)
+  return Number.isFinite(
+    parsed
+  )
     ? parsed
     : null;
 }
@@ -835,11 +1156,12 @@ function safeFiniteNumber(
   fallback: number
 ): number {
   const parsed =
-    Number(value);
+    parseFiniteNumber(
+      value
+    );
 
-  return Number.isFinite(parsed)
-    ? parsed
-    : fallback;
+  return parsed ??
+    fallback;
 }
 
 function normalizeWarnings(
@@ -849,21 +1171,30 @@ function normalizeWarnings(
     return [];
   }
 
-  const warnings =
-    value
-      .map(
-        warning =>
-          String(
-            warning ?? ""
-          ).trim()
-      )
-      .filter(Boolean);
-
   return [
     ...new Set(
-      warnings
+      value
+        .map(
+          warning =>
+            String(
+              warning ??
+              ""
+            ).trim()
+        )
+        .filter(Boolean)
     )
   ];
+}
+
+function normalizeMarketLabel(
+  value: unknown
+): string {
+  return String(
+    value ??
+    ""
+  )
+    .trim()
+    .toUpperCase();
 }
 
 function clampProbability(
@@ -887,11 +1218,12 @@ function roundNumber(
   decimals = 6
 ): number {
   if (!Number.isFinite(value)) {
-    return value;
+    return 0;
   }
 
   const factor =
-    10 ** decimals;
+    10 **
+    decimals;
 
   return (
     Math.round(

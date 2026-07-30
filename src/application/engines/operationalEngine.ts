@@ -1,5 +1,5 @@
 /* ==========================================
-   OPERATIONAL ENGINE — QUANTIFY V7
+   OPERATIONAL ENGINE — QUANTIFY V7.2 ELITE
 ========================================== */
 
 /*
@@ -50,11 +50,66 @@ interface OperationalBet {
 
   actionable: boolean;
 
+  classification: string;
+
+  authoritySource:
+    | "classification"
+    | "decision_legacy"
+    | "tier_legacy"
+    | "missing";
+
+  rankingSource:
+    | "rankingScore"
+    | "score_legacy"
+    | "edgeScore_legacy"
+    | "missing";
+
   stake: number;
 
   tier: string;
 
   [key: string]: unknown;
+}
+
+interface OperationalRejection {
+  match: string;
+  market: string | null;
+
+  reason:
+    | "MISSING_BET"
+    | "INVALID_DECISION"
+    | "NOT_ACTIONABLE"
+    | "INVALID_MARKET"
+    | "INVALID_PROBABILITY"
+    | "INVALID_ODD"
+    | "INVALID_EV"
+    | "INVALID_RANKING"
+    | "OPERATIONAL_LIMIT"
+    | "EXPOSURE_LIMIT";
+
+  classification: string | null;
+  decisionValid: boolean | null;
+  actionable: boolean | null;
+}
+
+interface DecisionAuthorityResolution {
+  value: string | null;
+
+  source:
+    | "classification"
+    | "decision_legacy"
+    | "tier_legacy"
+    | "missing";
+}
+
+interface RankingResolution {
+  value: number | null;
+
+  source:
+    | "rankingScore"
+    | "score_legacy"
+    | "edgeScore_legacy"
+    | "missing";
 }
 
 interface OperationalEngineConfig {
@@ -72,6 +127,13 @@ interface OperationalEngineConfig {
 /* ==========================================
    POLÍTICA
 ========================================== */
+
+const APPROVED_CLASSIFICATIONS =
+  new Set([
+    "BET",
+    "ELITE",
+    "SCALPER"
+  ]);
 
 const DEFAULT_MAX_PICKS =
   3;
@@ -148,13 +210,59 @@ function normalizeBoolean(
 
 function resolveRankingScore(
   bet: any
-): number {
-  return safeNumber(
-    bet?.rankingScore ??
-    bet?.score ??
-    bet?.edgeScore,
-    0
-  );
+): RankingResolution {
+  const official =
+    parseFiniteNumber(
+      bet?.rankingScore
+    );
+
+  if (official !== null) {
+    return {
+      value:
+        official,
+
+      source:
+        "rankingScore"
+    };
+  }
+
+  const legacyScore =
+    parseFiniteNumber(
+      bet?.score
+    );
+
+  if (legacyScore !== null) {
+    return {
+      value:
+        legacyScore,
+
+      source:
+        "score_legacy"
+    };
+  }
+
+  const legacyEdgeScore =
+    parseFiniteNumber(
+      bet?.edgeScore
+    );
+
+  if (legacyEdgeScore !== null) {
+    return {
+      value:
+        legacyEdgeScore,
+
+      source:
+        "edgeScore_legacy"
+    };
+  }
+
+  return {
+    value:
+      null,
+
+    source:
+      "missing"
+  };
 }
 
 function resolveRisk(
@@ -207,9 +315,9 @@ function resolveTier(
 ): string {
   const tier =
     String(
+      bet?.classification ??
       bet?.tier ??
       bet?.status ??
-      bet?.classification ??
       "APPROVED"
     )
       .trim()
@@ -219,21 +327,150 @@ function resolveTier(
     "APPROVED";
 }
 
+function normalizeDecision(
+  value: unknown
+): string | null {
+  if (
+    value === null ||
+    value === undefined
+  ) {
+    return null;
+  }
+
+  const normalized =
+    String(value)
+      .trim()
+      .toUpperCase()
+      .replace(
+        /[_-]+/g,
+        " "
+      )
+      .replace(
+        /\s+/g,
+        " "
+      );
+
+  if (!normalized) {
+    return null;
+  }
+
+  switch (normalized) {
+    case "NO BET":
+    case "NOBET":
+      return "NO BET";
+
+    case "WATCHLIST":
+      return "WATCHLIST";
+
+    case "BET":
+      return "BET";
+
+    case "ELITE":
+      return "ELITE";
+
+    case "SCALPER":
+      return "SCALPER";
+
+    default:
+      return normalized;
+  }
+}
+
+function resolveDecisionAuthority(
+  bet: any
+): DecisionAuthorityResolution {
+  const classification =
+    normalizeDecision(
+      bet?.classification
+    );
+
+  if (classification) {
+    return {
+      value:
+        classification,
+
+      source:
+        "classification"
+    };
+  }
+
+  const decision =
+    normalizeDecision(
+      bet?.decision
+    );
+
+  if (decision) {
+    return {
+      value:
+        decision,
+
+      source:
+        "decision_legacy"
+    };
+  }
+
+  const tier =
+    normalizeDecision(
+      bet?.tier
+    );
+
+  if (tier) {
+    return {
+      value:
+        tier,
+
+      source:
+        "tier_legacy"
+    };
+  }
+
+  return {
+    value:
+      null,
+
+    source:
+      "missing"
+  };
+}
+
 /* ==========================================
    VALIDAÇÃO DE ENTRADA
 ========================================== */
 
 function isApprovedBet(
   bet: any
-): boolean {
+): {
+  approved: boolean;
+  authority: DecisionAuthorityResolution;
+  decisionValid: boolean;
+  actionable: boolean;
+} {
   if (!bet) {
-    return false;
+    return {
+      approved:
+        false,
+
+      authority: {
+        value:
+          null,
+
+        source:
+          "missing"
+      },
+
+      decisionValid:
+        false,
+
+      actionable:
+        false
+    };
   }
 
-  /*
-   * Uma entrada só é operacional quando a etapa
-   * de decisão já a aprovou explicitamente.
-   */
+  const authority =
+    resolveDecisionAuthority(
+      bet
+    );
+
   const decisionValid =
     normalizeBoolean(
       bet.decisionValid
@@ -245,10 +482,24 @@ function isApprovedBet(
       bet.approved
     );
 
-  return (
-    decisionValid &&
+  const classificationApproved =
+    authority.value !== null &&
+    APPROVED_CLASSIFICATIONS.has(
+      authority.value
+    );
+
+  return {
+    approved:
+      decisionValid &&
+      actionable &&
+      classificationApproved,
+
+    authority,
+
+    decisionValid,
+
     actionable
-  );
+  };
 }
 
 /* ==========================================
@@ -258,10 +509,21 @@ function isApprovedBet(
 function normalizeBet(
   matchData: any,
   bet: any
-): OperationalBet | null {
-  if (!isApprovedBet(bet)) {
-    return null;
-  }
+): {
+  bet: OperationalBet | null;
+  rejection: OperationalRejection | null;
+} {
+  const match =
+    String(
+      matchData?.match ??
+      bet?.match ??
+      "UNKNOWN_MATCH"
+    );
+
+  const approval =
+    isApprovedBet(
+      bet
+    );
 
   const market =
     String(
@@ -271,8 +533,84 @@ function normalizeBet(
       .trim()
       .toUpperCase();
 
+  const baseRejection = (
+    reason:
+      OperationalRejection["reason"]
+  ): OperationalRejection => ({
+    match,
+
+    market:
+      market || null,
+
+    reason,
+
+    classification:
+      approval.authority.value,
+
+    decisionValid:
+      bet
+        ? approval.decisionValid
+        : null,
+
+    actionable:
+      bet
+        ? approval.actionable
+        : null
+  });
+
+  if (!bet) {
+    return {
+      bet:
+        null,
+
+      rejection:
+        baseRejection(
+          "MISSING_BET"
+        )
+    };
+  }
+
+  if (
+    !approval.decisionValid ||
+    approval.authority.value ===
+      null ||
+    !APPROVED_CLASSIFICATIONS.has(
+      approval.authority.value
+    )
+  ) {
+    return {
+      bet:
+        null,
+
+      rejection:
+        baseRejection(
+          "INVALID_DECISION"
+        )
+    };
+  }
+
+  if (!approval.actionable) {
+    return {
+      bet:
+        null,
+
+      rejection:
+        baseRejection(
+          "NOT_ACTIONABLE"
+        )
+    };
+  }
+
   if (!market) {
-    return null;
+    return {
+      bet:
+        null,
+
+      rejection:
+        baseRejection(
+          "INVALID_MARKET"
+        )
+    };
   }
 
   const probability =
@@ -280,82 +618,142 @@ function normalizeBet(
       bet?.probability
     );
 
+  if (
+    probability === null ||
+    probability < 0 ||
+    probability > 1
+  ) {
+    return {
+      bet:
+        null,
+
+      rejection:
+        baseRejection(
+          "INVALID_PROBABILITY"
+        )
+    };
+  }
+
   const odd =
     parseFiniteNumber(
       bet?.odd
     );
+
+  if (
+    odd === null ||
+    odd <= 1
+  ) {
+    return {
+      bet:
+        null,
+
+      rejection:
+        baseRejection(
+          "INVALID_ODD"
+        )
+    };
+  }
 
   const ev =
     parseFiniteNumber(
       bet?.ev
     );
 
+  if (ev === null) {
+    return {
+      bet:
+        null,
+
+      rejection:
+        baseRejection(
+          "INVALID_EV"
+        )
+    };
+  }
+
+  const ranking =
+    resolveRankingScore(
+      bet
+    );
+
   if (
-    probability === null ||
-    probability < 0 ||
-    probability > 1 ||
-    odd === null ||
-    odd <= 1 ||
-    ev === null
+    ranking.value === null
   ) {
-    return null;
+    return {
+      bet:
+        null,
+
+      rejection:
+        baseRejection(
+          "INVALID_RANKING"
+        )
+    };
   }
 
   return {
-    ...bet,
+    bet: {
+      ...bet,
 
-    match:
-      String(
-        matchData?.match ??
-        bet?.match ??
-        "UNKNOWN_MATCH"
-      ),
+      match,
 
-    league:
-      String(
-        matchData?.league ??
-        bet?.league ??
-        "UNKNOWN_LEAGUE"
-      ),
+      league:
+        String(
+          matchData?.league ??
+          bet?.league ??
+          "UNKNOWN_LEAGUE"
+        ),
 
-    market,
+      market,
 
-    probability,
+      probability,
 
-    odd,
+      odd,
 
-    ev,
+      ev,
 
-    risk:
-      resolveRisk(
-        bet
-      ),
+      risk:
+        resolveRisk(
+          bet
+        ),
 
-    confidence:
-      resolveConfidence(
-        bet
-      ),
+      confidence:
+        resolveConfidence(
+          bet
+        ),
 
-    rankingScore:
-      resolveRankingScore(
-        bet
-      ),
+      rankingScore:
+        ranking.value,
 
-    decisionValid:
-      true,
+      decisionValid:
+        true,
 
-    actionable:
-      true,
+      actionable:
+        true,
 
-    stake:
-      resolveStake(
-        bet
-      ),
+      classification:
+        approval.authority
+          .value as string,
 
-    tier:
-      resolveTier(
-        bet
-      )
+      authoritySource:
+        approval.authority
+          .source,
+
+      rankingSource:
+        ranking.source,
+
+      stake:
+        resolveStake(
+          bet
+        ),
+
+      tier:
+        resolveTier(
+          bet
+        )
+    },
+
+    rejection:
+      null
   };
 }
 
@@ -365,9 +763,15 @@ function normalizeBet(
 
 function collectApprovedBets(
   matches: any[]
-): OperationalBet[] {
+): {
+  bets: OperationalBet[];
+  rejections: OperationalRejection[];
+} {
   const bets:
     OperationalBet[] = [];
+
+  const rejections:
+    OperationalRejection[] = [];
 
   for (
     const matchData of
@@ -393,19 +797,20 @@ function collectApprovedBets(
           candidate
         );
 
-      if (normalized) {
+      if (normalized.bet) {
         bets.push(
-          normalized
+          normalized.bet
+        );
+      } else if (
+        normalized.rejection
+      ) {
+        rejections.push(
+          normalized.rejection
         );
       }
     }
   }
 
-  /*
-   * Remove duplicações provocadas por um mercado
-   * aparecer simultaneamente em best e
-   * actionableMarkets.
-   */
   const unique =
     new Map<
       string,
@@ -434,9 +839,13 @@ function collectApprovedBets(
     }
   }
 
-  return [
-    ...unique.values()
-  ];
+  return {
+    bets: [
+      ...unique.values()
+    ],
+
+    rejections
+  };
 }
 
 /* ==========================================
@@ -578,10 +987,13 @@ export function operationalEngine(
       )
   };
 
-  const approvedBets =
+  const collection =
     collectApprovedBets(
       safeMatches
     );
+
+  const approvedBets =
+    collection.bets;
 
   const eligibleBets =
     approvedBets.filter(
@@ -657,6 +1069,22 @@ export function operationalEngine(
         .maxPicksPerMatch
     );
 
+  const selectedKeys =
+    new Set(
+      picks.map(
+        bet =>
+          `${bet.match}::${bet.market}`
+      )
+    );
+
+  const exposureRejected =
+    sortedBets.filter(
+      bet =>
+        !selectedKeys.has(
+          `${bet.match}::${bet.market}`
+        )
+    );
+
   const totalStake =
     picks.reduce(
       (
@@ -680,6 +1108,9 @@ export function operationalEngine(
       picks.length > 0,
 
     diagnostics: {
+      version:
+        "V7.2_ELITE",
+
       receivedMatches:
         safeMatches.length,
 
@@ -692,9 +1123,32 @@ export function operationalEngine(
       selectedPicks:
         picks.length,
 
+      rejectedBeforeApproval:
+        collection.rejections.length,
+
       rejectedByOperationalLimits:
         approvedBets.length -
         eligibleBets.length,
+
+      rejectedByExposureLimits:
+        exposureRejected.length,
+
+      rejections:
+        collection.rejections,
+
+      exposureRejected:
+        exposureRejected.map(
+          bet => ({
+            match:
+              bet.match,
+
+            market:
+              bet.market,
+
+            reason:
+              "EXPOSURE_LIMIT"
+          })
+        ),
 
       config:
         resolvedConfig

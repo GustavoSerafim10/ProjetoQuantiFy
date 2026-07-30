@@ -3,7 +3,7 @@ import {
 } from "../../domain/analysis/multiBetBuilder";
 
 /* ==========================================
-   DECISION PIPELINE — QUANTIFY V7
+   DECISION PIPELINE — QUANTIFY V7.2 ELITE
 ========================================== */
 
 /*
@@ -12,6 +12,8 @@ import {
  * - receber mercados já calculados;
  * - validar os resultados dos pipelines anteriores;
  * - aplicar critérios operacionais por mercado;
+ * - receber sampleReliability, leagueTrust,
+ *   globalConfidence e expectativa contextual;
  * - classificar candidatos;
  * - selecionar a melhor entrada;
  * - produzir NO BET quando necessário;
@@ -89,6 +91,75 @@ export interface DecisionGuardResult {
   warnings: string[];
 }
 
+/* ==========================================
+   CONTEXTO OPERACIONAL DA DECISÃO
+========================================== */
+
+export interface DecisionContextMetrics {
+  homeProbability: number | null;
+  drawProbability: number | null;
+  awayProbability: number | null;
+
+  lambdaHome: number | null;
+  lambdaAway: number | null;
+  totalLambda: number | null;
+
+  matchBalanceIndex: number | null;
+
+  homeDominanceScore: number | null;
+  awayDominanceScore: number | null;
+
+  minimumSampleSize: number | null;
+
+  sampleReliability: number | null;
+  leagueTrust: number | null;
+
+  globalConfidence: number | null;
+
+  goalExpectationScore: number | null;
+  contextualGoalExpectationScore: number | null;
+
+  league: string;
+}
+
+export interface OperationalPolicyResult {
+  blocked: boolean;
+
+  maximumClassification:
+    DecisionClassification | null;
+
+  blockers: string[];
+  warnings: string[];
+
+  metrics: {
+    requiredEv: number;
+
+    matchBalanceIndex:
+      number | null;
+
+    dominanceScore:
+      number | null;
+
+    drawDependency:
+      number | null;
+
+    sampleReliability:
+      number | null;
+
+    leagueTrust:
+      number | null;
+
+    globalConfidence:
+      number | null;
+
+    goalExpectationScore:
+      number | null;
+
+    contextualGoalExpectationScore:
+      number | null;
+  };
+}
+
 export interface DecisionMarketDebug {
   valid: boolean;
 
@@ -112,10 +183,96 @@ export interface DecisionMarketDebug {
     confidence: number | null;
     rankingScore: number | null;
     trapScore: number | null;
+
+    sampleReliability: number | null;
+    leagueTrust: number | null;
+
+    globalConfidence: number | null;
+
+    goalExpectationScore: number | null;
+    contextualGoalExpectationScore: number | null;
   };
 
+  operationalPolicy: {
+    blocked: boolean;
+
+    maximumClassification:
+      DecisionClassification | null;
+
+    blockers: string[];
+    warnings: string[];
+
+    dynamicMinimumEv: number;
+
+    matchBalanceIndex:
+      number | null;
+
+    dominanceScore:
+      number | null;
+
+    drawDependency:
+      number | null;
+
+    sampleReliability:
+      number | null;
+
+    leagueTrust:
+      number | null;
+
+    globalConfidence:
+      number | null;
+
+    goalExpectationScore:
+      number | null;
+
+    contextualGoalExpectationScore:
+      number | null;
+  };
+
+  /*
+   * Classificação produzida somente pelos
+   * thresholds do mercado, antes das limitações
+   * da política operacional.
+   */
+  baseClassification:
+    DecisionClassification;
+
+  thresholdDiagnostics: {
+    watchlistProbabilityRequired: number | null;
+    watchlistProbabilityActual: number | null;
+    watchlistProbabilityShortfall: number | null;
+    borderToleranceApplied: boolean;
+  };
+
+  /*
+   * Classificação final após a aplicação de:
+   *
+   * - maximumClassification;
+   * - blockers operacionais;
+   * - limitações contextuais.
+   */
   classification:
     DecisionClassification;
+
+  /*
+   * Indica de forma direta se a política operacional
+   * limitou uma classificação superior.
+   *
+   * Exemplo:
+   *
+   * baseClassification = "BET"
+   * classification = "WATCHLIST"
+   * operationalDowngraded = true
+   */
+  operationalDowngraded:
+    boolean;
+
+  /*
+   * Motivos operacionais que efetivamente explicam
+   * uma eventual limitação.
+   */
+  operationalReasons:
+    string[];
 
   stake:
     number;
@@ -123,6 +280,8 @@ export interface DecisionMarketDebug {
 
 export interface DecisionPipelineDebug {
   valid: boolean;
+
+  version: "V7.2_ELITE";
 
   inputMarkets: number;
   eligibleMarkets: number;
@@ -137,6 +296,7 @@ export interface DecisionPipelineDebug {
   discardedMarkets: number;
 
   bestMarket: string | null;
+
   bestClassification:
     DecisionClassification | null;
 
@@ -144,6 +304,7 @@ export interface DecisionPipelineDebug {
     probabilityValid: boolean;
     valueValid: boolean;
     riskValid: boolean;
+    confidenceValid: boolean;
     rankingValid: boolean;
     correlationValid: boolean;
   };
@@ -176,11 +337,23 @@ export interface EvaluatedDecisionMarket {
   score?: number;
   rank?: number;
 
-  kelly: number;
+   kelly: number;
   stake: number;
 
   classification:
     DecisionClassification;
+
+  baseClassification:
+    DecisionClassification;
+
+  operationalDowngraded:
+    boolean;
+
+  operationalLimit:
+    DecisionClassification | null;
+
+  operationalReasons:
+    string[];
 
   decisionValid:
     boolean;
@@ -503,6 +676,352 @@ const GLOBAL_POLICY = {
     4
 } as const;
 
+
+
+/* ==========================================
+   CONTEXTO OPERACIONAL — DECISION V2
+========================================== */
+
+function buildDecisionContextMetrics(
+  data: any
+): DecisionContextMetrics {
+  const homeProbability =
+    firstProbability([
+      data?.probabilities?.HOME,
+      data?.probs?.HOME,
+      data?.result?.home,
+      data?.homeProbability
+    ]);
+
+  const drawProbability =
+    firstProbability([
+      data?.probabilities?.DRAW,
+      data?.probs?.DRAW,
+      data?.result?.draw,
+      data?.drawProbability
+    ]);
+
+  const awayProbability =
+    firstProbability([
+      data?.probabilities?.AWAY,
+      data?.probs?.AWAY,
+      data?.result?.away,
+      data?.awayProbability
+    ]);
+
+  const lambdaHome =
+    firstFiniteNumber([
+      data?.lambdaHome,
+      data?.model?.lambdaHome,
+      data?.monteCarlo?.lambdaHome,
+      data?.context?.lambdaHome
+    ]);
+
+  const lambdaAway =
+    firstFiniteNumber([
+      data?.lambdaAway,
+      data?.model?.lambdaAway,
+      data?.monteCarlo?.lambdaAway,
+      data?.context?.lambdaAway
+    ]);
+
+  const totalLambdaFromData =
+    firstFiniteNumber([
+      data?.totalLambda,
+      data?.monteCarlo?.totalLambda,
+      data?.model?.totalLambda
+    ]);
+
+  const totalLambda =
+    totalLambdaFromData ??
+    (
+      lambdaHome !== null &&
+      lambdaAway !== null
+        ? lambdaHome + lambdaAway
+        : null
+    );
+
+  const homeSample =
+    firstFiniteNumber([
+      data?.homeStats?.matchesPlayed,
+      data?.homeStats?.matches,
+      data?.stats?.home?.matchesPlayed,
+      data?.stats?.home?.matches
+    ]);
+
+  const awaySample =
+    firstFiniteNumber([
+      data?.awayStats?.matchesPlayed,
+      data?.awayStats?.matches,
+      data?.stats?.away?.matchesPlayed,
+      data?.stats?.away?.matches
+    ]);
+
+  const minimumSampleSize =
+    homeSample !== null &&
+    awaySample !== null
+      ? Math.max(
+          0,
+          Math.floor(
+            Math.min(
+              homeSample,
+              awaySample
+            )
+          )
+        )
+      : null;
+
+  /*
+   * 20 partidas representam confiabilidade cheia.
+   * Isso não altera a probabilidade; apenas informa
+   * a política operacional.
+   */
+  /*
+   * A decisão consome primeiro a qualidade já
+   * consolidada pelo Confidence Pipeline V7.2.
+   *
+   * Somente na ausência dessa fonte usamos
+   * compatibilidade e, por último, tamanho amostral.
+   */
+  const providedSampleReliability =
+    firstProbability([
+      data?.debug?.confidencePipeline?.sampleReliability,
+      data?.effectiveSampleReliability,
+      data?.sampleReliability,
+      data?.dataQuality?.sampleReliability,
+      data?.context?.sampleReliability,
+      data?.debug?.dataNormalizer?.sampleReliability,
+      data?.debug?.modelPipeline?.lambdaBuilder?.inputQuality?.inputQuality,
+      data?.debug?.modelPipeline?.lambdaBuilder?.inputQuality
+    ]);
+
+  const sampleReliability =
+    providedSampleReliability ??
+    (
+      minimumSampleSize !== null
+        ? clamp(
+            minimumSampleSize / 20,
+            0,
+            1
+          )
+        : null
+    );
+
+  /*
+   * Fallback de liga neutralizado no Confidence
+   * Pipeline deve chegar intacto à decisão.
+   */
+  const leagueTrust =
+    firstProbability([
+      data?.debug?.confidencePipeline?.leagueTrust,
+      data?.leagueTrust,
+      data?.leagueConfig?.trust,
+      data?.leagueConfig?.dataReliability,
+      data?.dataQuality?.leagueTrust,
+      data?.leagueStrength?.dataReliability,
+      data?.debug?.leagueConfig?.trust,
+      data?.debug?.leagueConfig?.dataReliability
+    ]);
+
+  const globalConfidence =
+    firstProbability([
+      data?.globalConfidence,
+      data?.modelConfidence,
+      data?.debug?.confidencePipeline?.globalConfidence,
+      data?.debug?.globalConfidencePipeline?.confidence
+    ]);
+
+  const goalExpectationScore =
+    firstProbability([
+      data?.goalExpectationScore,
+      data?.model?.goalExpectationScore,
+      data?.debug?.modelPipeline?.goalExpectationScore
+    ]);
+
+  const contextualGoalExpectationScore =
+    firstProbability([
+      data?.contextualGoalExpectationScore,
+      data?.marketContext?.contextualGoalExpectationScore,
+      data?.context?.contextualGoalExpectationScore,
+      data?.debug?.contextPipeline?.contextualGoalExpectationScore,
+      data?.marketContext?.goalExpectationScore
+    ]);
+
+  const matchBalanceIndex =
+    calculateMatchBalanceIndex({
+      homeProbability,
+      drawProbability,
+      awayProbability
+    });
+
+  const dominance =
+    calculateDominanceScores({
+      homeProbability,
+      awayProbability,
+      lambdaHome,
+      lambdaAway
+    });
+
+  const league =
+    String(
+      data?.league ??
+      data?.context?.league ??
+      data?.input?.league ??
+      ""
+    ).trim();
+
+  return {
+    homeProbability,
+    drawProbability,
+    awayProbability,
+
+    lambdaHome,
+    lambdaAway,
+    totalLambda,
+
+    matchBalanceIndex,
+
+    homeDominanceScore:
+      dominance.home,
+
+    awayDominanceScore:
+      dominance.away,
+
+    minimumSampleSize,
+    sampleReliability,
+    leagueTrust,
+
+    globalConfidence,
+
+    goalExpectationScore,
+    contextualGoalExpectationScore,
+
+    league
+  };
+}
+
+function calculateMatchBalanceIndex({
+  homeProbability,
+  drawProbability,
+  awayProbability
+}: {
+  homeProbability: number | null;
+  drawProbability: number | null;
+  awayProbability: number | null;
+}): number | null {
+  if (
+    homeProbability === null ||
+    drawProbability === null ||
+    awayProbability === null
+  ) {
+    return null;
+  }
+
+  const probabilities = [
+    homeProbability,
+    drawProbability,
+    awayProbability
+  ];
+
+  const maximum =
+    Math.max(
+      ...probabilities
+    );
+
+  const minimum =
+    Math.min(
+      ...probabilities
+    );
+
+  const spread =
+    maximum - minimum;
+
+  /*
+   * Próximo de 1:
+   * jogo muito equilibrado.
+   *
+   * Próximo de 0:
+   * existe dominância clara.
+   */
+  return roundNumber(
+    clamp(
+      1 - spread / 0.50,
+      0,
+      1
+    )
+  );
+}
+
+function calculateDominanceScores({
+  homeProbability,
+  awayProbability,
+  lambdaHome,
+  lambdaAway
+}: {
+  homeProbability: number | null;
+  awayProbability: number | null;
+  lambdaHome: number | null;
+  lambdaAway: number | null;
+}): {
+  home: number | null;
+  away: number | null;
+} {
+  if (
+    homeProbability === null ||
+    awayProbability === null
+  ) {
+    return {
+      home: null,
+      away: null
+    };
+  }
+
+  const probabilityDifference =
+    homeProbability -
+    awayProbability;
+
+  const probabilityComponent =
+    clamp(
+      0.50 +
+      probabilityDifference * 1.50,
+      0,
+      1
+    );
+
+  const lambdaComponent =
+    lambdaHome !== null &&
+    lambdaAway !== null
+      ? clamp(
+          0.50 +
+          (
+            lambdaHome -
+            lambdaAway
+          ) * 0.30,
+          0,
+          1
+        )
+      : 0.50;
+
+  const homeDominance =
+    clamp(
+      probabilityComponent * 0.70 +
+      lambdaComponent * 0.30,
+      0,
+      1
+    );
+
+  return {
+    home:
+      roundNumber(
+        homeDominance
+      ),
+
+    away:
+      roundNumber(
+        1 - homeDominance
+      )
+  };
+}
 /* ==========================================
    PIPELINE
 ========================================== */
@@ -529,6 +1048,9 @@ export function decisionPipeline(
 
     riskValid:
       data?.riskValid !== false,
+
+    confidenceValid:
+      data?.confidenceValid !== false,
 
     rankingValid:
       data?.rankingValid !== false,
@@ -588,6 +1110,7 @@ export function decisionPipeline(
     !upstream.probabilityValid ||
     !upstream.valueValid ||
     !upstream.riskValid ||
+    !upstream.confidenceValid ||
     !upstream.rankingValid
   ) {
     return createNoBetResult({
@@ -607,19 +1130,25 @@ export function decisionPipeline(
     });
   }
 
-  const evaluatedMarkets:
-    EvaluatedDecisionMarket[] =
-    inputMarkets.map(
-      (
-        market: any,
-        index: number
-      ) =>
-        evaluateMarket(
-          market,
-          index,
-          data
-        )
-    );
+const decisionContext =
+  buildDecisionContextMetrics(
+    data
+  );
+
+const evaluatedMarkets:
+  EvaluatedDecisionMarket[] =
+  inputMarkets.map(
+    (
+      market: any,
+      index: number
+    ) =>
+      evaluateMarket(
+        market,
+        index,
+        data,
+        decisionContext
+      )
+  );
 
   /*
    * O ranking anterior é preservado.
@@ -750,6 +1279,9 @@ export function decisionPipeline(
       valid:
         true,
 
+      version:
+        "V7.2_ELITE",
+
       inputMarkets:
         inputMarkets.length,
 
@@ -878,8 +1410,11 @@ export function decisionPipeline(
 function evaluateMarket(
   market: any,
   originalIndex: number,
-  data: any
+  data: any,
+  decisionContext:
+    DecisionContextMetrics
 ): EvaluatedDecisionMarket {
+
   const marketName =
     parseDecisionMarket(
       market?.market
@@ -920,15 +1455,49 @@ function evaluateMarket(
     );
 
   const rankingScore =
-    firstFiniteNumber([
-      market?.rankingScore,
-      market?.score
-    ]);
+    parseProbability(
+      market?.rankingScore
+    );
 
   const trapScore =
     parseProbability(
       market?.trapScore
     );
+
+  const sampleReliability =
+    firstProbability([
+      market?.debug?.confidencePipeline?.sampleReliability,
+      market?.effectiveSampleReliability,
+      market?.sampleReliability,
+      decisionContext.sampleReliability
+    ]);
+
+  const leagueTrust =
+    firstProbability([
+      market?.debug?.confidencePipeline?.leagueTrust,
+      market?.leagueTrust,
+      market?.dataReliability,
+      decisionContext.leagueTrust
+    ]);
+
+  const globalConfidence =
+    firstProbability([
+      market?.debug?.confidencePipeline?.globalConfidence,
+      market?.globalConfidence,
+      decisionContext.globalConfidence
+    ]);
+
+  const goalExpectationScore =
+    firstProbability([
+      market?.goalExpectationScore,
+      decisionContext.goalExpectationScore
+    ]);
+
+  const contextualGoalExpectationScore =
+    firstProbability([
+      market?.contextualGoalExpectationScore,
+      decisionContext.contextualGoalExpectationScore
+    ]);
 
   const structureValid =
     market?.structureValid !==
@@ -950,47 +1519,96 @@ function evaluateMarket(
         ]
       : null;
 
-  const guards =
-    evaluateDecisionGuards({
-      marketName,
-      policy,
+const guards =
+  evaluateDecisionGuards({
+    marketName,
+    policy,
 
-      probability,
-      odd,
-      ev,
-      probabilityEdge,
-      risk,
-      confidence,
-      rankingScore,
-      trapScore,
+    probability,
+    odd,
+    ev,
+    probabilityEdge,
+    risk,
+    confidence,
+    rankingScore,
+    trapScore,
 
-      structureValid,
-      rankingValid,
+    structureValid,
+    rankingValid,
 
-      data
-    });
+    data
+  });
 
-  const classification:
-    DecisionClassification =
-    guards.valid &&
-    marketName &&
-    policy &&
-    probability !== null &&
-    odd !== null &&
-    ev !== null &&
-    risk !== null
-      ? classifyMarket({
-          policy,
+const operationalPolicy =
+  evaluateOperationalPolicy({
+    marketName,
 
-          probability,
-          ev,
-          risk,
+    probability,
+    odd,
+    ev,
+    probabilityEdge,
+    risk,
+    confidence,
 
-          confidence:
-            confidence ??
-            0.5
-        })
-      : "NO BET";
+    sampleReliability,
+    leagueTrust,
+    globalConfidence,
+    goalExpectationScore,
+    contextualGoalExpectationScore,
+
+    context:
+      decisionContext
+  });
+
+const baseClassification:
+  DecisionClassification =
+  guards.valid &&
+  marketName &&
+  policy &&
+  probability !== null &&
+  odd !== null &&
+  ev !== null &&
+  risk !== null &&
+  confidence !== null
+    ? classifyMarket({
+        policy,
+
+        probability,
+        ev,
+        risk,
+
+        confidence:
+          confidence as number,
+
+        odd,
+        probabilityEdge,
+        rankingScore
+      })
+    : "NO BET";
+
+const thresholdDiagnostics =
+  buildThresholdDiagnostics({
+    marketName,
+    policy,
+    probability,
+    odd,
+    ev,
+    risk,
+    confidence,
+    probabilityEdge,
+    rankingScore,
+    baseClassification
+  });
+
+const classification:
+  DecisionClassification =
+  operationalPolicy.blocked
+    ? "NO BET"
+    : capClassification(
+        baseClassification,
+        operationalPolicy
+          .maximumClassification
+      );
 
   const kelly =
     parseNonNegativeNumber(
@@ -1016,52 +1634,154 @@ function evaluateMarket(
           ev,
           risk,
           confidence:
-            confidence ??
-            0.5,
+            confidence as number,
 
           classification
         })
       : 0;
 
-  const finalWarnings =
-    normalizeWarnings([
-      ...warnings,
-      ...guards.warnings,
-      ...guards.blockers
-    ]);
+const finalWarnings =
+  normalizeWarnings([
+    ...warnings,
 
-  const debug:
-    DecisionMarketDebug = {
-      valid:
-        guards.valid,
+    ...guards.warnings,
+    ...guards.blockers,
 
-      market:
-        marketName,
+    ...(
+      thresholdDiagnostics.borderToleranceApplied
+        ? [
+            "WATCHLIST_BORDER_TOLERANCE_APPLIED"
+          ]
+        : []
+    ),
 
-      policy,
+    ...operationalPolicy
+      .warnings,
 
-      guards: {
-        blockers:
-          guards.blockers,
+    ...operationalPolicy
+      .blockers
+  ]);
 
-        warnings:
-          guards.warnings
-      },
+const debug:
+  DecisionMarketDebug = {
+    valid:
+      guards.valid &&
+      !operationalPolicy.blocked,
 
-      metrics: {
-        probability,
-        odd,
-        ev,
-        probabilityEdge,
-        risk,
-        confidence,
-        rankingScore,
-        trapScore
-      },
+    market:
+      marketName,
 
-      classification,
-      stake
-    };
+    policy,
+
+    guards: {
+      blockers:
+        guards.blockers,
+
+      warnings:
+        guards.warnings
+    },
+
+    metrics: {
+      probability,
+      odd,
+      ev,
+      probabilityEdge,
+      risk,
+      confidence,
+      rankingScore,
+      trapScore,
+
+      sampleReliability,
+      leagueTrust,
+
+      globalConfidence,
+
+      goalExpectationScore,
+      contextualGoalExpectationScore
+    },
+
+    operationalPolicy: {
+      blocked:
+        operationalPolicy.blocked,
+
+      maximumClassification:
+        operationalPolicy
+          .maximumClassification,
+
+      blockers:
+        operationalPolicy.blockers,
+
+      warnings:
+        operationalPolicy.warnings,
+
+      dynamicMinimumEv:
+        operationalPolicy
+          .metrics
+          .requiredEv,
+
+      matchBalanceIndex:
+        operationalPolicy
+          .metrics
+          .matchBalanceIndex,
+
+      dominanceScore:
+        operationalPolicy
+          .metrics
+          .dominanceScore,
+
+      drawDependency:
+        operationalPolicy
+          .metrics
+          .drawDependency,
+
+      sampleReliability:
+        operationalPolicy
+          .metrics
+          .sampleReliability,
+
+      leagueTrust:
+        operationalPolicy
+          .metrics
+          .leagueTrust,
+
+      globalConfidence:
+        operationalPolicy
+          .metrics
+          .globalConfidence,
+
+      goalExpectationScore:
+        operationalPolicy
+          .metrics
+          .goalExpectationScore,
+
+      contextualGoalExpectationScore:
+        operationalPolicy
+          .metrics
+          .contextualGoalExpectationScore
+    },
+
+    baseClassification,
+
+    thresholdDiagnostics,
+
+    classification,
+
+    operationalDowngraded:
+      getClassificationPriority(
+        baseClassification
+      ) >
+      getClassificationPriority(
+        classification
+      ),
+
+    operationalReasons:
+      normalizeWarnings([
+        ...operationalPolicy.warnings,
+        ...operationalPolicy.blockers
+      ]),
+
+    stake
+  };
 
   return {
     ...market,
@@ -1102,10 +1822,6 @@ function evaluateMarket(
       rankingScore ??
       market?.rankingScore,
 
-    score:
-      rankingScore ??
-      market?.score,
-
     kelly:
       roundNumber(
         kelly
@@ -1113,34 +1829,84 @@ function evaluateMarket(
 
     stake,
 
+    /*
+     * Classificação antes das limitações
+     * da política operacional.
+     */
+    baseClassification,
+
+    /*
+     * Classificação final.
+     */
     classification,
 
+    /*
+     * Indica se a política operacional reduziu
+     * a classificação original.
+     */
+    operationalDowngraded:
+      getClassificationPriority(
+        baseClassification
+      ) >
+      getClassificationPriority(
+        classification
+      ),
+
+    /*
+     * Limite imposto pela política operacional.
+     */
+    operationalLimit:
+      operationalPolicy
+        .maximumClassification,
+
+    /*
+     * Motivos que explicam o limite ou bloqueio.
+     */
+    operationalReasons:
+      normalizeWarnings([
+        ...operationalPolicy.warnings,
+        ...operationalPolicy.blockers
+      ]),
+
     decisionValid:
-      guards.valid,
+      guards.valid &&
+      !operationalPolicy.blocked,
 
     decisionOriginalIndex:
       originalIndex,
 
     decisionBlockers:
-      guards.blockers,
+      normalizeWarnings([
+        ...guards.blockers,
+        ...operationalPolicy.blockers
+      ]),
 
     decisionWarnings:
-      guards.warnings,
+      normalizeWarnings([
+        ...guards.warnings,
+        ...operationalPolicy.warnings
+      ]),
 
     warnings:
       finalWarnings,
 
     discardedStage:
-      guards.valid
-        ? null
-        : "DECISION_GUARDS",
+      !guards.valid
+        ? "DECISION_GUARDS"
+        : operationalPolicy.blocked
+          ? "OPERATIONAL_POLICY"
+          : null,
 
     discardedReason:
-      guards.valid
-        ? null
-        : guards.blockers.join(
+      !guards.valid
+        ? guards.blockers.join(
             ", "
-          ),
+          )
+        : operationalPolicy.blocked
+          ? operationalPolicy
+              .blockers
+              .join(", ")
+          : null,
 
     debug: {
       ...(market?.debug ?? {}),
@@ -1303,8 +2069,8 @@ function evaluateDecisionGuards({
   }
 
   if (confidence === null) {
-    warnings.push(
-      "CONFIDENCE_UNAVAILABLE"
+    blockers.push(
+      "INVALID_CONFIDENCE"
     );
   }
 
@@ -1381,7 +2147,11 @@ function classifyMarket({
   probability,
   ev,
   risk,
-  confidence
+  confidence,
+
+  odd,
+  probabilityEdge,
+  rankingScore
 }: {
   policy:
     DecisionMarketPolicy;
@@ -1397,6 +2167,15 @@ function classifyMarket({
 
   confidence:
     number;
+
+  odd:
+    number;
+
+  probabilityEdge:
+    number | null;
+
+  rankingScore:
+    number | null;
 }): DecisionClassification {
   if (
     policy.scalper &&
@@ -1455,7 +2234,217 @@ function classifyMarket({
     return "WATCHLIST";
   }
 
+  /*
+   * V7.2 — tolerância de fronteira.
+   *
+   * Uma diferença de até 1 ponto percentual na
+   * probabilidade mínima não elimina automaticamente
+   * um mercado que apresenta forte sustentação em:
+   *
+   * - EV;
+   * - edge;
+   * - risco;
+   * - confiança;
+   * - ranking.
+   *
+   * Essa tolerância pode gerar somente WATCHLIST.
+   * Nunca promove diretamente a BET, ELITE ou SCALPER.
+   */
+  if (
+    passesWatchlistBorderTolerance({
+      policy,
+      probability,
+      ev,
+      risk,
+      confidence,
+      odd,
+      probabilityEdge,
+      rankingScore
+    })
+  ) {
+    return "WATCHLIST";
+  }
+
   return "NO BET";
+}
+
+function passesWatchlistBorderTolerance({
+  policy,
+  probability,
+  ev,
+  risk,
+  confidence,
+  odd,
+  probabilityEdge,
+  rankingScore
+}: {
+  policy:
+    DecisionMarketPolicy;
+
+  probability:
+    number;
+
+  ev:
+    number;
+
+  risk:
+    number;
+
+  confidence:
+    number;
+
+  odd:
+    number;
+
+  probabilityEdge:
+    number | null;
+
+  rankingScore:
+    number | null;
+}): boolean {
+  const level =
+    policy.watchlist;
+
+  const tolerance =
+    getProbabilityBorderTolerance(
+      odd
+    );
+
+  const shortfall =
+    level.minimumProbability -
+    probability;
+
+  if (
+    shortfall <= 0 ||
+    shortfall > tolerance
+  ) {
+    return false;
+  }
+
+  const strongEv =
+    ev >= Math.max(
+      level.minimumEv * 2,
+      0.08
+    );
+
+  const strongEdge =
+    probabilityEdge !== null &&
+    probabilityEdge >= 0.03;
+
+  const comfortableRisk =
+    risk <= Math.max(
+      0,
+      level.maximumRisk - 0.04
+    );
+
+  const confidencePassed =
+    confidence >=
+      level.minimumConfidence;
+
+  const rankingPassed =
+    rankingScore !== null &&
+    rankingScore >= 0.60;
+
+  return (
+    strongEv &&
+    strongEdge &&
+    comfortableRisk &&
+    confidencePassed &&
+    rankingPassed
+  );
+}
+
+function getProbabilityBorderTolerance(
+  odd: number
+): number {
+  /*
+   * Odds altas naturalmente trabalham com
+   * probabilidades menores e maior variância.
+   *
+   * O limite permanece pequeno e serve apenas
+   * para WATCHLIST.
+   */
+  if (odd >= 4) {
+    return 0.015;
+  }
+
+  if (odd >= 2) {
+    return 0.010;
+  }
+
+  return 0.0075;
+}
+
+function buildThresholdDiagnostics({
+  policy,
+  probability,
+  baseClassification
+}: {
+  marketName:
+    CanonicalDecisionMarket | null;
+
+  policy:
+    DecisionMarketPolicy | null;
+
+  probability:
+    number | null;
+
+  odd:
+    number | null;
+
+  ev:
+    number | null;
+
+  risk:
+    number | null;
+
+  confidence:
+    number | null;
+
+  probabilityEdge:
+    number | null;
+
+  rankingScore:
+    number | null;
+
+  baseClassification:
+    DecisionClassification;
+}): DecisionMarketDebug["thresholdDiagnostics"] {
+  const required =
+    policy?.watchlist
+      ?.minimumProbability ??
+    null;
+
+  const shortfall =
+    required !== null &&
+    probability !== null
+      ? Math.max(
+          0,
+          required -
+          probability
+        )
+      : null;
+
+  return {
+    watchlistProbabilityRequired:
+      required,
+
+    watchlistProbabilityActual:
+      probability,
+
+    watchlistProbabilityShortfall:
+      shortfall === null
+        ? null
+        : roundNumber(
+            shortfall
+          ),
+
+    borderToleranceApplied:
+      baseClassification ===
+        "WATCHLIST" &&
+      shortfall !== null &&
+      shortfall > 0
+  };
 }
 
 function passesLevel({
@@ -1497,6 +2486,568 @@ function passesLevel({
     confidence >=
       level.minimumConfidence
   );
+}
+
+/* ==========================================
+   POLÍTICA OPERACIONAL DINÂMICA — V2
+========================================== */
+
+function evaluateOperationalPolicy({
+  marketName,
+
+  probability,
+  odd,
+  ev,
+  probabilityEdge,
+  risk,
+  confidence,
+
+  sampleReliability,
+  leagueTrust,
+  globalConfidence,
+  goalExpectationScore,
+  contextualGoalExpectationScore,
+
+  context
+}: {
+  marketName:
+    CanonicalDecisionMarket | null;
+
+  probability:
+    number | null;
+
+  odd:
+    number | null;
+
+  ev:
+    number | null;
+
+  probabilityEdge:
+    number | null;
+
+  risk:
+    number | null;
+
+  confidence:
+    number | null;
+
+  sampleReliability:
+    number | null;
+
+  leagueTrust:
+    number | null;
+
+  globalConfidence:
+    number | null;
+
+  goalExpectationScore:
+    number | null;
+
+  contextualGoalExpectationScore:
+    number | null;
+
+  context:
+    DecisionContextMetrics;
+}): OperationalPolicyResult {
+  const blockers:
+    string[] = [];
+
+  const warnings:
+    string[] = [];
+
+  const requiredEv =
+    getDynamicMinimumEv(
+      marketName,
+      odd
+    );
+
+  let maximumClassification:
+    DecisionClassification | null =
+      null;
+
+const isDoubleChance =
+  marketName ===
+    "DOUBLE_CHANCE_1X" ||
+  marketName ===
+    "DOUBLE_CHANCE_X2";
+
+const isGoalMarket =
+  marketName === "OVER_1_5" ||
+  marketName === "OVER_2_5" ||
+  marketName === "BTTS_YES" ||
+  marketName === "BTTS_NO";
+
+
+  const dominanceScore =
+    getMarketDominanceScore(
+      marketName,
+      context
+    );
+
+  const drawDependency =
+    calculateDrawDependency({
+      marketName,
+      marketProbability:
+        probability,
+
+      drawProbability:
+        context.drawProbability
+    });
+
+  /*
+   * EV dinâmico.
+   *
+   * Não transforma automaticamente o mercado
+   * em inválido; limita no máximo a WATCHLIST.
+   */
+  if (
+    ev !== null &&
+    ev < requiredEv
+  ) {
+    warnings.push(
+      "EV_BELOW_DYNAMIC_MINIMUM"
+    );
+
+    maximumClassification =
+      restrictClassification(
+        maximumClassification,
+        "WATCHLIST"
+      );
+  }
+
+  /*
+   * Confrontos extremamente equilibrados são
+   * perigosos para mercados de resultado.
+   *
+   * Mercados de gols e BTTS não recebem este
+   * bloqueio automaticamente.
+   */
+ const isDirectionalResultMarket =
+  marketName === "HOME" ||
+  marketName === "AWAY";
+
+if (
+  isDirectionalResultMarket &&
+  context.matchBalanceIndex !== null &&
+  context.matchBalanceIndex >= 0.82
+) {
+  warnings.push(
+    "EXTREMELY_BALANCED_DIRECTIONAL_MARKET"
+  );
+
+  maximumClassification =
+    restrictClassification(
+      maximumClassification,
+      "WATCHLIST"
+    );
+}
+
+  /*
+   * Vitória seca sem dominância mínima.
+   */
+  if (
+    (
+      marketName === "HOME" ||
+      marketName === "AWAY"
+    ) &&
+    dominanceScore !== null &&
+    dominanceScore < 0.54
+  ) {
+    warnings.push(
+      "INSUFFICIENT_SIDE_DOMINANCE"
+    );
+
+    maximumClassification =
+      restrictClassification(
+        maximumClassification,
+        "WATCHLIST"
+      );
+  }
+
+  /*
+   * Detecta dupla chance sustentada em excesso
+   * pelo empate e sem força clara do lado principal.
+   */
+if (
+  isDoubleChance &&
+  probability !== null &&
+  dominanceScore !== null &&
+  drawDependency !== null &&
+  context.matchBalanceIndex !== null &&
+  dominanceScore < 0.50 &&
+  drawDependency > 0.50 &&
+  context.matchBalanceIndex > 0.78
+) {
+  warnings.push(
+    "FRAGILE_DOUBLE_CHANCE"
+  );
+
+  maximumClassification =
+    restrictClassification(
+      maximumClassification,
+      "WATCHLIST"
+    );
+}
+
+
+  /*
+   * Amostra muito pequena:
+   * no máximo WATCHLIST.
+   *
+   * Não aplicamos penalidade por liga ainda,
+   * pois isso exige evidência acumulada.
+   */
+  if (
+    sampleReliability !== null &&
+    sampleReliability < 0.50
+  ) {
+    warnings.push(
+      "LOW_SAMPLE_RELIABILITY"
+    );
+
+    maximumClassification =
+      restrictClassification(
+        maximumClassification,
+        "WATCHLIST"
+      );
+  }
+
+  /*
+   * Liga com baixa confiança histórica:
+   * limita a entrada a WATCHLIST.
+   *
+   * Isso não altera probabilidade, EV, risco
+   * ou confidence; apenas limita a decisão.
+   */
+  if (
+    leagueTrust !== null &&
+    leagueTrust < 0.50
+  ) {
+    warnings.push(
+      "LOW_LEAGUE_TRUST"
+    );
+
+    maximumClassification =
+      restrictClassification(
+        maximumClassification,
+        "WATCHLIST"
+      );
+  }
+
+  /*
+   * Confiança global muito baixa indica que o
+   * conjunto do modelo está pouco consistente.
+   */
+  if (
+    globalConfidence !== null &&
+    globalConfidence < 0.45
+  ) {
+    warnings.push(
+      "LOW_GLOBAL_MODEL_CONFIDENCE"
+    );
+
+    maximumClassification =
+      restrictClassification(
+        maximumClassification,
+        "WATCHLIST"
+      );
+  }
+
+  /*
+   * Divergência relevante entre a expectativa
+   * oficial e a contextual limita agressividade.
+   */
+if (
+  isGoalMarket &&
+  goalExpectationScore !== null &&
+  contextualGoalExpectationScore !== null &&
+  Math.abs(
+    goalExpectationScore -
+    contextualGoalExpectationScore
+  ) >= 0.25
+) {
+  warnings.push(
+    "GOAL_EXPECTATION_CONTEXT_DIVERGENCE"
+  );
+
+  maximumClassification =
+    restrictClassification(
+      maximumClassification,
+      "WATCHLIST"
+    );
+}
+
+  /*
+   * Ausência de confiança explícita não deve
+   * permitir BET/ELITE automaticamente.
+   */
+  if (confidence === null) {
+    warnings.push(
+      "OPERATIONAL_CONFIDENCE_UNAVAILABLE"
+    );
+
+    maximumClassification =
+      restrictClassification(
+        maximumClassification,
+        "WATCHLIST"
+      );
+  }
+
+  /*
+   * Edge ausente continua sendo warning.
+   * Edge não positivo já é tratado pelos guards.
+   */
+  if (
+    probabilityEdge === null
+  ) {
+    warnings.push(
+      "OPERATIONAL_EDGE_UNAVAILABLE"
+    );
+  }
+
+  /*
+   * Proteção adicional. Normalmente o guard
+   * já captura esses casos.
+   */
+  if (
+    probability === null ||
+    odd === null ||
+    ev === null ||
+    risk === null ||
+    marketName === null
+  ) {
+    blockers.push(
+      "OPERATIONAL_POLICY_MISSING_METRICS"
+    );
+  }
+
+  return {
+    blocked:
+      blockers.length > 0,
+
+    maximumClassification,
+
+    blockers:
+      normalizeWarnings(
+        blockers
+      ),
+
+    warnings:
+      normalizeWarnings(
+        warnings
+      ),
+
+    metrics: {
+      requiredEv,
+
+      matchBalanceIndex:
+        context.matchBalanceIndex,
+
+      dominanceScore,
+
+      drawDependency,
+
+      sampleReliability,
+
+      leagueTrust,
+
+      globalConfidence,
+
+      goalExpectationScore,
+
+      contextualGoalExpectationScore
+    }
+  };
+}
+
+function getDynamicMinimumEv(
+  market:
+    CanonicalDecisionMarket | null,
+
+  odd:
+    number | null
+): number {
+  if (
+    market === null ||
+    odd === null
+  ) {
+    return 0;
+  }
+
+  const isDoubleChance =
+    market ===
+      "DOUBLE_CHANCE_1X" ||
+    market ===
+      "DOUBLE_CHANCE_X2";
+
+  const isResultMarket =
+    market === "HOME" ||
+    market === "DRAW" ||
+    market === "AWAY";
+
+  if (isDoubleChance) {
+    if (odd < 1.40) return 0.08;
+    if (odd < 1.70) return 0.07;
+    if (odd < 2.20) return 0.09;
+
+    return 0.12;
+  }
+
+  if (isResultMarket) {
+    if (odd < 1.70) return 0.08;
+    if (odd < 2.20) return 0.09;
+    if (odd < 3.00) return 0.11;
+
+    return 0.14;
+  }
+
+  /*
+   * Over e BTTS.
+   */
+  if (odd < 1.60) return 0.07;
+  if (odd < 2.20) return 0.08;
+
+  return 0.10;
+}
+
+function getMarketDominanceScore(
+  market:
+    CanonicalDecisionMarket | null,
+
+  context:
+    DecisionContextMetrics
+): number | null {
+  switch (market) {
+    case "HOME":
+    case "DOUBLE_CHANCE_1X":
+      return context
+        .homeDominanceScore;
+
+    case "AWAY":
+    case "DOUBLE_CHANCE_X2":
+      return context
+        .awayDominanceScore;
+
+    default:
+      return null;
+  }
+}
+
+function calculateDrawDependency({
+  marketName,
+  marketProbability,
+  drawProbability
+}: {
+  marketName:
+    CanonicalDecisionMarket | null;
+
+  marketProbability:
+    number | null;
+
+  drawProbability:
+    number | null;
+}): number | null {
+  const isDoubleChance =
+    marketName ===
+      "DOUBLE_CHANCE_1X" ||
+    marketName ===
+      "DOUBLE_CHANCE_X2";
+
+  if (
+    !isDoubleChance ||
+    marketProbability === null ||
+    marketProbability <= 0 ||
+    drawProbability === null
+  ) {
+    return null;
+  }
+
+  return roundNumber(
+    clamp(
+      drawProbability /
+      marketProbability,
+      0,
+      1
+    )
+  );
+}
+
+/* ==========================================
+   LIMITADOR DE CLASSIFICAÇÃO
+========================================== */
+
+function capClassification(
+  classification:
+    DecisionClassification,
+
+  maximumAllowed:
+    DecisionClassification | null
+): DecisionClassification {
+  if (
+    maximumAllowed === null
+  ) {
+    return classification;
+  }
+
+  const currentPriority =
+    getClassificationPriority(
+      classification
+    );
+
+  const maximumPriority =
+    getClassificationPriority(
+      maximumAllowed
+    );
+
+  /*
+   * Se a classificação original já for mais
+   * conservadora, ela é preservada.
+   *
+   * Exemplo:
+   * original = NO BET
+   * limite = WATCHLIST
+   * resultado = NO BET
+   */
+  if (
+    currentPriority <=
+    maximumPriority
+  ) {
+    return classification;
+  }
+
+  return maximumAllowed;
+}
+
+function restrictClassification(
+  currentLimit:
+    DecisionClassification | null,
+
+  newLimit:
+    DecisionClassification
+): DecisionClassification {
+  if (
+    currentLimit === null
+  ) {
+    return newLimit;
+  }
+
+  const currentPriority =
+    getClassificationPriority(
+      currentLimit
+    );
+
+  const newPriority =
+    getClassificationPriority(
+      newLimit
+    );
+
+  /*
+   * Mantém sempre o limite mais conservador.
+   */
+  return newPriority <
+    currentPriority
+      ? newLimit
+      : currentLimit;
 }
 
 /* ==========================================
@@ -1660,13 +3211,11 @@ function compareDecisionMarkets(
 
   const scoreDifference =
     safeFiniteNumber(
-      second?.rankingScore ??
-      second?.score,
+      second?.rankingScore,
       Number.NEGATIVE_INFINITY
     ) -
     safeFiniteNumber(
-      first?.rankingScore ??
-      first?.score,
+      first?.rankingScore,
       Number.NEGATIVE_INFINITY
     );
 
@@ -1815,6 +3364,7 @@ function createNoBetResult({
     probabilityValid: boolean;
     valueValid: boolean;
     riskValid: boolean;
+    confidenceValid: boolean;
     rankingValid: boolean;
     correlationValid: boolean;
   };
@@ -1825,6 +3375,9 @@ function createNoBetResult({
     DecisionPipelineDebug = {
       valid:
         false,
+
+      version:
+        "V7.2_ELITE",
 
       inputMarkets:
         inputMarkets.length,
@@ -2016,6 +3569,15 @@ function firstProbability(
 function parseProbability(
   value: unknown
 ): number | null {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    typeof value === "boolean"
+  ) {
+    return null;
+  }
+
   const parsed =
     Number(value);
 
@@ -2033,6 +3595,15 @@ function parseProbability(
 function parseOdd(
   value: unknown
 ): number | null {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    typeof value === "boolean"
+  ) {
+    return null;
+  }
+
   const parsed =
     Number(value);
 
@@ -2049,6 +3620,15 @@ function parseOdd(
 function parseFiniteNumber(
   value: unknown
 ): number | null {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    typeof value === "boolean"
+  ) {
+    return null;
+  }
+
   const parsed =
     Number(value);
 
@@ -2060,6 +3640,15 @@ function parseFiniteNumber(
 function parseNonNegativeNumber(
   value: unknown
 ): number | null {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    typeof value === "boolean"
+  ) {
+    return null;
+  }
+
   const parsed =
     Number(value);
 
@@ -2077,9 +3666,10 @@ function parsePositiveInteger(
   value: unknown
 ): number | null {
   const parsed =
-    Number(value);
+    parseFiniteNumber(value);
 
   if (
+    parsed === null ||
     !Number.isInteger(parsed) ||
     parsed <= 0
   ) {
@@ -2094,11 +3684,10 @@ function safeFiniteNumber(
   fallback: number
 ): number {
   const parsed =
-    Number(value);
+    parseFiniteNumber(value);
 
-  return Number.isFinite(parsed)
-    ? parsed
-    : fallback;
+  return parsed ??
+    fallback;
 }
 
 function normalizeWarnings(

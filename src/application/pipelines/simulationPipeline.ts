@@ -4,27 +4,30 @@ import {
 } from "../engines/monteCarloAdapter";
 
 /* ==========================================
-   SIMULATION PIPELINE — QUANTIFY V7
+   SIMULATION PIPELINE — QUANTIFY V7.1 ELITE
 ========================================== */
 
 /*
  * Responsabilidade:
  *
  * - receber o resultado oficial do modelPipeline;
- * - executar o Monte Carlo por meio do adapter;
- * - comparar Monte Carlo e modelo analítico;
- * - medir divergência entre os modelos;
- * - disponibilizar diagnóstico para os próximos
- *   pipelines.
+ * - executar Monte Carlo independente via adapter;
+ * - preservar integralmente a autoridade analítica;
+ * - comparar os dois modelos sem calcular média;
+ * - medir erro amostral, IC95 e divergência;
+ * - transportar convergência, qualidade e diagnósticos;
+ * - disponibilizar auditoria aos pipelines posteriores.
  *
- * Este arquivo não:
+ * Este arquivo NÃO:
  *
  * - reconstrói lambdas;
  * - executa Poisson diretamente;
+ * - aplica Dixon-Coles;
  * - calibra probabilidades;
- * - faz média entre modelos;
+ * - substitui probabilidades analíticas;
+ * - altera confidence;
+ * - calcula EV ou odds justas;
  * - escolhe mercado;
- * - calcula EV;
  * - toma decisão de aposta.
  */
 
@@ -35,6 +38,7 @@ import {
 export type SimulationMarket =
   | "OVER_1_5"
   | "OVER_2_5"
+  | "UNDER_2_5"
   | "BTTS_YES"
   | "BTTS_NO"
   | "HOME_WIN"
@@ -43,12 +47,49 @@ export type SimulationMarket =
   | "DOUBLE_CHANCE_1X"
   | "DOUBLE_CHANCE_X2";
 
+export type AnalyticalProbabilitySource =
+  | "markets"
+  | "result"
+  | "goals"
+  | "btts"
+  | "doubleChance"
+  | "legacy"
+  | "complement"
+  | "sum"
+  | "missing";
+
+export interface ProbabilityInterval95 {
+  lower: number;
+  upper: number;
+  margin: number;
+}
+
+export interface ResolvedAnalyticalProbability {
+  value: number | null;
+  source: AnalyticalProbabilitySource;
+  path: string | null;
+  conflictDetected: boolean;
+  alternatives: Array<{
+    path: string;
+    value: number;
+  }>;
+}
+
 export interface ProbabilityComparison {
   model: number | null;
+  modelSource: AnalyticalProbabilitySource;
+  modelPath: string | null;
+
   monteCarlo: number;
+
   diff: number | null;
   samplingError: number | null;
   adjustedDiff: number | null;
+
+  confidenceInterval95: ProbabilityInterval95 | null;
+  withinMonteCarloCI95: boolean | null;
+
+  conflictDetected: boolean;
 }
 
 export type SimulationModelComparison = Record<
@@ -61,23 +102,25 @@ export interface SimulationDivergence {
   maximum: number | null;
   minimum: number | null;
 
-  /*
-   * Divergência descontando o erro natural
-   * de amostragem do Monte Carlo.
-   */
   averageAdjusted: number | null;
   maximumAdjusted: number | null;
+  minimumAdjusted: number | null;
 
   comparedMarkets: number;
 
-  highestDivergenceMarket:
-    | SimulationMarket
-    | null;
+  marketsInsideCI95: number;
+  marketsOutsideCI95: number;
+  marketsWithoutCI95: number;
+
+  highestDivergenceMarket: SimulationMarket | null;
+  highestRawDivergenceMarket: SimulationMarket | null;
+  highestAdjustedDivergenceMarket: SimulationMarket | null;
 }
 
 export interface SimulationPipelineResult {
   monteCarlo: {
     valid: boolean;
+    converged: boolean;
 
     iterations: number;
 
@@ -85,31 +128,16 @@ export interface SimulationPipelineResult {
     lambdaAway: number;
     totalLambda: number;
 
-    probabilities: {
-      homeWin: number;
-      draw: number;
-      awayWin: number;
+    probabilities: MonteCarloAdapterOutput["probabilities"];
 
-      over15: number;
-      over25: number;
-
-      bttsYes: number;
-      bttsNo: number;
-
-      doubleChance1X: number;
-      doubleChanceX2: number;
-    };
-
-    /*
-     * Campos mantidos para compatibilidade
-     * com os consumidores atuais.
-     */
+    /* Compatibilidade com consumidores atuais. */
     homeWinProb: number;
     drawProb: number;
     awayWinProb: number;
 
     over15Prob: number;
     over25Prob: number;
+    under25Prob: number;
 
     bttsProb: number;
     bttsNoProb: number;
@@ -117,272 +145,165 @@ export interface SimulationPipelineResult {
     doubleChance1X: number;
     doubleChanceX2: number;
 
-    samplingError:
-      MonteCarloAdapterOutput["samplingError"];
-
+    samplingError: MonteCarloAdapterOutput["samplingError"];
     maxSamplingError: number;
+    maxStandardError: number;
 
-    modelComparison:
-      SimulationModelComparison;
+    confidenceInterval95:
+      MonteCarloAdapterOutput["confidenceInterval95"];
 
-    divergence:
-      SimulationDivergence;
+    convergence:
+      MonteCarloAdapterOutput["convergence"];
+
+    simulationQuality:
+      MonteCarloAdapterOutput["simulationQuality"];
+
+    warnings: string[];
+
+    diagnostics:
+      MonteCarloAdapterOutput["diagnostics"];
+
+    modelComparison: SimulationModelComparison;
+    divergence: SimulationDivergence;
 
     error?: string;
 
     debug: {
+      version: "V7.1_ELITE";
       source: "simulationPipeline";
       simulationSource: "pipeline_lambdas";
       model: "INDEPENDENT_POISSON";
       usesDixonColes: false;
+
+      analyticalModelAuthority: true;
+      probabilitiesOverwritten: false;
+      probabilitiesAveraged: false;
+      confidenceAltered: false;
 
       lambdaHome: number;
       lambdaAway: number;
       totalLambda: number;
 
       iterations: number;
+      converged: boolean;
 
-      modelComparison:
-        SimulationModelComparison;
+      simulationQuality:
+        MonteCarloAdapterOutput["simulationQuality"];
 
-      divergence:
-        SimulationDivergence;
+      analyticalSources: Record<
+        SimulationMarket,
+        {
+          source: AnalyticalProbabilitySource;
+          path: string | null;
+          conflictDetected: boolean;
+        }
+      >;
 
+      modelComparison: SimulationModelComparison;
+      divergence: SimulationDivergence;
+
+      warnings: string[];
       invalidReason?: string;
     };
   };
+}
+
+interface AnalyticalProbabilityMap {
+  homeWin: ResolvedAnalyticalProbability;
+  draw: ResolvedAnalyticalProbability;
+  awayWin: ResolvedAnalyticalProbability;
+
+  over15: ResolvedAnalyticalProbability;
+  over25: ResolvedAnalyticalProbability;
+  under25: ResolvedAnalyticalProbability;
+
+  bttsYes: ResolvedAnalyticalProbability;
+  bttsNo: ResolvedAnalyticalProbability;
+
+  doubleChance1X: ResolvedAnalyticalProbability;
+  doubleChanceX2: ResolvedAnalyticalProbability;
+}
+
+interface ProbabilityCandidate {
+  value: unknown;
+  source: AnalyticalProbabilitySource;
+  path: string;
 }
 
 /* ==========================================
    CONFIGURAÇÃO
 ========================================== */
 
+const VERSION = "V7.1_ELITE" as const;
 const DEFAULT_SIMULATIONS = 50_000;
+const COMPARISON_CONFLICT_TOLERANCE = 0.005;
 
 /* ==========================================
    PIPELINE
 ========================================== */
 
-export function simulationPipeline(
-  model: any,
+export function simulationPipeline<TModel>(
+  model: TModel,
   simulations: number = DEFAULT_SIMULATIONS
-): any & SimulationPipelineResult {
+): TModel & SimulationPipelineResult {
+  const modelRecord = asRecord(model);
+
   const simulation = runMonteCarlo({
-    lambdaHome: model?.lambdaHome,
-    lambdaAway: model?.lambdaAway,
+    lambdaHome: getNestedValue(
+      modelRecord,
+      ["lambdaHome"]
+    ) as number,
+
+    lambdaAway: getNestedValue(
+      modelRecord,
+      ["lambdaAway"]
+    ) as number,
+
     simulations
   });
 
-  /*
-   * Caso os lambdas oficiais não sejam válidos,
-   * o pipeline não inventa valores alternativos.
-   */
+  const analyticalProbabilities =
+    extractAnalyticalProbabilities(modelRecord);
+
   if (!simulation.valid) {
-    const invalidComparison =
-      createEmptyModelComparison();
-
-    const invalidDivergence =
-      createEmptyDivergence();
-
-    const invalidReason =
-      simulation.debug.invalidReason ??
-      "MONTE_CARLO_SIMULATION_INVALID";
-
-    return {
-      ...model,
-
-      monteCarlo: {
-        valid: false,
-
-        iterations: 0,
-
-        lambdaHome:
-          simulation.debug.lambdaHome,
-
-        lambdaAway:
-          simulation.debug.lambdaAway,
-
-        totalLambda:
-          simulation.debug.totalLambda,
-
-        probabilities: {
-          ...simulation.probabilities
-        },
-
-        homeWinProb: 0,
-        drawProb: 0,
-        awayWinProb: 0,
-
-        over15Prob: 0,
-        over25Prob: 0,
-
-        bttsProb: 0,
-        bttsNoProb: 0,
-
-        doubleChance1X: 0,
-        doubleChanceX2: 0,
-
-        samplingError:
-          simulation.samplingError,
-
-        maxSamplingError:
-          simulation.maxSamplingError,
-
-        modelComparison:
-          invalidComparison,
-
-        divergence:
-          invalidDivergence,
-
-        error:
-          invalidReason,
-
-        debug: {
-          source:
-            "simulationPipeline",
-
-          simulationSource:
-            "pipeline_lambdas",
-
-          model:
-            "INDEPENDENT_POISSON",
-
-          usesDixonColes:
-            false,
-
-          lambdaHome:
-            simulation.debug.lambdaHome,
-
-          lambdaAway:
-            simulation.debug.lambdaAway,
-
-          totalLambda:
-            simulation.debug.totalLambda,
-
-          iterations: 0,
-
-          modelComparison:
-            invalidComparison,
-
-          divergence:
-            invalidDivergence,
-
-          invalidReason
-        }
-      },
-
-      debug: {
-        ...(model?.debug ?? {}),
-
-        simulationPipeline: {
-          valid: false,
-
-          source:
-            "simulationPipeline",
-
-          simulationSource:
-            "pipeline_lambdas",
-
-          lambdaHome:
-            simulation.debug.lambdaHome,
-
-          lambdaAway:
-            simulation.debug.lambdaAway,
-
-          totalLambda:
-            simulation.debug.totalLambda,
-
-          iterations: 0,
-
-          invalidReason
-        }
-      }
-    };
+    return buildInvalidResult(
+      model,
+      modelRecord,
+      simulation,
+      analyticalProbabilities
+    );
   }
 
-  const probabilities =
-    simulation.probabilities;
-
-  const analyticalProbabilities =
-    extractAnalyticalProbabilities(model);
-
-  const modelComparison:
-    SimulationModelComparison = {
-      OVER_1_5: compareProbability(
-        analyticalProbabilities.over15,
-        probabilities.over15,
-        simulation.samplingError.over15
-      ),
-
-      OVER_2_5: compareProbability(
-        analyticalProbabilities.over25,
-        probabilities.over25,
-        simulation.samplingError.over25
-      ),
-
-      BTTS_YES: compareProbability(
-        analyticalProbabilities.bttsYes,
-        probabilities.bttsYes,
-        simulation.samplingError.bttsYes
-      ),
-
-      /*
-       * BTTS_NO é complementar ao BTTS_YES.
-       *
-       * O erro-padrão é numericamente igual,
-       * pois p(1-p) é o mesmo para p e 1-p.
-       */
-      BTTS_NO: compareProbability(
-        analyticalProbabilities.bttsNo,
-        probabilities.bttsNo,
-        simulation.samplingError.bttsYes
-      ),
-
-      HOME_WIN: compareProbability(
-        analyticalProbabilities.homeWin,
-        probabilities.homeWin,
-        simulation.samplingError.homeWin
-      ),
-
-      DRAW: compareProbability(
-        analyticalProbabilities.draw,
-        probabilities.draw,
-        simulation.samplingError.draw
-      ),
-
-      AWAY_WIN: compareProbability(
-        analyticalProbabilities.awayWin,
-        probabilities.awayWin,
-        simulation.samplingError.awayWin
-      ),
-
-      DOUBLE_CHANCE_1X: compareProbability(
-        analyticalProbabilities.doubleChance1X,
-        probabilities.doubleChance1X,
-        calculateCombinedSamplingError(
-          simulation.samplingError.homeWin,
-          simulation.samplingError.draw
-        )
-      ),
-
-      DOUBLE_CHANCE_X2: compareProbability(
-        analyticalProbabilities.doubleChanceX2,
-        probabilities.doubleChanceX2,
-        calculateCombinedSamplingError(
-          simulation.samplingError.draw,
-          simulation.samplingError.awayWin
-        )
-      )
-    };
+  const modelComparison =
+    buildModelComparison(
+      analyticalProbabilities,
+      simulation
+    );
 
   const divergence =
     calculateDivergence(modelComparison);
 
+  const analyticalSources =
+    buildAnalyticalSources(modelComparison);
+
+  const warnings = normalizeStrings([
+    ...simulation.warnings,
+    ...collectAnalyticalWarnings(
+      analyticalProbabilities
+    )
+  ]);
+
+  /*
+   * O spread mantém todos os campos oficiais do modelo.
+   * Nenhuma probabilidade nem a confidence são alteradas.
+   */
   return {
     ...model,
 
     monteCarlo: {
       valid: true,
+      converged:
+        simulation.convergence.converged,
 
       iterations:
         simulation.iterations,
@@ -397,13 +318,9 @@ export function simulationPipeline(
         simulation.debug.totalLambda,
 
       probabilities: {
-        ...probabilities
+        ...simulation.probabilities
       },
 
-      /*
-       * Compatibilidade com os consumidores
-       * que utilizam os nomes antigos.
-       */
       homeWinProb:
         simulation.homeWinProb,
 
@@ -418,6 +335,9 @@ export function simulationPipeline(
 
       over25Prob:
         simulation.over25Prob,
+
+      under25Prob:
+        simulation.under25Prob,
 
       bttsProb:
         simulation.bttsProb,
@@ -437,21 +357,52 @@ export function simulationPipeline(
       maxSamplingError:
         simulation.maxSamplingError,
 
+      maxStandardError:
+        simulation.maxStandardError,
+
+      confidenceInterval95:
+        simulation.confidenceInterval95,
+
+      convergence:
+        simulation.convergence,
+
+      simulationQuality:
+        simulation.simulationQuality,
+
+      warnings,
+
+      diagnostics:
+        simulation.diagnostics,
+
       modelComparison,
       divergence,
 
       debug: {
+        version: VERSION,
+
         source:
           "simulationPipeline",
 
         simulationSource:
-          simulation.debug.source,
+          "pipeline_lambdas",
 
         model:
-          simulation.debug.model,
+          "INDEPENDENT_POISSON",
 
         usesDixonColes:
-          simulation.debug.usesDixonColes,
+          false,
+
+        analyticalModelAuthority:
+          true,
+
+        probabilitiesOverwritten:
+          false,
+
+        probabilitiesAveraged:
+          false,
+
+        confidenceAltered:
+          false,
 
         lambdaHome:
           simulation.debug.lambdaHome,
@@ -465,31 +416,214 @@ export function simulationPipeline(
         iterations:
           simulation.iterations,
 
+        converged:
+          simulation.convergence.converged,
+
+        simulationQuality:
+          simulation.simulationQuality,
+
+        analyticalSources,
         modelComparison,
-        divergence
+        divergence,
+        warnings
       }
     },
 
-    debug: {
-      ...(model?.debug ?? {}),
+    debug: mergeDebug(modelRecord, {
+      version: VERSION,
+      valid: true,
+      converged:
+        simulation.convergence.converged,
 
-      simulationPipeline: {
-        valid: true,
+      source:
+        "simulationPipeline",
+
+      simulationSource:
+        "pipeline_lambdas",
+
+      model:
+        "INDEPENDENT_POISSON",
+
+      usesDixonColes:
+        false,
+
+      analyticalModelAuthority:
+        true,
+
+      probabilitiesOverwritten:
+        false,
+
+      probabilitiesAveraged:
+        false,
+
+      confidenceAltered:
+        false,
+
+      iterations:
+        simulation.iterations,
+
+      lambdaHome:
+        simulation.debug.lambdaHome,
+
+      lambdaAway:
+        simulation.debug.lambdaAway,
+
+      totalLambda:
+        simulation.debug.totalLambda,
+
+      maxSamplingError:
+        roundNumber(
+          simulation.maxSamplingError
+        ),
+
+      maxStandardError:
+        roundNumber(
+          simulation.maxStandardError
+        ),
+
+      simulationQuality:
+        simulation.simulationQuality,
+
+      convergence:
+        simulation.convergence,
+
+      analyticalSources,
+      divergence,
+      modelComparison,
+      warnings,
+
+      diagnostics:
+        simulation.diagnostics
+    })
+  } as TModel & SimulationPipelineResult;
+}
+
+/* ==========================================
+   RESULTADO INVÁLIDO
+========================================== */
+
+function buildInvalidResult<TModel>(
+  model: TModel,
+  modelRecord: Record<string, unknown>,
+  simulation: MonteCarloAdapterOutput,
+  analyticalProbabilities: AnalyticalProbabilityMap
+): TModel & SimulationPipelineResult {
+  const modelComparison =
+    buildModelComparison(
+      analyticalProbabilities,
+      simulation
+    );
+
+  const divergence =
+    createEmptyDivergence();
+
+  const invalidReason =
+    simulation.debug.invalidReason ??
+    simulation.warnings[0] ??
+    "MONTE_CARLO_SIMULATION_INVALID";
+
+  const warnings = normalizeStrings([
+    ...simulation.warnings,
+    invalidReason,
+    ...collectAnalyticalWarnings(
+      analyticalProbabilities
+    )
+  ]);
+
+  const analyticalSources =
+    buildAnalyticalSources(modelComparison);
+
+  return {
+    ...model,
+
+    monteCarlo: {
+      valid: false,
+      converged: false,
+
+      iterations: 0,
+
+      lambdaHome:
+        simulation.debug.lambdaHome,
+
+      lambdaAway:
+        simulation.debug.lambdaAway,
+
+      totalLambda:
+        simulation.debug.totalLambda,
+
+      probabilities: {
+        ...simulation.probabilities
+      },
+
+      homeWinProb: 0,
+      drawProb: 0,
+      awayWinProb: 0,
+
+      over15Prob: 0,
+      over25Prob: 0,
+      under25Prob: 0,
+
+      bttsProb: 0,
+      bttsNoProb: 0,
+
+      doubleChance1X: 0,
+      doubleChanceX2: 0,
+
+      samplingError:
+        simulation.samplingError,
+
+      maxSamplingError:
+        simulation.maxSamplingError,
+
+      maxStandardError:
+        simulation.maxStandardError,
+
+      confidenceInterval95:
+        simulation.confidenceInterval95,
+
+      convergence:
+        simulation.convergence,
+
+      simulationQuality:
+        simulation.simulationQuality,
+
+      warnings,
+
+      diagnostics:
+        simulation.diagnostics,
+
+      modelComparison,
+      divergence,
+
+      error:
+        invalidReason,
+
+      debug: {
+        version: VERSION,
 
         source:
           "simulationPipeline",
 
         simulationSource:
-          simulation.debug.source,
+          "pipeline_lambdas",
 
         model:
-          simulation.debug.model,
+          "INDEPENDENT_POISSON",
 
         usesDixonColes:
-          simulation.debug.usesDixonColes,
+          false,
 
-        iterations:
-          simulation.iterations,
+        analyticalModelAuthority:
+          true,
+
+        probabilitiesOverwritten:
+          false,
+
+        probabilitiesAveraged:
+          false,
+
+        confidenceAltered:
+          false,
 
         lambdaHome:
           simulation.debug.lambdaHome,
@@ -500,17 +634,67 @@ export function simulationPipeline(
         totalLambda:
           simulation.debug.totalLambda,
 
-        maxSamplingError:
-          roundNumber(
-            simulation.maxSamplingError
-          ),
+        iterations: 0,
+        converged: false,
 
+        simulationQuality:
+          simulation.simulationQuality,
+
+        analyticalSources,
+        modelComparison,
         divergence,
+        warnings,
 
-        modelComparison
+        invalidReason
       }
-    }
-  };
+    },
+
+    debug: mergeDebug(modelRecord, {
+      version: VERSION,
+      valid: false,
+      converged: false,
+
+      source:
+        "simulationPipeline",
+
+      simulationSource:
+        "pipeline_lambdas",
+
+      analyticalModelAuthority:
+        true,
+
+      probabilitiesOverwritten:
+        false,
+
+      probabilitiesAveraged:
+        false,
+
+      confidenceAltered:
+        false,
+
+      lambdaHome:
+        simulation.debug.lambdaHome,
+
+      lambdaAway:
+        simulation.debug.lambdaAway,
+
+      totalLambda:
+        simulation.debug.totalLambda,
+
+      iterations: 0,
+      simulationQuality:
+        simulation.simulationQuality,
+
+      analyticalSources,
+      modelComparison,
+      divergence,
+      warnings,
+      invalidReason,
+
+      diagnostics:
+        simulation.diagnostics
+    })
+  } as TModel & SimulationPipelineResult;
 }
 
 /* ==========================================
@@ -518,86 +702,382 @@ export function simulationPipeline(
 ========================================== */
 
 function extractAnalyticalProbabilities(
-  model: any
-) {
-  const homeWin =
-    parseProbability(
-      model?.result?.homeWin
-    );
+  model: Record<string, unknown>
+): AnalyticalProbabilityMap {
+  const homeWin = resolveProbability([
+    candidate(
+      model,
+      ["markets", "home"],
+      "markets"
+    ),
+    candidate(
+      model,
+      ["result", "home"],
+      "result"
+    ),
+    candidate(
+      model,
+      ["result", "homeWin"],
+      "legacy"
+    )
+  ]);
 
-  const draw =
-    parseProbability(
-      model?.result?.draw
-    );
+  const draw = resolveProbability([
+    candidate(
+      model,
+      ["markets", "draw"],
+      "markets"
+    ),
+    candidate(
+      model,
+      ["result", "draw"],
+      "result"
+    )
+  ]);
 
-  const awayWin =
-    parseProbability(
-      model?.result?.awayWin
-    );
+  const awayWin = resolveProbability([
+    candidate(
+      model,
+      ["markets", "away"],
+      "markets"
+    ),
+    candidate(
+      model,
+      ["result", "away"],
+      "result"
+    ),
+    candidate(
+      model,
+      ["result", "awayWin"],
+      "legacy"
+    )
+  ]);
 
-  const over15 =
-    parseProbability(
-      model?.goals?.over15
-    );
+  const over15 = resolveProbability([
+    candidate(
+      model,
+      ["markets", "over15"],
+      "markets"
+    ),
+    candidate(
+      model,
+      ["goals", "over15"],
+      "goals"
+    )
+  ]);
 
-  const over25 =
-    parseProbability(
-      model?.goals?.over25
-    );
+  const over25 = resolveProbability([
+    candidate(
+      model,
+      ["markets", "over25"],
+      "markets"
+    ),
+    candidate(
+      model,
+      ["goals", "over25"],
+      "goals"
+    )
+  ]);
 
-  const bttsYes =
-    parseProbability(
-      model?.btts?.yes
-    );
+  const explicitUnder25 = resolveProbability([
+    candidate(
+      model,
+      ["markets", "under25"],
+      "markets"
+    ),
+    candidate(
+      model,
+      ["goals", "under25"],
+      "goals"
+    )
+  ]);
 
-  const explicitBttsNo =
-    parseProbability(
-      model?.btts?.no
-    );
+  const under25 =
+    explicitUnder25.value !== null
+      ? explicitUnder25
+      : deriveComplement(
+          over25,
+          "goals.over25"
+        );
+
+  const bttsYes = resolveProbability([
+    candidate(
+      model,
+      ["markets", "bttsYes"],
+      "markets"
+    ),
+    candidate(
+      model,
+      ["btts", "yes"],
+      "btts"
+    ),
+    candidate(
+      model,
+      ["dixonColes", "bttsYesProb"],
+      "legacy"
+    )
+  ]);
+
+  const explicitBttsNo = resolveProbability([
+    candidate(
+      model,
+      ["markets", "bttsNo"],
+      "markets"
+    ),
+    candidate(
+      model,
+      ["btts", "no"],
+      "btts"
+    ),
+    candidate(
+      model,
+      ["dixonColes", "bttsNoProb"],
+      "legacy"
+    )
+  ]);
+
+  const bttsNo =
+    explicitBttsNo.value !== null
+      ? explicitBttsNo
+      : deriveComplement(
+          bttsYes,
+          "btts.yes"
+        );
+
+  const explicitDoubleChance1X =
+    resolveProbability([
+      candidate(
+        model,
+        ["markets", "doubleChance1X"],
+        "markets"
+      ),
+      candidate(
+        model,
+        ["doubleChance", "oneX"],
+        "doubleChance"
+      ),
+      candidate(
+        model,
+        ["doubleChance", "homeOrDraw"],
+        "legacy"
+      ),
+      candidate(
+        model,
+        ["result", "doubleChance1X"],
+        "legacy"
+      ),
+      candidate(
+        model,
+        ["result", "homeOrDraw"],
+        "legacy"
+      )
+    ]);
 
   const doubleChance1X =
-    firstValidProbability([
-      model?.doubleChance?.homeOrDraw,
-      model?.doubleChance?.oneX,
-      model?.result?.doubleChance1X,
-      model?.result?.homeOrDraw
+    explicitDoubleChance1X.value !== null
+      ? explicitDoubleChance1X
+      : deriveSum(
+          homeWin,
+          draw,
+          "result.home + result.draw"
+        );
+
+  const explicitDoubleChanceX2 =
+    resolveProbability([
+      candidate(
+        model,
+        ["markets", "doubleChanceX2"],
+        "markets"
+      ),
+      candidate(
+        model,
+        ["doubleChance", "xTwo"],
+        "doubleChance"
+      ),
+      candidate(
+        model,
+        ["doubleChance", "awayOrDraw"],
+        "legacy"
+      ),
+      candidate(
+        model,
+        ["result", "doubleChanceX2"],
+        "legacy"
+      ),
+      candidate(
+        model,
+        ["result", "awayOrDraw"],
+        "legacy"
+      )
     ]);
 
   const doubleChanceX2 =
-    firstValidProbability([
-      model?.doubleChance?.awayOrDraw,
-      model?.doubleChance?.xTwo,
-      model?.result?.doubleChanceX2,
-      model?.result?.awayOrDraw
-    ]);
+    explicitDoubleChanceX2.value !== null
+      ? explicitDoubleChanceX2
+      : deriveSum(
+          draw,
+          awayWin,
+          "result.draw + result.away"
+        );
 
   return {
     homeWin,
     draw,
     awayWin,
-
     over15,
     over25,
-
+    under25,
     bttsYes,
+    bttsNo,
+    doubleChance1X,
+    doubleChanceX2
+  };
+}
 
-    bttsNo:
-      explicitBttsNo ??
-      complementProbability(bttsYes),
-
-    doubleChance1X:
-      doubleChance1X ??
-      sumProbabilities(
-        homeWin,
-        draw
+function candidate(
+  model: Record<string, unknown>,
+  path: string[],
+  source: AnalyticalProbabilitySource
+): ProbabilityCandidate {
+  return {
+    value:
+      getNestedValue(
+        model,
+        path
       ),
 
-    doubleChanceX2:
-      doubleChanceX2 ??
-      sumProbabilities(
-        draw,
-        awayWin
-      )
+    source,
+    path:
+      path.join(".")
+  };
+}
+
+function resolveProbability(
+  candidates: ProbabilityCandidate[]
+): ResolvedAnalyticalProbability {
+  const validCandidates = candidates
+    .map(candidateValue => ({
+      ...candidateValue,
+      parsed:
+        parseProbability(
+          candidateValue.value
+        )
+    }))
+    .filter(
+      (
+        candidateValue
+      ): candidateValue is ProbabilityCandidate & {
+        parsed: number;
+      } => candidateValue.parsed !== null
+    );
+
+  if (validCandidates.length === 0) {
+    return createMissingProbability();
+  }
+
+  const selected = validCandidates[0];
+
+  const alternatives =
+    validCandidates
+      .slice(1)
+      .map(value => ({
+        path: value.path,
+        value: value.parsed
+      }));
+
+  const conflictDetected =
+    validCandidates.some(
+      value =>
+        Math.abs(
+          value.parsed -
+          selected.parsed
+        ) >
+        COMPARISON_CONFLICT_TOLERANCE
+    );
+
+  return {
+    value:
+      selected.parsed,
+
+    source:
+      selected.source,
+
+    path:
+      selected.path,
+
+    conflictDetected,
+    alternatives
+  };
+}
+
+function deriveComplement(
+  sourceProbability:
+    ResolvedAnalyticalProbability,
+  sourcePath: string
+): ResolvedAnalyticalProbability {
+  if (sourceProbability.value === null) {
+    return createMissingProbability();
+  }
+
+  return {
+    value:
+      clampProbability(
+        1 - sourceProbability.value
+      ),
+
+    source:
+      "complement",
+
+    path:
+      `1 - ${sourcePath}`,
+
+    conflictDetected:
+      sourceProbability.conflictDetected,
+
+    alternatives: []
+  };
+}
+
+function deriveSum(
+  first: ResolvedAnalyticalProbability,
+  second: ResolvedAnalyticalProbability,
+  path: string
+): ResolvedAnalyticalProbability {
+  if (
+    first.value === null ||
+    second.value === null
+  ) {
+    return createMissingProbability();
+  }
+
+  const sum =
+    first.value + second.value;
+
+  if (sum < 0 || sum > 1) {
+    return createMissingProbability();
+  }
+
+  return {
+    value: sum,
+    source: "sum",
+    path,
+
+    conflictDetected:
+      first.conflictDetected ||
+      second.conflictDetected,
+
+    alternatives: []
+  };
+}
+
+function createMissingProbability():
+  ResolvedAnalyticalProbability {
+  return {
+    value: null,
+    source: "missing",
+    path: null,
+    conflictDetected: false,
+    alternatives: []
   };
 }
 
@@ -605,10 +1085,92 @@ function extractAnalyticalProbabilities(
    COMPARAÇÃO
 ========================================== */
 
+function buildModelComparison(
+  analytical: AnalyticalProbabilityMap,
+  simulation: MonteCarloAdapterOutput
+): SimulationModelComparison {
+  const probabilities =
+    simulation.probabilities;
+
+  return {
+    OVER_1_5: compareProbability(
+      analytical.over15,
+      probabilities.over15,
+      simulation.samplingError.over15,
+      simulation.confidenceInterval95.over15
+    ),
+
+    OVER_2_5: compareProbability(
+      analytical.over25,
+      probabilities.over25,
+      simulation.samplingError.over25,
+      simulation.confidenceInterval95.over25
+    ),
+
+    UNDER_2_5: compareProbability(
+      analytical.under25,
+      probabilities.under25,
+      simulation.samplingError.under25,
+      simulation.confidenceInterval95.under25
+    ),
+
+    BTTS_YES: compareProbability(
+      analytical.bttsYes,
+      probabilities.bttsYes,
+      simulation.samplingError.bttsYes,
+      simulation.confidenceInterval95.bttsYes
+    ),
+
+    BTTS_NO: compareProbability(
+      analytical.bttsNo,
+      probabilities.bttsNo,
+      simulation.samplingError.bttsNo,
+      simulation.confidenceInterval95.bttsNo
+    ),
+
+    HOME_WIN: compareProbability(
+      analytical.homeWin,
+      probabilities.homeWin,
+      simulation.samplingError.homeWin,
+      simulation.confidenceInterval95.homeWin
+    ),
+
+    DRAW: compareProbability(
+      analytical.draw,
+      probabilities.draw,
+      simulation.samplingError.draw,
+      simulation.confidenceInterval95.draw
+    ),
+
+    AWAY_WIN: compareProbability(
+      analytical.awayWin,
+      probabilities.awayWin,
+      simulation.samplingError.awayWin,
+      simulation.confidenceInterval95.awayWin
+    ),
+
+    DOUBLE_CHANCE_1X: compareProbability(
+      analytical.doubleChance1X,
+      probabilities.doubleChance1X,
+      simulation.samplingError.doubleChance1X,
+      simulation.confidenceInterval95.doubleChance1X
+    ),
+
+    DOUBLE_CHANCE_X2: compareProbability(
+      analytical.doubleChanceX2,
+      probabilities.doubleChanceX2,
+      simulation.samplingError.doubleChanceX2,
+      simulation.confidenceInterval95.doubleChanceX2
+    )
+  };
+}
+
 function compareProbability(
-  modelProbability: number | null,
-  monteCarloProbability: number,
-  samplingError: number | null
+  analytical:
+    ResolvedAnalyticalProbability,
+  monteCarloProbability: unknown,
+  samplingError: unknown,
+  confidenceInterval95: unknown
 ): ProbabilityComparison {
   const safeMonteCarlo =
     parseProbability(
@@ -620,9 +1182,18 @@ function compareProbability(
       samplingError
     );
 
-  if (modelProbability === null) {
+  const safeInterval =
+    parseConfidenceInterval95(
+      confidenceInterval95
+    );
+
+  if (analytical.value === null) {
     return {
       model: null,
+      modelSource:
+        analytical.source,
+      modelPath:
+        analytical.path,
 
       monteCarlo:
         safeMonteCarlo,
@@ -630,31 +1201,38 @@ function compareProbability(
       diff: null,
 
       samplingError:
-        safeSamplingError,
+        safeSamplingError === null
+          ? null
+          : roundNumber(
+              safeSamplingError
+            ),
 
-      adjustedDiff: null
+      adjustedDiff: null,
+
+      confidenceInterval95:
+        safeInterval,
+
+      withinMonteCarloCI95:
+        null,
+
+      conflictDetected:
+        analytical.conflictDetected
     };
   }
 
   const rawDifference =
     Math.abs(
-      modelProbability -
+      analytical.value -
       safeMonteCarlo
     );
 
-  /*
-   * O adjustedDiff desconta uma margem equivalente
-   * a 1,96 erros-padrão do Monte Carlo.
-   *
-   * Isso evita tratar ruído normal da simulação
-   * como divergência estrutural.
-   *
-   * Não altera nenhuma probabilidade.
-   */
   const samplingMargin =
-    safeSamplingError === null
-      ? 0
-      : 1.96 * safeSamplingError;
+    safeInterval?.margin ??
+    (
+      safeSamplingError === null
+        ? 0
+        : 1.96 * safeSamplingError
+    );
 
   const adjustedDifference =
     Math.max(
@@ -663,9 +1241,23 @@ function compareProbability(
       samplingMargin
     );
 
+  const withinMonteCarloCI95 =
+    safeInterval === null
+      ? null
+      : analytical.value >=
+          safeInterval.lower &&
+        analytical.value <=
+          safeInterval.upper;
+
   return {
     model:
-      modelProbability,
+      analytical.value,
+
+    modelSource:
+      analytical.source,
+
+    modelPath:
+      analytical.path,
 
     monteCarlo:
       safeMonteCarlo,
@@ -685,7 +1277,15 @@ function compareProbability(
     adjustedDiff:
       roundNumber(
         adjustedDifference
-      )
+      ),
+
+    confidenceInterval95:
+      safeInterval,
+
+    withinMonteCarloCI95,
+
+    conflictDetected:
+      analytical.conflictDetected
   };
 }
 
@@ -697,12 +1297,10 @@ function calculateDivergence(
   comparison: SimulationModelComparison
 ): SimulationDivergence {
   const entries =
-    Object.entries(comparison) as Array<
-      [
-        SimulationMarket,
-        ProbabilityComparison
-      ]
-    >;
+    Object.entries(comparison) as Array<[
+      SimulationMarket,
+      ProbabilityComparison
+    ]>;
 
   const validEntries =
     entries.filter(
@@ -720,44 +1318,50 @@ function calculateDivergence(
         value.diff as number
     );
 
+  const adjustedEntries =
+    validEntries.filter(
+      ([, value]) =>
+        value.adjustedDiff !== null
+    );
+
   const adjustedDifferences =
-    validEntries
-      .map(
-        ([, value]) =>
-          value.adjustedDiff
-      )
-      .filter(
-        (
-          value
-        ): value is number =>
-          value !== null
-      );
+    adjustedEntries.map(
+      ([, value]) =>
+        value.adjustedDiff as number
+    );
 
-  let highestDivergenceMarket:
-    | SimulationMarket
-    | null = null;
+  const highestRawDivergenceMarket =
+    findHighestMarket(
+      validEntries,
+      "diff"
+    );
 
-  let highestDifference =
-    Number.NEGATIVE_INFINITY;
+  const highestAdjustedDivergenceMarket =
+    findHighestMarket(
+      adjustedEntries,
+      "adjustedDiff"
+    );
 
-  for (
-    const [market, comparisonValue]
-    of validEntries
-  ) {
-    const currentDifference =
-      comparisonValue.diff ?? 0;
+  const marketsInsideCI95 =
+    validEntries.filter(
+      ([, value]) =>
+        value.withinMonteCarloCI95 ===
+        true
+    ).length;
 
-    if (
-      currentDifference >
-      highestDifference
-    ) {
-      highestDifference =
-        currentDifference;
+  const marketsOutsideCI95 =
+    validEntries.filter(
+      ([, value]) =>
+        value.withinMonteCarloCI95 ===
+        false
+    ).length;
 
-      highestDivergenceMarket =
-        market;
-    }
-  }
+  const marketsWithoutCI95 =
+    validEntries.filter(
+      ([, value]) =>
+        value.withinMonteCarloCI95 ===
+        null
+    ).length;
 
   return {
     average:
@@ -797,79 +1401,126 @@ function calculateDivergence(
           )
         : null,
 
+    minimumAdjusted:
+      adjustedDifferences.length > 0
+        ? roundNumber(
+            Math.min(
+              ...adjustedDifferences
+            )
+          )
+        : null,
+
     comparedMarkets:
       validEntries.length,
 
-    highestDivergenceMarket
+    marketsInsideCI95,
+    marketsOutsideCI95,
+    marketsWithoutCI95,
+
+    highestDivergenceMarket:
+      highestRawDivergenceMarket,
+
+    highestRawDivergenceMarket,
+    highestAdjustedDivergenceMarket
   };
 }
 
+function findHighestMarket(
+  entries: Array<[
+    SimulationMarket,
+    ProbabilityComparison
+  ]>,
+  key: "diff" | "adjustedDiff"
+): SimulationMarket | null {
+  let selectedMarket:
+    SimulationMarket | null = null;
+
+  let highestValue =
+    Number.NEGATIVE_INFINITY;
+
+  for (const [market, value] of entries) {
+    const currentValue =
+      value[key];
+
+    if (
+      currentValue !== null &&
+      currentValue > highestValue
+    ) {
+      highestValue =
+        currentValue;
+
+      selectedMarket =
+        market;
+    }
+  }
+
+  return selectedMarket;
+}
+
 /* ==========================================
-   ERRO DAS DUPLAS CHANCES
+   DIAGNÓSTICOS ANALÍTICOS
 ========================================== */
 
-/*
- * Aproximação conservadora para diagnóstico.
- *
- * Como 1X e X2 são construídos pela soma de
- * categorias do mesmo experimento multinomial,
- * existe covariância entre os componentes.
- *
- * Este helper utiliza soma quadrática apenas
- * como aproximação operacional. Ele não altera
- * as probabilidades e não participa da decisão.
- */
-function calculateCombinedSamplingError(
-  firstError: number,
-  secondError: number
-): number {
-  const safeFirst =
-    parseNonNegativeNumber(
-      firstError
-    ) ?? 0;
+function buildAnalyticalSources(
+  comparison: SimulationModelComparison
+): Record<
+  SimulationMarket,
+  {
+    source: AnalyticalProbabilitySource;
+    path: string | null;
+    conflictDetected: boolean;
+  }
+> {
+  return mapRecordValues(
+    comparison,
+    value => ({
+      source:
+        value.modelSource,
 
-  const safeSecond =
-    parseNonNegativeNumber(
-      secondError
-    ) ?? 0;
+      path:
+        value.modelPath,
 
-  return Math.sqrt(
-    safeFirst ** 2 +
-    safeSecond ** 2
+      conflictDetected:
+        value.conflictDetected
+    })
   );
 }
 
-/* ==========================================
-   FALLBACKS E HELPERS
-========================================== */
+function collectAnalyticalWarnings(
+  probabilities: AnalyticalProbabilityMap
+): string[] {
+  const warnings: string[] = [];
 
-function createEmptyModelComparison():
-  SimulationModelComparison {
-  const empty = (
-    monteCarlo = 0
-  ): ProbabilityComparison => ({
-    model: null,
-    monteCarlo,
-    diff: null,
-    samplingError: null,
-    adjustedDiff: null
-  });
+  const entries =
+    Object.entries(probabilities) as Array<[
+      keyof AnalyticalProbabilityMap,
+      ResolvedAnalyticalProbability
+    ]>;
 
-  return {
-    OVER_1_5: empty(),
-    OVER_2_5: empty(),
+  for (const [market, probability] of entries) {
+    if (probability.value === null) {
+      warnings.push(
+        `ANALYTICAL_PROBABILITY_MISSING_${String(
+          market
+        ).toUpperCase()}`
+      );
+    }
 
-    BTTS_YES: empty(),
-    BTTS_NO: empty(),
+    if (probability.conflictDetected) {
+      warnings.push(
+        `ANALYTICAL_PROBABILITY_CONFLICT_${String(
+          market
+        ).toUpperCase()}`
+      );
+    }
+  }
 
-    HOME_WIN: empty(),
-    DRAW: empty(),
-    AWAY_WIN: empty(),
-
-    DOUBLE_CHANCE_1X: empty(),
-    DOUBLE_CHANCE_X2: empty()
-  };
+  return normalizeStrings(warnings);
 }
+
+/* ==========================================
+   FALLBACKS
+========================================== */
 
 function createEmptyDivergence():
   SimulationDivergence {
@@ -880,25 +1531,57 @@ function createEmptyDivergence():
 
     averageAdjusted: null,
     maximumAdjusted: null,
+    minimumAdjusted: null,
 
     comparedMarkets: 0,
 
-    highestDivergenceMarket:
-      null
+    marketsInsideCI95: 0,
+    marketsOutsideCI95: 0,
+    marketsWithoutCI95: 0,
+
+    highestDivergenceMarket: null,
+    highestRawDivergenceMarket: null,
+    highestAdjustedDivergenceMarket: null
   };
+}
+
+/* ==========================================
+   PARSERS NUMÉRICOS E HELPERS
+========================================== */
+
+function parseFiniteNumber(
+  value: unknown
+): number | null {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    typeof value === "boolean"
+  ) {
+    return null;
+  }
+
+  const parsed = Number(
+    typeof value === "string"
+      ? value
+          .replace(",", ".")
+          .trim()
+      : value
+  );
+
+  return Number.isFinite(parsed)
+    ? parsed
+    : null;
 }
 
 function parseProbability(
   value: unknown
 ): number | null {
   const parsed =
-    Number(value);
-
-  if (!Number.isFinite(parsed)) {
-    return null;
-  }
+    parseFiniteNumber(value);
 
   if (
+    parsed === null ||
     parsed < 0 ||
     parsed > 1
   ) {
@@ -912,10 +1595,10 @@ function parseNonNegativeNumber(
   value: unknown
 ): number | null {
   const parsed =
-    Number(value);
+    parseFiniteNumber(value);
 
   if (
-    !Number.isFinite(parsed) ||
+    parsed === null ||
     parsed < 0
   ) {
     return null;
@@ -924,48 +1607,59 @@ function parseNonNegativeNumber(
   return parsed;
 }
 
-function firstValidProbability(
-  values: unknown[]
-): number | null {
-  for (const value of values) {
-    const parsed =
-      parseProbability(value);
-
-    if (parsed !== null) {
-      return parsed;
-    }
-  }
-
-  return null;
-}
-
-function complementProbability(
-  probability: number | null
-): number | null {
-  if (probability === null) {
+function parseConfidenceInterval95(
+  value: unknown
+): ProbabilityInterval95 | null {
+  if (!isRecord(value)) {
     return null;
   }
 
-  return 1 - probability;
-}
+  const lower =
+    parseProbability(value.lower);
 
-function sumProbabilities(
-  first: number | null,
-  second: number | null
-): number | null {
+  const upper =
+    parseProbability(value.upper);
+
+  const margin =
+    parseNonNegativeNumber(
+      value.margin
+    );
+
   if (
-    first === null ||
-    second === null
+    lower === null ||
+    upper === null ||
+    margin === null ||
+    lower > upper
   ) {
     return null;
   }
 
-  const total =
-    first + second;
+  return {
+    lower:
+      roundNumber(lower),
 
-  return total >= 0 && total <= 1
-    ? total
-    : null;
+    upper:
+      roundNumber(upper),
+
+    margin:
+      roundNumber(margin)
+  };
+}
+
+function clampProbability(
+  value: number
+): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.max(
+    0,
+    Math.min(
+      value,
+      1
+    )
+  );
 }
 
 function average(
@@ -975,18 +1669,16 @@ function average(
     return 0;
   }
 
-  return (
-    values.reduce(
-      (sum, value) =>
-        sum + value,
-      0
-    ) / values.length
-  );
+  return values.reduce(
+    (sum, value) =>
+      sum + value,
+    0
+  ) / values.length;
 }
 
 function roundNumber(
   value: number,
-  decimals = 4
+  decimals = 6
 ): number {
   if (!Number.isFinite(value)) {
     return 0;
@@ -995,9 +1687,104 @@ function roundNumber(
   const factor =
     10 ** decimals;
 
+  return Math.round(
+    value * factor
+  ) / factor;
+}
+
+function normalizeStrings(
+  values: string[]
+): string[] {
+  return [
+    ...new Set(
+      values
+        .map(value =>
+          String(value ?? "").trim()
+        )
+        .filter(Boolean)
+    )
+  ];
+}
+
+function asRecord(
+  value: unknown
+): Record<string, unknown> {
+  return isRecord(value)
+    ? value
+    : {};
+}
+
+function isRecord(
+  value: unknown
+): value is Record<string, unknown> {
   return (
-    Math.round(
-      value * factor
-    ) / factor
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value)
   );
+}
+
+function getNestedValue(
+  source: Record<string, unknown>,
+  path: string[]
+): unknown {
+  let current: unknown = source;
+
+  for (const key of path) {
+    if (!isRecord(current)) {
+      return undefined;
+    }
+
+    current = current[key];
+  }
+
+  return current;
+}
+
+function mergeDebug(
+  model: Record<string, unknown>,
+  simulationDebug:
+    Record<string, unknown>
+): Record<string, unknown> {
+  const currentDebug =
+    isRecord(model.debug)
+      ? model.debug
+      : {};
+
+  return {
+    ...currentDebug,
+
+    simulationPipeline:
+      simulationDebug
+  };
+}
+
+function mapRecordValues<
+  TKey extends string,
+  TValue,
+  TResult
+>(
+  input: Record<TKey, TValue>,
+  mapper: (
+    value: TValue,
+    key: TKey
+  ) => TResult
+): Record<TKey, TResult> {
+  const output = {} as Record<
+    TKey,
+    TResult
+  >;
+
+  for (
+    const key of Object.keys(
+      input
+    ) as TKey[]
+  ) {
+    output[key] = mapper(
+      input[key],
+      key
+    );
+  }
+
+  return output;
 }

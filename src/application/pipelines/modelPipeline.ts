@@ -1247,29 +1247,88 @@ function sanitizeStats(
       goalsAgainstTotal;
   }
 
-  /*
-   * Aliases específicos de mando recebem apenas
-   * médias por partida já resolvidas.
-   */
+/*
+ * Splits específicos de mando só são preservados
+ * quando realmente existem na entrada original.
+ *
+ * Não transformamos médias gerais em splits
+ * artificiais de casa ou fora.
+ */
+if (
+  venue === "HOME"
+) {
+  const realHomeGoalsScored =
+    parseNonNegativeNumber(
+      rawStats
+        .homeGoalsScoredPerMatch
+    );
+
+  const realHomeGoalsConceded =
+    parseNonNegativeNumber(
+      rawStats
+        .homeGoalsConcededPerMatch
+    );
+
   if (
-    venue === "HOME"
+    realHomeGoalsScored !== null
   ) {
     sanitized
       .homeGoalsScoredPerMatch =
-      goalsForRate;
+      clamp(
+        realHomeGoalsScored,
+        0,
+        6
+      );
+  }
 
+  if (
+    realHomeGoalsConceded !== null
+  ) {
     sanitized
       .homeGoalsConcededPerMatch =
-      goalsAgainstRate;
-  } else {
+      clamp(
+        realHomeGoalsConceded,
+        0,
+        6
+      );
+  }
+} else {
+  const realAwayGoalsScored =
+    parseNonNegativeNumber(
+      rawStats
+        .awayGoalsScoredPerMatch
+    );
+
+  const realAwayGoalsConceded =
+    parseNonNegativeNumber(
+      rawStats
+        .awayGoalsConcededPerMatch
+    );
+
+  if (
+    realAwayGoalsScored !== null
+  ) {
     sanitized
       .awayGoalsScoredPerMatch =
-      goalsForRate;
+      clamp(
+        realAwayGoalsScored,
+        0,
+        6
+      );
+  }
 
+  if (
+    realAwayGoalsConceded !== null
+  ) {
     sanitized
       .awayGoalsConcededPerMatch =
-      goalsAgainstRate;
+      clamp(
+        realAwayGoalsConceded,
+        0,
+        6
+      );
   }
+}
 
   /*
    * Finalizações são opcionais.
