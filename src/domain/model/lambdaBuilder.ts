@@ -4,7 +4,9 @@ import type {
 
 import {
   getLeagueGoalAdjustment,
-  getLeagueStrength
+  resolveLeagueStrength,
+  buildLeagueReliability,
+  type LeagueReliability
 } from "../rating/leagueStrength";
 
 import {
@@ -2014,9 +2016,22 @@ export function buildLambda(
      CONFIGURAÇÃO DA LIGA
   ======================================== */
 
-  const league =
-    getLeagueStrength(
+ const leagueResolution =
+    resolveLeagueStrength(
       leagueKey
+    );
+
+  const league =
+    leagueResolution.config;
+
+  /*
+   * Fonte oficial única de confiabilidade da liga.
+   * Propagada adiante — nunca recalculada por
+   * outros pipelines.
+   */
+  const leagueReliability: LeagueReliability =
+    buildLeagueReliability(
+      leagueResolution
     );
 
   const {
@@ -2617,7 +2632,7 @@ export function buildLambda(
     "⚽ LAMBDA BUILDER — AUDIT"
   );
 
-  console.log(
+console.log(
     "LEAGUE BASES:",
     {
       leagueKey,
@@ -2626,6 +2641,29 @@ export function buildLambda(
       leagueBaseAway,
       leagueTeamBase,
       leagueAdjustment
+    }
+  );
+
+  console.log(
+    "LEAGUE RELIABILITY:",
+    {
+      requested:
+        leagueReliability.requestedKey,
+
+      resolved:
+        leagueReliability.key,
+
+      resolution:
+        leagueReliability.resolution,
+
+      dataReliability:
+        leagueReliability.dataReliability,
+
+      usedDefault:
+        leagueReliability.usedDefault,
+
+      found:
+        leagueReliability.found
     }
   );
 
@@ -2709,7 +2747,7 @@ export function buildLambda(
      RESULTADO
   ======================================== */
 
-  return {
+return {
     lambdaHome:
       roundNumber(
         lambdaHome
@@ -2724,6 +2762,16 @@ export function buildLambda(
       roundNumber(
         totalLambda
       ),
+
+    /*
+     * Contrato oficial único de confiabilidade
+     * de liga. Consumido por ConfidencePipeline
+     * e DecisionPipeline sem reconsulta.
+     *
+     * Não duplicado dentro de `diagnostics` —
+     * já está disponível aqui no objeto principal.
+     */
+    leagueReliability,
 
     diagnostics: {
       leagueKey,

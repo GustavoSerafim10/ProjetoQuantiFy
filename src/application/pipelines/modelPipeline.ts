@@ -2147,7 +2147,15 @@ return {
         1
       ),
 
-    confidence,
+  confidence,
+
+    /*
+     * Fonte oficial única de confiabilidade de
+     * liga, propagada do lambdaBuilder. Nenhum
+     * pipeline posterior deve reconsultar a liga.
+     */
+    leagueReliability:
+      lambdaBuild.leagueReliability,
 
     debug: {
       ...(

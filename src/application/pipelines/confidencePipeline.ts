@@ -192,8 +192,15 @@ export function confidencePipeline(
   const sampleReliability =
     sampleReliabilityResolution.value;
 
-  const rawLeagueTrustResolution =
+ const rawLeagueTrustResolution =
     resolveRawLeagueTrust(data);
+
+  const leagueReliabilitySourceWarning: string | null =
+    rawLeagueTrustResolution.source.endsWith(":legacy")
+      ? "LEAGUE_RELIABILITY_LEGACY_SOURCE_USED"
+      : rawLeagueTrustResolution.value === null
+        ? "LEAGUE_RELIABILITY_UNAVAILABLE"
+        : null;
 
   const leagueFallbackUsed =
     detectLeagueFallback(data);
@@ -461,7 +468,7 @@ export function confidencePipeline(
               marketLeagueTrust
           });
 
-        const warnings =
+ const warnings =
           normalizeWarnings([
             ...normalizeWarnings(
               market?.warnings
@@ -469,9 +476,14 @@ export function confidencePipeline(
 
             ...sourceWarnings,
 
+            ...(
+              leagueReliabilitySourceWarning
+                ? [leagueReliabilitySourceWarning]
+                : []
+            ),
+
             ...result.warnings
           ]);
-
         const debug:
           ConfidencePipelineMarketDebug = {
             valid:
@@ -1195,19 +1207,45 @@ function resolveEffectiveSampleReliability(
 }
 
 function resolveRawLeagueTrust(data: any): ResolvedSignal {
+  /*
+   * Fonte oficial única.
+   */
+  const official = firstResolvedProbability([
+    [data?.leagueReliability?.dataReliability, "data.leagueReliability.dataReliability"]
+  ]);
+
+  if (official.value !== null) {
+    return official;
+  }
+
+  /*
+   * Compatibilidade legada temporária — removida
+   * no Commit 3, após validação.
+   */
   return firstResolvedProbability([
-    [data?.leagueTrust, "data.leagueTrust"],
-    [data?.leagueConfig?.trust, "data.leagueConfig.trust"],
-    [data?.leagueConfig?.dataReliability, "data.leagueConfig.dataReliability"],
-    [data?.dataQuality?.leagueTrust, "data.dataQuality.leagueTrust"],
-    [data?.leagueStrength?.dataReliability, "data.leagueStrength.dataReliability"],
-    [data?.leagueResolved?.config?.dataReliability, "data.leagueResolved.config.dataReliability"],
-    [data?.debug?.leagueConfig?.dataReliability, "debug.leagueConfig.dataReliability"],
-    [data?.debug?.modelPipeline?.league?.config?.dataReliability, "debug.modelPipeline.league.config.dataReliability"]
+    [data?.leagueTrust, "data.leagueTrust:legacy"],
+    [data?.leagueConfig?.trust, "data.leagueConfig.trust:legacy"],
+    [data?.leagueConfig?.dataReliability, "data.leagueConfig.dataReliability:legacy"],
+    [data?.dataQuality?.leagueTrust, "data.dataQuality.leagueTrust:legacy"],
+    [data?.leagueStrength?.dataReliability, "data.leagueStrength.dataReliability:legacy"],
+    [data?.leagueResolved?.config?.dataReliability, "data.leagueResolved.config.dataReliability:legacy"],
+    [data?.debug?.leagueConfig?.dataReliability, "debug.leagueConfig.dataReliability:legacy"],
+    [data?.debug?.modelPipeline?.league?.config?.dataReliability, "debug.modelPipeline.league.config.dataReliability:legacy"]
   ]);
 }
 
 function detectLeagueFallback(data: any): boolean {
+  /*
+   * Fonte oficial única.
+   */
+  if (typeof data?.leagueReliability?.usedDefault === "boolean") {
+    return data.leagueReliability.usedDefault;
+  }
+
+  /*
+   * Compatibilidade legada temporária — removida
+   * no Commit 3.
+   */
   const flags = [
     data?.leagueFallbackUsed,
     data?.leagueResolved?.usedDefault,

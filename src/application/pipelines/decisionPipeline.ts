@@ -811,9 +811,18 @@ function buildDecisionContextMetrics(
    * Fallback de liga neutralizado no Confidence
    * Pipeline deve chegar intacto à decisão.
    */
+/*
+   * Prioridade:
+   * 1) valor já resolvido pelo ConfidencePipeline
+   *    (não reconsulta a liga);
+   * 2) fonte oficial leagueReliability;
+   * 3) compatibilidade legada — removida no
+   *    Commit 3.
+   */
   const leagueTrust =
     firstProbability([
       data?.debug?.confidencePipeline?.leagueTrust,
+      data?.leagueReliability?.dataReliability,
       data?.leagueTrust,
       data?.leagueConfig?.trust,
       data?.leagueConfig?.dataReliability,

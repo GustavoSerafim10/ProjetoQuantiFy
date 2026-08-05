@@ -549,3 +549,49 @@ export function getLeagueGoalAdjustment(
     )
   );
 }
+
+/* ==========================================
+   CONTRATO OFICIAL — LEAGUE RELIABILITY
+========================================== */
+
+export type LeagueReliabilityResolution =
+  | "configured"
+  | "default";
+
+export interface LeagueReliability {
+  key: string;
+  requestedKey: string;
+  found: boolean;
+  usedDefault: boolean;
+  resolution: LeagueReliabilityResolution;
+  dataReliability: number;
+}
+
+/*
+ * Única função autorizada a construir o contrato
+ * leagueReliability. Nenhum outro pipeline deve
+ * recalculá-lo — apenas propagá-lo adiante.
+ *
+ * Warnings de resolução permanecem em
+ * ResolvedLeagueStrength.warnings, disponíveis
+ * para diagnóstico — não fazem parte deste
+ * contrato operacional.
+ */
+export function buildLeagueReliability(
+  resolved: ResolvedLeagueStrength
+): LeagueReliability {
+  return {
+    key: resolved.key,
+    requestedKey: resolved.requestedKey,
+    found: resolved.found,
+    usedDefault: resolved.usedDefault,
+
+    resolution:
+      resolved.usedDefault
+        ? "default"
+        : "configured",
+
+    dataReliability:
+      resolved.config.dataReliability
+  };
+}
