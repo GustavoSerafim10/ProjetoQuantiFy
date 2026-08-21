@@ -83,13 +83,16 @@ export const MARKET_POLICIES:
       },
 
       /*
-       * bet.minimumProbability calibrado via sweep de backtest
-       * (2026-08-21): 0.45 rejeitava apostas com ROI melhor;
-       * 0.35 aumentou o ROI de +3,54% para +4,51% com drawdown
-       * equivalente, sobre a mesma amostra sintética.
+       * bet.minimumProbability testado em sweep de backtest
+       * (2026-08-21): um primeiro sweep com amostra pequena
+       * (~1500 partidas, ~130 apostas por ponto) sugeriu 0.35;
+       * repetindo com amostra maior (2500 partidas, ~330
+       * apostas por ponto) o valor original 0.45 se mostrou
+       * o melhor ponto (ROI +9,03% e menor drawdown), então
+       * o valor original foi mantido.
        */
       bet: {
-        minimumProbability: 0.35,
+        minimumProbability: 0.45,
         minimumEv: 0.08,
         maximumRisk: 0.62,
         minimumConfidence: 0.55
@@ -147,10 +150,11 @@ export const MARKET_POLICIES:
 
       /*
        * bet.minimumProbability calibrado via sweep de backtest
-       * (2026-08-21): 0.63 era o pior ponto testado. 0.45 quase
-       * dobrou o ROI (+3,54% -> +7,53%), aumentou o volume de
-       * apostas (129 -> 186) E reduziu o drawdown (29,5% -> 20,8%)
-       * na mesma amostra sintética — melhora em todas as frentes.
+       * (2026-08-21), confirmado em duas amostras (~1500 e depois
+       * ~2500 partidas): 0.63 caía para ROI +3,65% e ficava
+       * negativo em 0.68. Toda a faixa 0.35-0.48 se manteve
+       * consistente em +7,4% a +8,1% de ROI nas duas rodadas —
+       * sinal robusto, não ruído de amostra pequena.
        */
       bet: {
         minimumProbability: 0.45,
@@ -178,13 +182,15 @@ export const MARKET_POLICIES:
       },
 
       /*
-       * bet.minimumProbability calibrado via sweep de backtest
-       * (2026-08-21): 0.55 rendeu ROI melhor que 0.60 (+3,54% ->
-       * +3,96%) sobre a mesma amostra sintética; abaixo de 0.55
-       * o ROI cai bastante, então não foi mais afrouxado.
+       * bet.minimumProbability testado em sweep de backtest
+       * (2026-08-21): um primeiro sweep com amostra pequena
+       * sugeriu 0.55 sobre 0.60; repetindo com amostra maior
+       * (2500 partidas) os dois valores deram exatamente o
+       * mesmo ROI (+7,72%) — a diferença original era ruído
+       * de amostra, então o valor original foi mantido.
        */
       bet: {
-        minimumProbability: 0.55,
+        minimumProbability: 0.60,
         minimumEv: 0.08,
         maximumRisk: 0.62,
         minimumConfidence: 0.58
@@ -267,10 +273,12 @@ export const MARKET_POLICIES:
 
       /*
        * bet.minimumProbability calibrado via sweep de backtest
-       * (2026-08-21): 0.67 era o pior ponto testado. Qualquer
-       * valor entre 0.47 e 0.62 rendeu o mesmo ROI melhor
-       * (+3,54% -> +4,48%) sobre a mesma amostra sintética;
-       * 0.55 fica no meio desse platô.
+       * (2026-08-21), confirmado em amostra maior (~2500
+       * partidas): 0.67 rendeu ROI +7,15%, abaixo do platô
+       * estável de +7,5% a +7,7% entre 0.45 e 0.62. Ganho mais
+       * modesto do que a primeira estimativa (~8% em vez de
+       * ~27%), mas consistente nas duas rodadas — 0.55 fica
+       * no meio desse platô.
        */
       bet: {
         minimumProbability: 0.55,
