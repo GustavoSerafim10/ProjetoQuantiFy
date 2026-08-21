@@ -8,6 +8,7 @@ import InputPanel, {
 
 import Dashboard from "./ui/Dashboard";
 import GameAnalysisPanel from "./ui/GameAnalysisPanel";
+import { ErrorBoundary } from "./ui/ErrorBoundary";
 
 import {
   eliteAnalyzer
@@ -204,7 +205,7 @@ function App() {
           data.match.league,
 
         odds:
-          data.odds,
+          data.odds as Record<string, number>,
 
         match:
           data.match
@@ -397,16 +398,20 @@ function App() {
 
   {/* DASHBOARD E HISTÓRICO — SEMPRE VISÍVEIS */}
 
-<Dashboard
-  data={result}
-/>
+<ErrorBoundary>
+  <Dashboard
+    data={result}
+  />
+</ErrorBoundary>
 
 {/* ANÁLISE DETALHADA — SOMENTE APÓS ANALISAR */}
 
 {result && (
-  <GameAnalysisPanel
-    markets={resultMarkets}
-  />
+  <ErrorBoundary>
+    <GameAnalysisPanel
+      markets={resultMarkets}
+    />
+  </ErrorBoundary>
 )}
 
     </div>

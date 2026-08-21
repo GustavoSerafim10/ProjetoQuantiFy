@@ -4,6 +4,8 @@ import {
   type ProbabilityCalibrationResult
 } from "../../domain/calibration/probabilityCalibration";
 
+import type { MarketCode } from "../../shared/types/marketCode";
+
 /* ==========================================
    PROBABILITY PIPELINE — QUANTIFY V7.1 ELITE
 ========================================== */
@@ -43,16 +45,7 @@ import {
    CONTRATOS — MERCADOS
 ========================================== */
 
-export type ProbabilityMarket =
-  | "HOME"
-  | "DRAW"
-  | "AWAY"
-  | "OVER_1_5"
-  | "OVER_2_5"
-  | "BTTS_YES"
-  | "BTTS_NO"
-  | "DOUBLE_CHANCE_1X"
-  | "DOUBLE_CHANCE_X2";
+export type ProbabilityMarket = MarketCode;
 
 export type IndependentCalibrationMarket =
   | "HOME"

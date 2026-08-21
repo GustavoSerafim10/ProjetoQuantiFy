@@ -41,7 +41,10 @@ export function quarterKelly(
    STAKE PRO ENGINE
 =============================== */
 
-export function calculateStakePro(m: any): number {
+export function calculateStakePro(
+  m: any,
+  options: { stakeCap?: number } = {}
+): number {
   const baseKelly = Math.max(Number(m.kelly ?? 0), 0);
 
   if (!Number.isFinite(baseKelly) || baseKelly <= 0) return 0;
@@ -93,8 +96,13 @@ export function calculateStakePro(m: any): number {
     - Não queremos overbet.
     - O sistema precisa sobreviver milhares de entradas.
   */
+  const stakeCap =
+    Number.isFinite(options.stakeCap) && options.stakeCap! > 0
+      ? options.stakeCap!
+      : 0.025;
+
   stake = Math.max(0, stake);
-  stake = Math.min(0.025, stake);
+  stake = Math.min(stakeCap, stake);
 
   return Number(stake.toFixed(4));
 }

@@ -10,8 +10,11 @@ import {
 import {
   registerBet,
   settleBet,
-  getHistory
+  getHistory,
+  getStats
 } from "../domain/tracking/trackingEngine";
+
+import type { MarketCode } from "../shared/types/marketCode";
 
 /* ==========================================
    DASHBOARD — QUANTIFY V7
@@ -73,24 +76,6 @@ interface DashboardMarket {
     BetClassification;
 
   warnings?: string[];
-
-  [key: string]: unknown;
-}
-
-interface TrackingBet {
-  id: string;
-
-  match?: string;
-  market?: string;
-  type?: string;
-
-  odd?: number;
-  probability?: number;
-  ev?: number;
-
-  result?:
-    | "win"
-    | "loss";
 
   [key: string]: unknown;
 }
@@ -162,7 +147,7 @@ const StrengthBar = ({
 };
 
 
-const MARKET_LABELS: Record<string, string> = {
+const MARKET_LABELS: Record<MarketCode, string> = {
   HOME: "🏠 Casa",
   DRAW: "🤝 Empate",
   AWAY: "✈️ Fora",
@@ -177,6 +162,15 @@ const MARKET_LABELS: Record<string, string> = {
   BTTS_NO: "🚫 Ambas Marcam – Não"
 };
 
+function isMarketCode(
+  market: string
+): market is MarketCode {
+  return Object.prototype.hasOwnProperty.call(
+    MARKET_LABELS,
+    market
+  );
+}
+
 function getMarketLabel(
   market?: string
 ): string {
@@ -184,7 +178,9 @@ function getMarketLabel(
     return "Mercado";
   }
 
-  return MARKET_LABELS[market] ?? market;
+  return isMarketCode(market)
+    ? MARKET_LABELS[market]
+    : market;
 }
 
 /* ==========================================
@@ -398,63 +394,6 @@ function getClassificationColor(
 }
 
 /* ==========================================
-   ESTATÍSTICAS
-========================================== */
-
-function calculateStats(
-  history: TrackingBet[]
-) {
-  let wins = 0;
-  let losses = 0;
-
-  for (const bet of history) {
-    if (bet.result === "win") {
-      wins++;
-    }
-
-    if (bet.result === "loss") {
-      losses++;
-    }
-  }
-
-  const totalBets =
-    wins +
-    losses;
-
-  const winrate =
-    totalBets > 0
-      ? (
-          wins /
-          totalBets
-        ) * 100
-      : 0;
-
-  /*
-   * ROI simplificado.
-   *
-   * Mantido conforme a lógica anterior.
-   */
-  const roi =
-    totalBets > 0
-      ? (
-          (
-            wins -
-            losses
-          ) /
-          totalBets
-        ) * 100
-      : 0;
-
-  return {
-    wins,
-    losses,
-    totalBets,
-    winrate,
-    roi
-  };
-}
-
-/* ==========================================
    DASHBOARD
 ========================================== */
 
@@ -481,10 +420,7 @@ export default function Dashboard({
         return Array.isArray(
           storedHistory
         )
-          ? (
-              storedHistory as
-                TrackingBet[]
-            )
+          ? storedHistory
           : [];
       },
       [
@@ -503,14 +439,17 @@ export default function Dashboard({
       ]
     );
 
+  /*
+   * Estatísticas oficiais vêm de trackingEngine.getStats() —
+   * a mesma fonte usada pelo relatório de performance. O
+   * Dashboard não recalcula ROI/winrate por conta própria.
+   */
   const stats =
     useMemo(
       () =>
-        calculateStats(
-          fullHistory
-        ),
+        getStats(),
       [
-        fullHistory
+        historyVersion
       ]
     );
 
@@ -794,11 +733,10 @@ const markets: DashboardMarket[] =
           </h2>
 
           <div className="text-2xl font-bold text-green-400 mt-2">
-            {formatDecimal(
+            {formatPercent(
               stats.roi,
               1
             )}
-            %
           </div>
         </Card>
 
@@ -808,11 +746,10 @@ const markets: DashboardMarket[] =
           </h2>
 
           <div className="text-2xl font-bold mt-2">
-            {formatDecimal(
-              stats.winrate,
+            {formatPercent(
+              stats.winRate,
               0
             )}
-            %
           </div>
         </Card>
 

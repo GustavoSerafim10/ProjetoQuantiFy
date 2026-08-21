@@ -1,0 +1,420 @@
+import type {
+  CanonicalDecisionMarket,
+  DecisionMarketPolicy
+} from "./types";
+
+/* ==========================================
+   POLÍTICA OPERACIONAL
+========================================== */
+
+/*
+ * Estes thresholds representam política de
+ * decisão, e não cálculo matemático.
+ *
+ * Por isso pertencem a este arquivo.
+ *
+ * Devem ser ajustados futuramente apenas com
+ * backtest e resultados fora da amostra.
+ */
+
+export const MARKET_POLICIES:
+  Record<
+    CanonicalDecisionMarket,
+    DecisionMarketPolicy
+  > = {
+    HOME: {
+      minimumOdd: 1.45,
+
+      watchlist: {
+        minimumProbability: 0.42,
+        minimumEv: 0.04,
+        maximumRisk: 0.68,
+        minimumConfidence: 0.50
+      },
+
+      bet: {
+        minimumProbability: 0.45,
+        minimumEv: 0.08,
+        maximumRisk: 0.62,
+        minimumConfidence: 0.55
+      },
+
+      elite: {
+        minimumProbability: 0.48,
+        minimumEv: 0.12,
+        maximumRisk: 0.56,
+        minimumConfidence: 0.60
+      }
+    },
+
+    DRAW: {
+      minimumOdd: 2.60,
+
+      watchlist: {
+        minimumProbability: 0.29,
+        minimumEv: 0.06,
+        maximumRisk: 0.70,
+        minimumConfidence: 0.52
+      },
+
+      bet: {
+        minimumProbability: 0.32,
+        minimumEv: 0.12,
+        maximumRisk: 0.62,
+        minimumConfidence: 0.58
+      },
+
+      elite: {
+        minimumProbability: 0.35,
+        minimumEv: 0.18,
+        maximumRisk: 0.56,
+        minimumConfidence: 0.63
+      }
+    },
+
+    AWAY: {
+      minimumOdd: 1.45,
+
+      watchlist: {
+        minimumProbability: 0.42,
+        minimumEv: 0.04,
+        maximumRisk: 0.68,
+        minimumConfidence: 0.50
+      },
+
+      /*
+       * bet.minimumProbability calibrado via sweep de backtest
+       * (2026-08-21): 0.45 rejeitava apostas com ROI melhor;
+       * 0.35 aumentou o ROI de +3,54% para +4,51% com drawdown
+       * equivalente, sobre a mesma amostra sintética.
+       */
+      bet: {
+        minimumProbability: 0.35,
+        minimumEv: 0.08,
+        maximumRisk: 0.62,
+        minimumConfidence: 0.55
+      },
+
+      elite: {
+        minimumProbability: 0.48,
+        minimumEv: 0.12,
+        maximumRisk: 0.56,
+        minimumConfidence: 0.60
+      }
+    },
+
+    OVER_1_5: {
+      minimumOdd: 1.40,
+
+      watchlist: {
+        minimumProbability: 0.70,
+        minimumEv: 0.04,
+        maximumRisk: 0.62,
+        minimumConfidence: 0.54
+      },
+
+      bet: {
+        minimumProbability: 0.75,
+        minimumEv: 0.09,
+        maximumRisk: 0.55,
+        minimumConfidence: 0.60
+      },
+
+      elite: {
+        minimumProbability: 0.78,
+        minimumEv: 0.14,
+        maximumRisk: 0.50,
+        minimumConfidence: 0.66
+      },
+
+      scalper: {
+        minimumProbability: 0.82,
+        minimumEv: 0.07,
+        maximumRisk: 0.46,
+        minimumConfidence: 0.68
+      }
+    },
+
+    OVER_2_5: {
+      minimumOdd: 1.55,
+
+      watchlist: {
+        minimumProbability: 0.58,
+        minimumEv: 0.04,
+        maximumRisk: 0.65,
+        minimumConfidence: 0.52
+      },
+
+      /*
+       * bet.minimumProbability calibrado via sweep de backtest
+       * (2026-08-21): 0.63 era o pior ponto testado. 0.45 quase
+       * dobrou o ROI (+3,54% -> +7,53%), aumentou o volume de
+       * apostas (129 -> 186) E reduziu o drawdown (29,5% -> 20,8%)
+       * na mesma amostra sintética — melhora em todas as frentes.
+       */
+      bet: {
+        minimumProbability: 0.45,
+        minimumEv: 0.08,
+        maximumRisk: 0.58,
+        minimumConfidence: 0.58
+      },
+
+      elite: {
+        minimumProbability: 0.67,
+        minimumEv: 0.13,
+        maximumRisk: 0.53,
+        minimumConfidence: 0.63
+      }
+    },
+
+    BTTS_YES: {
+      minimumOdd: 1.55,
+
+      watchlist: {
+        minimumProbability: 0.56,
+        minimumEv: 0.04,
+        maximumRisk: 0.68,
+        minimumConfidence: 0.52
+      },
+
+      /*
+       * bet.minimumProbability calibrado via sweep de backtest
+       * (2026-08-21): 0.55 rendeu ROI melhor que 0.60 (+3,54% ->
+       * +3,96%) sobre a mesma amostra sintética; abaixo de 0.55
+       * o ROI cai bastante, então não foi mais afrouxado.
+       */
+      bet: {
+        minimumProbability: 0.55,
+        minimumEv: 0.08,
+        maximumRisk: 0.62,
+        minimumConfidence: 0.58
+      },
+
+      elite: {
+        minimumProbability: 0.64,
+        minimumEv: 0.14,
+        maximumRisk: 0.56,
+        minimumConfidence: 0.63
+      }
+    },
+
+    BTTS_NO: {
+      minimumOdd: 1.50,
+
+      watchlist: {
+        minimumProbability: 0.56,
+        minimumEv: 0.04,
+        maximumRisk: 0.68,
+        minimumConfidence: 0.52
+      },
+
+      bet: {
+        minimumProbability: 0.60,
+        minimumEv: 0.08,
+        maximumRisk: 0.62,
+        minimumConfidence: 0.58
+      },
+
+      elite: {
+        minimumProbability: 0.64,
+        minimumEv: 0.13,
+        maximumRisk: 0.56,
+        minimumConfidence: 0.63
+      }
+    },
+
+    DOUBLE_CHANCE_1X: {
+      minimumOdd: 1.30,
+
+      watchlist: {
+        minimumProbability: 0.62,
+        minimumEv: 0.025,
+        maximumRisk: 0.64,
+        minimumConfidence: 0.52
+      },
+
+      bet: {
+        minimumProbability: 0.67,
+        minimumEv: 0.05,
+        maximumRisk: 0.57,
+        minimumConfidence: 0.58
+      },
+
+      elite: {
+        minimumProbability: 0.71,
+        minimumEv: 0.08,
+        maximumRisk: 0.52,
+        minimumConfidence: 0.63
+      },
+
+      scalper: {
+        minimumProbability: 0.76,
+        minimumEv: 0.05,
+        maximumRisk: 0.46,
+        minimumConfidence: 0.67
+      }
+    },
+
+    DOUBLE_CHANCE_X2: {
+      minimumOdd: 1.30,
+
+      watchlist: {
+        minimumProbability: 0.62,
+        minimumEv: 0.025,
+        maximumRisk: 0.64,
+        minimumConfidence: 0.52
+      },
+
+      /*
+       * bet.minimumProbability calibrado via sweep de backtest
+       * (2026-08-21): 0.67 era o pior ponto testado. Qualquer
+       * valor entre 0.47 e 0.62 rendeu o mesmo ROI melhor
+       * (+3,54% -> +4,48%) sobre a mesma amostra sintética;
+       * 0.55 fica no meio desse platô.
+       */
+      bet: {
+        minimumProbability: 0.55,
+        minimumEv: 0.05,
+        maximumRisk: 0.57,
+        minimumConfidence: 0.58
+      },
+
+      elite: {
+        minimumProbability: 0.71,
+        minimumEv: 0.08,
+        maximumRisk: 0.52,
+        minimumConfidence: 0.63
+      },
+
+      scalper: {
+        minimumProbability: 0.76,
+        minimumEv: 0.05,
+        maximumRisk: 0.46,
+        minimumConfidence: 0.67
+      }
+    }
+  };
+
+/* ==========================================
+   LIMITES GLOBAIS
+========================================== */
+
+export const GLOBAL_POLICY = {
+  maximumTrapScore:
+    0.65,
+
+  hardMaximumRisk:
+    0.78,
+
+  hardMinimumProbability:
+    0.25,
+
+  hardMinimumOdd:
+    1.01,
+
+  hardMinimumEv:
+    0,
+
+  maximumStake:
+    0.03,
+
+  kellyFraction:
+    0.25,
+
+  maximumWatchlist:
+    5,
+
+  maximumComboMarkets:
+    4
+} as const;
+
+/* ==========================================
+   OVERRIDES (CALIBRAÇÃO)
+========================================== */
+
+/*
+ * Permite sobrescrever, por mercado e por nível
+ * (watchlist/bet/elite/scalper), os thresholds de
+ * MARKET_POLICIES sem alterar a política padrão —
+ * usado para experimentos de calibração via backtest
+ * (ex.: varrer minimumProbability e medir ROI/drawdown).
+ * Sem overrides, resolveMarketPolicy() retorna
+ * exatamente MARKET_POLICIES[market].
+ */
+export type DecisionMarketPolicyOverride = {
+  minimumOdd?: number;
+
+  watchlist?:
+    Partial<DecisionMarketPolicy["watchlist"]>;
+
+  bet?:
+    Partial<DecisionMarketPolicy["bet"]>;
+
+  elite?:
+    Partial<DecisionMarketPolicy["elite"]>;
+
+  scalper?:
+    Partial<
+      NonNullable<
+        DecisionMarketPolicy["scalper"]
+      >
+    >;
+};
+
+export type MarketPolicyOverrides =
+  Partial<
+    Record<
+      CanonicalDecisionMarket,
+      DecisionMarketPolicyOverride
+    >
+  >;
+
+export function resolveMarketPolicy(
+  market: CanonicalDecisionMarket,
+  overrides?: MarketPolicyOverrides
+): DecisionMarketPolicy {
+  const base =
+    MARKET_POLICIES[market];
+
+  const override =
+    overrides?.[market];
+
+  if (!override) {
+    return base;
+  }
+
+  return {
+    minimumOdd:
+      override.minimumOdd ??
+      base.minimumOdd,
+
+    watchlist: {
+      ...base.watchlist,
+      ...override.watchlist
+    },
+
+    bet: {
+      ...base.bet,
+      ...override.bet
+    },
+
+    elite: {
+      ...base.elite,
+      ...override.elite
+    },
+
+    scalper:
+      base.scalper ||
+      override.scalper
+        ? {
+            ...(base.scalper ?? {
+              minimumProbability: base.watchlist.minimumProbability,
+              minimumEv: base.watchlist.minimumEv,
+              maximumRisk: base.watchlist.maximumRisk,
+              minimumConfidence: base.watchlist.minimumConfidence
+            }),
+            ...override.scalper
+          }
+        : undefined
+  };
+}

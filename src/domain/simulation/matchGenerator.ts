@@ -1,7 +1,24 @@
 import type { HistoricalMatch } from "../types/HistoricalMatch";
+import type { TeamStats } from "../types/TeamStats";
 
 import seedrandom from "seedrandom";
-const rng = seedrandom("quantify-v33");
+
+const MATCH_GENERATOR_SEED = "quantify-v33";
+
+let rng = seedrandom(MATCH_GENERATOR_SEED);
+
+/*
+ * Reinicia o gerador para o início da mesma sequência
+ * determinística. Usado por experimentos de calibração que
+ * precisam comparar configurações diferentes sobre o
+ * exato mesmo lote de partidas sintéticas — sem isso, cada
+ * chamada subsequente de generateHistoricalMatches() dentro
+ * do mesmo processo avançaria o gerador e compararia
+ * amostras diferentes.
+ */
+export function resetMatchGeneratorSeed(): void {
+  rng = seedrandom(MATCH_GENERATOR_SEED);
+}
 
 import {
   goalMatrix,
@@ -9,6 +26,8 @@ import {
   overUnderProbability,
   bttsProbability
 } from "../math/goalMatrix";
+
+import { buildLambda } from "../model/lambdaBuilder";
 
 /* ===========================
    CONFIG
@@ -18,6 +37,8 @@ type MarketDifficulty =
   | "SOFT"
   | "NORMAL"
   | "SHARP";
+
+const SYNTHETIC_LEAGUE = "SYNTHETIC_BACKTEST";
 
 /* ===========================
    UTIL
@@ -64,6 +85,81 @@ return {
   awayGoals:
     lastCell?.awayGoals ?? 0
 };
+}
+
+/* ===========================
+   SYNTHETIC TEAM STATS
+
+   Gera estatísticas de time plausíveis (não lambdas
+   prontos) para que o mesmo buildLambda() usado pelo
+   modelPipeline em produção derive o lambda "real" aqui
+   e, de forma determinística e idêntica, o lambda do
+   modelo quando runBacktest chamar modelPipeline(match)
+   com esses mesmos homeStats/awayStats.
+=========================== */
+
+let teamCounter = 0;
+
+function generateTeamStats(
+  venue: "HOME" | "AWAY"
+): TeamStats {
+  teamCounter++;
+
+  const matchesPlayed =
+    Math.round(
+      randomRange(12, 34)
+    );
+
+  const goalsScoredPerMatch =
+    venue === "HOME"
+      ? randomRange(0.75, 2.35)
+      : randomRange(0.55, 2.05);
+
+  const goalsConcededPerMatch =
+    venue === "HOME"
+      ? randomRange(0.55, 1.75)
+      : randomRange(0.85, 2.25);
+
+  const shotsPerMatch =
+    randomRange(8, 17);
+
+  const shotsOnTargetPerMatch =
+    shotsPerMatch *
+    randomRange(0.30, 0.46);
+
+  const bigChancesPerMatch =
+    randomRange(1.3, 4.2);
+
+  return {
+    id: `SYN_${venue}_${teamCounter}`,
+    name: `Synthetic ${venue} ${teamCounter}`,
+
+    matchesPlayed,
+
+    homeGoalsScoredPerMatch:
+      venue === "HOME"
+        ? goalsScoredPerMatch
+        : randomRange(0.75, 2.35),
+
+    homeGoalsConcededPerMatch:
+      venue === "HOME"
+        ? goalsConcededPerMatch
+        : randomRange(0.55, 1.75),
+
+    awayGoalsScoredPerMatch:
+      venue === "AWAY"
+        ? goalsScoredPerMatch
+        : randomRange(0.55, 2.05),
+
+    awayGoalsConcededPerMatch:
+      venue === "AWAY"
+        ? goalsConcededPerMatch
+        : randomRange(0.85, 2.25),
+
+    shotsPerMatch,
+    shotsOnTargetPerMatch,
+    bigChancesPerMatch
+  };
 }
 
 /* ===========================
@@ -127,13 +223,32 @@ export function generateHistoricalMatches(
 
     /* ===========================
        TRUE MATCH REALITY
+
+       homeStats/awayStats representam a "verdade" do
+       confronto. O mesmo buildLambda() oficial deriva o
+       lambda real a partir deles — o mesmo cálculo que
+       modelPipeline fará de novo, de forma determinística,
+       quando runBacktest analisar este match.
     ============================ */
 
+    const homeStats =
+      generateTeamStats("HOME");
+
+    const awayStats =
+      generateTeamStats("AWAY");
+
+    const trueLambda =
+      buildLambda(
+        homeStats,
+        awayStats,
+        SYNTHETIC_LEAGUE
+      );
+
     const lambdaHome =
-      randomRange(0.8, 2.2);
+      trueLambda.lambdaHome;
 
     const lambdaAway =
-      randomRange(0.6, 2.0);
+      trueLambda.lambdaAway;
 
     const realMatrix =
       goalMatrix(
@@ -252,37 +367,37 @@ export function generateHistoricalMatches(
     ============================ */
 
     const odds: Record<string, number> = {
-      "HOME WIN":
+      "HOME":
         safeOdd(matchProbs.homeWin),
 
       "DRAW":
         safeOdd(matchProbs.draw),
 
-      "AWAY WIN":
+      "AWAY":
         safeOdd(matchProbs.awayWin),
 
-      "OVER 1.5":
+      "OVER_1_5":
         safeOdd(ou15.over),
 
-      "OVER 2.5":
+      "OVER_2_5":
         safeOdd(ou25.over),
 
-      "UNDER 2.5":
+      "UNDER_2_5":
         safeOdd(ou25.under),
 
-      "BTTS YES":
+      "BTTS_YES":
         safeOdd(btts.yes),
 
-      "BTTS NO":
+      "BTTS_NO":
         safeOdd(btts.no),
 
-      "1X":
+      "DOUBLE_CHANCE_1X":
         safeOdd(
           matchProbs.homeWin +
           matchProbs.draw
         ),
 
-      "X2":
+      "DOUBLE_CHANCE_X2":
         safeOdd(
           matchProbs.awayWin +
           matchProbs.draw
@@ -290,8 +405,9 @@ export function generateHistoricalMatches(
     };
 
     matches.push({
-      lambdaHome,
-      lambdaAway,
+      homeStats,
+      awayStats,
+      league: SYNTHETIC_LEAGUE,
 
       odds,
 

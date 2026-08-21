@@ -2,6 +2,8 @@ import {
   expectedValue
 } from "../../domain/value/expectedValue";
 
+import type { MarketCode } from "../../shared/types/marketCode";
+
 /* ==========================================
    VALUE PIPELINE — QUANTIFY V7.2 ELITE
 ========================================== */
@@ -31,16 +33,7 @@ import {
    MERCADOS
 ========================================== */
 
-export type ValueMarket =
-  | "HOME"
-  | "DRAW"
-  | "AWAY"
-  | "OVER_1_5"
-  | "OVER_2_5"
-  | "BTTS_YES"
-  | "BTTS_NO"
-  | "DOUBLE_CHANCE_1X"
-  | "DOUBLE_CHANCE_X2";
+export type ValueMarket = MarketCode;
 
 /* ==========================================
    CONTRATOS

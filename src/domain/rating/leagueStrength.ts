@@ -211,6 +211,69 @@ export const leagueStrengthMap:
         1
     },
 
+    brasileiraoseriea: {
+      name:
+        "Brasileirão Série A",
+
+      /*
+       * Estimativa provisória baseada em conhecimento geral
+       * de futebol brasileiro (média histórica do Brasileirão
+       * costuma ficar um pouco abaixo de ligas europeias top,
+       * com mando de campo relativamente forte). NÃO foi
+       * calibrada com backtest de dados históricos reais —
+       * mesma ressalva que já existia para a Série B. Deve
+       * ser substituída por médias reais assim que houver
+       * dataset histórico do campeonato.
+       */
+      averageGoals:
+        2.48,
+
+      averageHomeGoals:
+        1.38,
+
+      averageAwayGoals:
+        1.10,
+
+      attackFactor:
+        0.98,
+
+      defenseFactor:
+        1,
+
+      homeAdvantage:
+        1.08,
+
+      leagueStrength:
+        0.98,
+
+      over15Factor:
+        1,
+
+      over25Factor:
+        1,
+
+      bttsYesFactor:
+        1,
+
+      bttsNoFactor:
+        1,
+
+      homeWinFactor:
+        1,
+
+      drawFactor:
+        1,
+
+      awayWinFactor:
+        1,
+
+      volatilityFactor:
+        1.03,
+
+      dataReliability:
+        0.85
+    },
+
     brasileiraoserieb: {
       name:
         "Brasileirão Série B",
@@ -291,6 +354,21 @@ const leagueAliases:
 
     laligasantander:
       "laliga",
+
+    brasileiraoseriea:
+      "brasileiraoseriea",
+
+    brasileirao:
+      "brasileiraoseriea",
+
+    brasileiraoa:
+      "brasileiraoseriea",
+
+    campeonatobrasileiroseriea:
+      "brasileiraoseriea",
+
+    campeonatobrasileiro:
+      "brasileiraoseriea",
 
     brasileiraoserieb:
       "brasileiraoserieb",

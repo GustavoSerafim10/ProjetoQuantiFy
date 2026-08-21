@@ -61,16 +61,36 @@ import {
  */
 
 /* ==========================================
+   ENTRADA
+========================================== */
+
+/*
+ * Contrato mínimo que este orquestrador realmente lê
+ * diretamente (`odds`, `match`). O restante do payload
+ * (homeStats/awayStats/league/etc.) atravessa intacto até
+ * contextPipeline, que ainda não é tipado.
+ */
+export interface EliteAnalyzerInput {
+  odds?: Record<string, number>;
+
+  match?:
+    | string
+    | {
+        home?: string;
+        away?: string;
+        league?: string;
+      };
+
+  [key: string]: unknown;
+}
+
+/* ==========================================
    PIPELINE PRINCIPAL
 ========================================== */
 
 export function eliteAnalyzer(
-  input: any
+  input: EliteAnalyzerInput
 ) {
-  console.log(
-    "🔥 ELITE ANALYZER EXECUTOU"
-  );
-
   /*
    * 1. Contexto e normalização
    */
@@ -160,86 +180,6 @@ const ranked =
     );
 
   /* ==========================================
-     DIAGNÓSTICO DE INTEGRAÇÃO
-  ========================================== */
-
-  console.log(
-    "📊 PIPELINE CHECK:",
-    {
-      contextMarkets:
-        Array.isArray(
-          context?.markets
-        )
-          ? context.markets.length
-          : 0,
-
-   modelMarkets:
-  model?.markets &&
-  typeof model.markets === "object"
-    ? Object.keys(
-        model.markets
-      ).length
-    : 0,
-
-      probabilityValid:
-        probabilities
-          ?.probabilityValid,
-
-      probabilityMarkets:
-        probabilities
-          ?.probs,
-
-      valueValid:
-        valued?.valueValid,
-
-      valuedMarkets:
-        Array.isArray(
-          valued?.markets
-        )
-          ? valued.markets.map(
-              (market: any) => ({
-                market:
-                  market?.market,
-
-                probability:
-                  market?.probability,
-
-                odd:
-                  market?.odd,
-
-                ev:
-                  market?.ev,
-
-                probabilityEdge:
-                  market
-                    ?.probabilityEdge
-              })
-            )
-          : [],
-
-      correlationValid:
-        correlated
-          ?.correlationValid,
-
-      riskValid:
-        risked?.riskValid,
-
-      rankingValid:
-        ranked?.rankingValid,
-
-      decisionValid:
-        decision
-          ?.decisionValid,
-
-      best:
-        decision?.best,
-
-      reason:
-        decision?.reason
-    }
-  );
-
-  /* ==========================================
      RESULTADO
   ========================================== */
 
@@ -298,13 +238,13 @@ const ranked =
 ========================================== */
 
 function buildMatchName(
-  match: any
+  match: EliteAnalyzerInput["match"]
 ): string {
-  if (
-    typeof match === "string" &&
-    match.trim()
-  ) {
-    return match.trim();
+  if (typeof match === "string") {
+    return (
+      match.trim() ||
+      "Partida não identificada"
+    );
   }
 
   const home =
@@ -342,14 +282,27 @@ function buildMatchName(
 ========================================== */
 
 function extractMonteCarlo(
-  simulation: any
+  simulation: object
 ) {
+  const record =
+    simulation as
+      Record<string, unknown>;
+
+  const debug =
+    record.debug as
+      Record<string, unknown> |
+      undefined;
+
+  const simulationPipelineDebug =
+    debug?.simulationPipeline as
+      Record<string, unknown> |
+      undefined;
+
   const candidates = [
-    simulation?.monteCarlo,
-    simulation?.simulation,
-    simulation?.monteCarloResult,
-    simulation?.debug
-      ?.simulationPipeline
+    record.monteCarlo,
+    record.simulation,
+    record.monteCarloResult,
+    simulationPipelineDebug
       ?.monteCarlo
   ];
 

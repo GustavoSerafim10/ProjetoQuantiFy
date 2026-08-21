@@ -1,6 +1,10 @@
+import type { TeamStats } from "./TeamStats";
+
 export interface HistoricalMatch {
-  lambdaHome: number;
-  lambdaAway: number;
+  homeStats: TeamStats;
+  awayStats: TeamStats;
+  league: string;
+
   odds: Record<string, number>;
 
   result: {
