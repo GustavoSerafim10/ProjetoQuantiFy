@@ -25,6 +25,12 @@ export type FormField =
   | "homeGoalsPG"
   | "awayGoalsPG"
 
+  | "homeGoalsScoredHome"
+  | "homeGoalsConcededHome"
+
+  | "awayGoalsScoredAway"
+  | "awayGoalsConcededAway"
+
   | "homeShotsOnTarget"
   | "awayShotsOnTarget"
 
@@ -134,6 +140,17 @@ export interface TeamStatsPayload {
   avgGoalsAgainst?: number;
   goalsConcededPerGame?: number;
   goalsAgainstPerGame?: number;
+
+  /*
+   * Split real de mando (opcional). Quando presente,
+   * lambdaBuilder usa a base de liga específica de
+   * casa/fora em vez da base neutra — ver venue.ts.
+   */
+  homeGoalsScoredPerMatch?: number;
+  homeGoalsConcededPerMatch?: number;
+
+  awayGoalsScoredPerMatch?: number;
+  awayGoalsConcededPerMatch?: number;
 
   assists?: number;
 

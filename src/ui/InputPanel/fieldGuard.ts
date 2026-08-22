@@ -28,6 +28,12 @@ const FORM_FIELDS =
     "homeGoalsPG",
     "awayGoalsPG",
 
+    "homeGoalsScoredHome",
+    "homeGoalsConcededHome",
+
+    "awayGoalsScoredAway",
+    "awayGoalsConcededAway",
+
     "homeShotsOnTarget",
     "awayShotsOnTarget",
 

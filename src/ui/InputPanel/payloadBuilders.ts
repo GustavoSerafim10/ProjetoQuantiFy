@@ -53,6 +53,39 @@ export function buildTeamStats(
       `${prefix}ShotsOnTarget`
     );
 
+  /*
+   * Split real de mando (opcional).
+   *
+   * homeGoalsScoredHome/homeGoalsConcededHome só se
+   * aplicam ao lado "home" (como o mandante joga
+   * especificamente em casa). awayGoalsScoredAway/
+   * awayGoalsConcededAway só se aplicam ao lado "away"
+   * (como o visitante joga especificamente fora). Não
+   * são um par simétrico do mesmo campo — por isso lidos
+   * condicionalmente por side, não via `${prefix}`.
+   */
+  const venueGoalsScored =
+    side === "home"
+      ? readNumber(
+          form,
+          "homeGoalsScoredHome"
+        )
+      : readNumber(
+          form,
+          "awayGoalsScoredAway"
+        );
+
+  const venueGoalsConceded =
+    side === "home"
+      ? readNumber(
+          form,
+          "homeGoalsConcededHome"
+        )
+      : readNumber(
+          form,
+          "awayGoalsConcededAway"
+        );
+
   return removeInvalidTeamStats({
     rating:
       readNumber(
@@ -87,6 +120,26 @@ export function buildTeamStats(
 
     goalsAgainstPerGame:
       goalsConcededPerGame,
+
+    homeGoalsScoredPerMatch:
+      side === "home"
+        ? venueGoalsScored
+        : null,
+
+    homeGoalsConcededPerMatch:
+      side === "home"
+        ? venueGoalsConceded
+        : null,
+
+    awayGoalsScoredPerMatch:
+      side === "away"
+        ? venueGoalsScored
+        : null,
+
+    awayGoalsConcededPerMatch:
+      side === "away"
+        ? venueGoalsConceded
+        : null,
 
     assists:
       readNumber(
