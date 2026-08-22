@@ -79,6 +79,12 @@ describe("resolveBet", () => {
  * synthetic matches within a fresh test run.
  */
 describe("runBacktest (integration)", () => {
+  // 200 matches x 300 Monte Carlo sims through the full 9-stage
+  // pipeline is the heaviest work in the suite; the default 5s
+  // timeout leaves too little margin against normal CI/system load
+  // variance (observed flaky timeout unrelated to any logic change).
+  const INTEGRATION_TIMEOUT_MS = 15000;
+
   it("places bets, resolves them, and produces internally consistent totals", () => {
     const result = runBacktest(200, 1000, { monteCarloSimulations: 300 });
 
@@ -88,7 +94,7 @@ describe("runBacktest (integration)", () => {
     expect(result.totalStaked).toBeGreaterThan(0);
     expect(result.bankrollHistory).toHaveLength(200);
     expect(result.maxDrawdown).toBeGreaterThanOrEqual(0);
-  });
+  }, INTEGRATION_TIMEOUT_MS);
 
   it("never stakes more than the configured stakeCap fraction of the bankroll", () => {
     const stakeCap = 0.01;
@@ -109,7 +115,7 @@ describe("runBacktest (integration)", () => {
     expect(result.totalStaked).toBeLessThan(
       initialBankroll * result.totalBets * stakeCap * 1.5
     );
-  });
+  }, INTEGRATION_TIMEOUT_MS);
 
   it("raising evFloor never increases the number of bets placed", () => {
     const baseline = runBacktest(200, 1000, {
@@ -124,5 +130,5 @@ describe("runBacktest (integration)", () => {
     expect(stricter.totalBets).toBeLessThanOrEqual(
       baseline.totalBets
     );
-  });
+  }, INTEGRATION_TIMEOUT_MS);
 });
