@@ -187,6 +187,38 @@ function getMarketLabel(
    VALUE HELPERS
 ========================================== */
 
+/*
+ * Auditoria 2026-08-22: esta tag era calculada só a partir
+ * do EV, sem olhar se a política de decisão (marketPolicies.ts)
+ * realmente aprovou a entrada. Isso deixava mercados com "SEM
+ * APOSTA"/"WATCHLIST" exibindo um selo grande e verde de
+ * "VALUE BET" no topo do ranking — visualmente indistinguível
+ * de uma entrada de verdade aprovada, mesmo quando o próprio
+ * sistema rejeitou. A tag agora reflete a classificação real:
+ * só SCALPER/ELITE/BET (com decisionValid) recebem os selos
+ * positivos; o resto mostra o EV cru sem fingir que é uma
+ * recomendação.
+ */
+function isApprovedEntry(
+  market?: DashboardMarket | null
+): boolean {
+  const decisionValid =
+    market?.decisionValid;
+
+  if (decisionValid === false) {
+    return false;
+  }
+
+  return (
+    market?.classification ===
+      "SCALPER" ||
+    market?.classification ===
+      "ELITE" ||
+    market?.classification ===
+      "BET"
+  );
+}
+
 function getValueTag(
   market?: DashboardMarket | null
 ): string {
@@ -197,6 +229,12 @@ function getValueTag(
 
   if (ev === null) {
     return "⚪ SEM DADOS";
+  }
+
+  if (!isApprovedEntry(market)) {
+    return ev > 0
+      ? "🔍 EV positivo — não aprovado"
+      : "❌ SEM VALUE";
   }
 
   if (ev >= 0.12) {
@@ -211,11 +249,7 @@ function getValueTag(
     return "⚠️ MARGINAL";
   }
 
-  if (ev > 0) {
-    return "🟠 VALUE BAIXO";
-  }
-
-  return "❌ SEM VALUE";
+  return "🟠 VALUE BAIXO";
 }
 
 function getValueColor(
@@ -230,6 +264,12 @@ function getValueColor(
     return "text-zinc-400";
   }
 
+  if (!isApprovedEntry(market)) {
+    return ev > 0
+      ? "text-zinc-400"
+      : "text-red-400";
+  }
+
   if (ev >= 0.12) {
     return "text-green-400";
   }
@@ -242,11 +282,7 @@ function getValueColor(
     return "text-yellow-400";
   }
 
-  if (ev > 0) {
-    return "text-orange-400";
-  }
-
-  return "text-red-400";
+  return "text-orange-400";
 }
 
 const Glow = ({

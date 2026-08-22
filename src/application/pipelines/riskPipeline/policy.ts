@@ -104,7 +104,23 @@ export const RISK_POLICY = {
   extremeModelSimulationDivergence:
     0.075,
 
-  /* Modelo x mercado */
+  /*
+   * Modelo x mercado.
+   *
+   * Auditoria 2026-08-22: mercado de longshot (Fluminense
+   * x Remo, AWAY a 18,9% de probabilidade contra 13,3%
+   * implícito na odd 7.50) mostrou EV de 42% sem nenhuma
+   * penalidade de divergência, porque o gap absoluto
+   * (5,57 p.p.) ficava abaixo do limiar "moderado" (10 p.p.)
+   * calibrado para mercados perto de 50%. Em termos
+   * proporcionais esse mesmo gap é uma divergência de 42%
+   * sobre a probabilidade implícita do mercado — nada
+   * moderado. Ver divergence.ts: a comparação passou a usar
+   * relativeMarketDisagreement (proporcional à probabilidade
+   * implícita) em vez do gap absoluto, então estes valores
+   * também mudaram de escala (de pontos percentuais para
+   * fração relativa).
+   */
 
   moderateMarketDisagreement:
     0.025,
@@ -169,17 +185,22 @@ export const STRUCTURE_THRESHOLDS = {
   extremeModelSimulationDivergence:
     0.18,
 
+  /*
+   * Escala relativa (fração da probabilidade implícita da
+   * odd), não mais pontos percentuais absolutos — ver nota
+   * em RISK_POLICY acima.
+   */
   moderateMarketDisagreement:
-    0.1,
+    0.15,
 
   highMarketDisagreement:
-    0.2,
+    0.30,
 
   extremeMarketDisagreement:
-    0.3,
+    0.50,
 
   severeMarketDisagreement:
-    0.4,
+    0.75,
 
   minimumRisk:
     0.05,

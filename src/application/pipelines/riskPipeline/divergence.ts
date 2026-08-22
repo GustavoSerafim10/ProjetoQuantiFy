@@ -61,6 +61,25 @@ export function addMarketDisagreementComponents({
     return;
   }
 
+  /*
+   * Divergência relativa à probabilidade implícita da odd,
+   * não o gap absoluto.
+   *
+   * Um gap de 5 pontos percentuais é irrelevante perto de
+   * 50% de probabilidade implícita, mas é uma divergência
+   * de mais de 40% perto de 12% (odds longas) — é
+   * exatamente nas odds longas que o EV cru (probability *
+   * odd - 1) é mais sensível a erro de estimativa de
+   * probabilidade. Medir em pontos absolutos deixava
+   * longshots com "EV alto, risco de divergência zero"
+   * (ver nota em policy.ts).
+   */
+  const relativeMarketDisagreement =
+    impliedProbability > 0
+      ? absoluteMarketDisagreement /
+        impliedProbability
+      : absoluteMarketDisagreement;
+
   const metadata = {
     probability:
       roundNumber(
@@ -85,11 +104,16 @@ export function addMarketDisagreementComponents({
     absoluteMarketDisagreement:
       roundNumber(
         absoluteMarketDisagreement
+      ),
+
+    relativeMarketDisagreement:
+      roundNumber(
+        relativeMarketDisagreement
       )
   };
 
   if (
-    absoluteMarketDisagreement >=
+    relativeMarketDisagreement >=
     STRUCTURE_THRESHOLDS
       .severeMarketDisagreement
   ) {
@@ -114,7 +138,7 @@ export function addMarketDisagreementComponents({
   }
 
   if (
-    absoluteMarketDisagreement >=
+    relativeMarketDisagreement >=
     STRUCTURE_THRESHOLDS
       .extremeMarketDisagreement
   ) {
@@ -139,7 +163,7 @@ export function addMarketDisagreementComponents({
   }
 
   if (
-    absoluteMarketDisagreement >=
+    relativeMarketDisagreement >=
     STRUCTURE_THRESHOLDS
       .highMarketDisagreement
   ) {
@@ -164,7 +188,7 @@ export function addMarketDisagreementComponents({
   }
 
   if (
-    absoluteMarketDisagreement >=
+    relativeMarketDisagreement >=
     STRUCTURE_THRESHOLDS
       .moderateMarketDisagreement
   ) {
