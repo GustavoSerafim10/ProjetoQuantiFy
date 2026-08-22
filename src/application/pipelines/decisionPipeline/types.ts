@@ -1,4 +1,5 @@
 import type { MarketCode } from "../../../shared/types/marketCode";
+import type { PipelineRecord } from "../pipelineRecord";
 
 /* ==========================================
    CONTRATOS
@@ -273,13 +274,12 @@ export interface DecisionPipelineDebug {
 }
 
 
-export interface EvaluatedDecisionMarket {
+export interface EvaluatedDecisionMarket extends PipelineRecord {
   /*
-   * Mantém compatibilidade com os campos produzidos
-   * pelos pipelines anteriores, sem deixar os callbacks
-   * de map/filter/find com parâmetro implicitamente any.
+   * Estende PipelineRecord para manter compatibilidade com os
+   * campos produzidos pelos pipelines anteriores, sem deixar os
+   * callbacks de map/filter/find com parâmetro implicitamente any.
    */
-  [key: string]: any;
 
   market?: string;
 

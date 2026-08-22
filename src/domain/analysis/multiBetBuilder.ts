@@ -1,8 +1,21 @@
-export function buildCombo(markets: any[]) {
+interface ComboMarketCandidate {
+  market?: string;
+  probability?: number;
+  odd?: number;
+}
+
+interface ComboResult {
+  legs: [string, string];
+  prob: number;
+  odd: number;
+  ev: number;
+}
+
+export function buildCombo(markets: ComboMarketCandidate[]): ComboResult | null {
 
   if (markets.length < 2) return null;
 
-  const combos: any[] = [];
+  const combos: ComboResult[] = [];
 
   for (let i = 0; i < markets.length; i++) {
     for (let j = i + 1; j < markets.length; j++) {
@@ -10,17 +23,20 @@ export function buildCombo(markets: any[]) {
       const a = markets[i];
       const b = markets[j];
 
-      // 🚫 evitar correlação óbvia
-      if (a.market.includes("OVER") && b.market.includes("UNDER")) continue;
-      if (a.market.includes("BTTS") && b.market.includes("BTTS_NO")) continue;
+      const aMarket = a.market ?? "";
+      const bMarket = b.market ?? "";
 
-      const combinedProb = a.probability * b.probability;
-      const combinedOdd = a.odd * b.odd;
+      // 🚫 evitar correlação óbvia
+      if (aMarket.includes("OVER") && bMarket.includes("UNDER")) continue;
+      if (aMarket.includes("BTTS") && bMarket.includes("BTTS_NO")) continue;
+
+      const combinedProb = (a.probability ?? 0) * (b.probability ?? 0);
+      const combinedOdd = (a.odd ?? 0) * (b.odd ?? 0);
 
       const combinedEV = (combinedProb * combinedOdd) - 1;
 
       combos.push({
-        legs: [a.market, b.market],
+        legs: [aMarket, bMarket],
         prob: combinedProb,
         odd: combinedOdd,
         ev: combinedEV

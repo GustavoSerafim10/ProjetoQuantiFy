@@ -1,4 +1,10 @@
-export const leagueConfig: Record<string, any> = {
+interface LeagueConfigEntry {
+  avgGoals: number;
+  tempo: number;
+  pressure: number;
+}
+
+export const leagueConfig: Record<string, LeagueConfigEntry> = {
 
   premierLeague: {
     avgGoals: 2.8,

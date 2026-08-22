@@ -3,6 +3,7 @@ import {
 } from "../../domain/value/expectedValue";
 
 import type { MarketCode } from "../../shared/types/marketCode";
+import type { PipelineRecord } from "./pipelineRecord";
 
 /* ==========================================
    VALUE PIPELINE — QUANTIFY V7.2 ELITE
@@ -204,7 +205,7 @@ const ODDS_ALIASES:
 ========================================== */
 
 export function valuePipeline(
-  data: any,
+  data: PipelineRecord,
   odds: Record<string, number>
 ) {
   const probabilityValid =
@@ -767,9 +768,9 @@ function getProbabilityEntries(
   );
 }
 
-function isRecord(
-  value: unknown
-): value is Record<string, any> {
+function isRecord<T>(
+  value: T
+): value is T & Record<string, unknown> {
   return (
     value !== null &&
     typeof value === "object" &&

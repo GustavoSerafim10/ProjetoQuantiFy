@@ -1,4 +1,5 @@
 import type { RiskPipelineDebug } from "./types";
+import type { PipelineRecord } from "../pipelineRecord";
 
 export * from "./types";
 
@@ -62,7 +63,7 @@ import { createInvalidPipelineResult } from "./invalidResults";
 ========================================== */
 
 export function riskPipeline(
-  data: any
+  data: PipelineRecord
 ) {
   const inputMarkets =
     Array.isArray(
@@ -183,7 +184,7 @@ export function riskPipeline(
 
   const markets =
     inputMarkets.map(
-      (market: any) => {
+      (market: PipelineRecord) => {
         const result =
           calculateMarketRisk({
             market,

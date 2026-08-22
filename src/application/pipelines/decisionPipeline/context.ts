@@ -1,4 +1,5 @@
 import type { DecisionContextMetrics } from "./types";
+import type { PipelineRecord } from "../pipelineRecord";
 
 import {
   firstFiniteNumber,
@@ -12,7 +13,7 @@ import {
 ========================================== */
 
 export function buildDecisionContextMetrics(
-  data: any
+  data: PipelineRecord
 ): DecisionContextMetrics {
   const homeProbability =
     firstProbability([

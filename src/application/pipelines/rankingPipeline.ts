@@ -1,3 +1,5 @@
+import type { PipelineRecord } from "./pipelineRecord";
+
 /* ==========================================
    RANKING PIPELINE — QUANTIFY V7.1
 ========================================== */
@@ -165,7 +167,7 @@ const NORMALIZATION_POLICY = {
 ========================================== */
 
 export function rankingPipeline(
-  data: any
+  data: PipelineRecord
 ) {
   const inputMarkets =
     Array.isArray(data?.markets)
@@ -178,7 +180,7 @@ export function rankingPipeline(
   const rankedMarkets =
     inputMarkets.map(
       (
-        market: any,
+        market: PipelineRecord,
         originalIndex: number
       ) => {
         const ranked =
@@ -211,8 +213,8 @@ export function rankingPipeline(
    */
   rankedMarkets.sort(
     (
-      first: any,
-      second: any
+      first: PipelineRecord,
+      second: PipelineRecord
     ) =>
       compareRankedMarkets(
         first,
@@ -226,9 +228,9 @@ export function rankingPipeline(
    */
   let currentValidRank = 0;
 
-  const markets =
+  const markets: PipelineRecord[] =
     rankedMarkets.map(
-      (market: any) => {
+      (market: PipelineRecord): PipelineRecord => {
         if (!market?.rankingValid) {
           return {
             ...market,
@@ -251,7 +253,7 @@ export function rankingPipeline(
 
   const topMarket =
     markets.find(
-      (market: any) =>
+      (market: PipelineRecord) =>
         market?.rankingValid === true
     ) ?? null;
 
@@ -312,7 +314,7 @@ export function rankingPipeline(
 ========================================== */
 
 function rankMarket(
-  market: any,
+  market: PipelineRecord,
   originalIndex: number
 ) {
   const originalWarnings =
@@ -761,8 +763,8 @@ function rankMarket(
 ========================================== */
 
 function compareRankedMarkets(
-  first: any,
-  second: any
+  first: PipelineRecord,
+  second: PipelineRecord
 ): number {
   const firstValid =
     first?.rankingValid === true;
@@ -1016,16 +1018,16 @@ function normalizePositiveSignal(
 ========================================== */
 
 function getMarketRisk(
-  market: any
+  market: PipelineRecord
 ): number | null;
 
 function getMarketRisk(
-  market: any,
+  market: PipelineRecord,
   fallback: number
 ): number;
 
 function getMarketRisk(
-  market: any,
+  market: PipelineRecord,
   fallback?: number
 ): number | null {
   const parsed =
@@ -1043,7 +1045,7 @@ function getMarketRisk(
 }
 
 function getMarketProbabilityEdge(
-  market: any,
+  market: PipelineRecord,
   fallback:
     number
 ): number {

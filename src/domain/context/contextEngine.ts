@@ -1,5 +1,28 @@
 
-function safe(n: any, fallback = 1) {
+interface ContextEngineStats {
+  last5GoalsFor?: unknown;
+  goalsFor?: unknown;
+  shots?: unknown;
+  cornersAvg?: unknown;
+  shotsOnTarget?: unknown;
+}
+
+interface ContextEngineLeagueData {
+  tempo?: unknown;
+  pressure?: unknown;
+  homeAdvantage?: unknown;
+  leagueKey?: unknown;
+}
+
+interface ContextEngineInput {
+  homeStats?: ContextEngineStats;
+  awayStats?: ContextEngineStats;
+  baseLambdaHome?: unknown;
+  baseLambdaAway?: unknown;
+  leagueData?: ContextEngineLeagueData;
+}
+
+function safe(n: unknown, fallback = 1) {
   const num = Number(n);
   return Number.isFinite(num) ? num : fallback;
 }
@@ -8,7 +31,7 @@ function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(n, max));
 }
 
-function recentGoalsFactor(value: any) {
+function recentGoalsFactor(value: unknown) {
   const raw = safe(value, 1);
 
   const avg =
@@ -19,7 +42,7 @@ function recentGoalsFactor(value: any) {
   return avg;
 }
 
-export function contextEngine(data: any) {
+export function contextEngine(data: ContextEngineInput) {
   const {
     homeStats,
     awayStats,

@@ -41,8 +41,17 @@ export function quarterKelly(
    STAKE PRO ENGINE
 =============================== */
 
+interface StakeCandidate {
+  kelly?: number;
+  ev?: number;
+  probability?: number;
+  risk?: number;
+  riskScore?: number;
+  confidence?: number;
+}
+
 export function calculateStakePro(
-  m: any,
+  m: StakeCandidate,
   options: { stakeCap?: number } = {}
 ): number {
   const baseKelly = Math.max(Number(m.kelly ?? 0), 0);

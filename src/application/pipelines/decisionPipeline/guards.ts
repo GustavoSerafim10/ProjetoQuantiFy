@@ -8,6 +8,8 @@ import { GLOBAL_POLICY } from "./marketPolicies";
 
 import { normalizeWarnings } from "./helpers";
 
+import type { PipelineRecord } from "../pipelineRecord";
+
 /* ==========================================
    GUARDS
 ========================================== */
@@ -67,7 +69,7 @@ export function evaluateDecisionGuards({
     boolean;
 
   data:
-    any;
+    PipelineRecord;
 }): DecisionGuardResult {
   const blockers:
     string[] = [];

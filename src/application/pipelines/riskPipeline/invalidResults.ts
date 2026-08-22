@@ -14,6 +14,8 @@ import {
   roundNullableNumber
 } from "./helpers";
 
+import type { PipelineRecord } from "../pipelineRecord";
+
 /* ==========================================
    RESULTADO INVÁLIDO DO MERCADO
 ========================================== */
@@ -42,7 +44,7 @@ export function createInvalidMarketRisk({
 
   baseRiskDetails
 }: {
-  market: any;
+  market: PipelineRecord;
 
   marketName: string;
   marketType: RiskMarketType;
@@ -75,7 +77,7 @@ export function createInvalidMarketRisk({
     RiskScoreResult;
 }): {
   valid: false;
-  market: any;
+  market: PipelineRecord;
 } {
   const finalWarnings =
     normalizeWarnings(
@@ -253,15 +255,15 @@ export function createInvalidPipelineResult({
   lambdaAway,
   error
 }: {
-  data: any;
-  inputMarkets: any[];
+  data: PipelineRecord;
+  inputMarkets: PipelineRecord[];
   lambdaHome: number | null;
   lambdaAway: number | null;
   error: string;
 }) {
   const markets =
     inputMarkets.map(
-      (market: any) => {
+      (market: PipelineRecord) => {
         const warnings =
           normalizeWarnings([
             ...normalizeWarnings(

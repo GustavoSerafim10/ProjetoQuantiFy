@@ -141,7 +141,7 @@ export function calculateRho(
       0
     );
 
-  let learning: any = null;
+  let learning: ReturnType<typeof autoLearningEngine> | null = null;
 
   try {
     learning =

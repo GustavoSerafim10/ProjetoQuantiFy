@@ -1,4 +1,5 @@
 import type { DecisionPipelineDebug } from "./types";
+import type { PipelineRecord } from "../pipelineRecord";
 
 /* ==========================================
    NO BET
@@ -11,8 +12,8 @@ export function createNoBetResult({
   upstream,
   reason
 }: {
-  data: any;
-  inputMarkets: any[];
+  data: PipelineRecord;
+  inputMarkets: PipelineRecord[];
   gameWarnings: string[];
 
   upstream: {

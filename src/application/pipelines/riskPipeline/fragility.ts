@@ -7,6 +7,8 @@ import { RISK_POLICY, STRUCTURE_THRESHOLDS } from "./policy";
 
 import { roundNumber } from "./helpers";
 
+import type { PipelineRecord } from "../pipelineRecord";
+
 /* ==========================================
    FRAGILIDADE DO MERCADO
 ========================================== */
@@ -39,7 +41,7 @@ export function addMarketFragilityComponents({
   marketType:
     RiskMarketType;
 
-  data: any;
+  data: PipelineRecord;
 
   probability: number;
 

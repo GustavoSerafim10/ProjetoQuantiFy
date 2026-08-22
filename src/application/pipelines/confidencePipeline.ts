@@ -2,6 +2,8 @@ import {
   calculateMarketConfidence
 } from "../../domain/analysis/confidenceEngine";
 
+import type { PipelineRecord } from "./pipelineRecord";
+
 /* ==========================================
    CONFIDENCE PIPELINE — QUANTIFY V7.2 ELITE
 ========================================== */
@@ -120,7 +122,7 @@ export interface ConfidencePipelineDebug {
 ========================================== */
 
 export function confidencePipeline(
-  data: any
+  data: PipelineRecord
 ) {
   const inputMarkets =
     Array.isArray(data?.markets)
@@ -254,7 +256,7 @@ export function confidencePipeline(
 
   const markets =
     inputMarkets.map(
-      (market: any) => {
+      (market: PipelineRecord) => {
         const marketName =
           normalizeMarketName(
             market?.market
@@ -691,7 +693,7 @@ function createEmptyPipelineResult({
   sampleReliability,
   leagueTrust
 }: {
-  data: any;
+  data: PipelineRecord;
   globalConfidence: number | null;
   lambdaHome: number | null;
   lambdaAway: number | null;
@@ -760,8 +762,8 @@ function createInvalidPipelineResult({
   leagueTrust,
   error
 }: {
-  data: any;
-  inputMarkets: any[];
+  data: PipelineRecord;
+  inputMarkets: PipelineRecord[];
   globalConfidence: number | null;
   lambdaHome: number | null;
   lambdaAway: number | null;
@@ -773,7 +775,7 @@ function createInvalidPipelineResult({
 }) {
   const markets =
     inputMarkets.map(
-      (market: any) => {
+      (market: PipelineRecord) => {
         const warnings =
           normalizeWarnings([
             ...normalizeWarnings(
@@ -889,8 +891,8 @@ function createInvalidPipelineResult({
 ========================================== */
 
 function extractMonteCarloProbability(
-  data: any,
-  marketData: any,
+  data: PipelineRecord,
+  marketData: PipelineRecord,
   market: string
 ): number | null {
   /*
@@ -938,8 +940,8 @@ function extractMonteCarloProbability(
 ========================================== */
 
 function extractPoissonProbability(
-  data: any,
-  marketData: any,
+  data: PipelineRecord,
+  marketData: PipelineRecord,
   market: string
 ): number | null {
   /*
@@ -1021,7 +1023,7 @@ function buildSourceWarnings({
   sampleReliability,
   leagueTrust
 }: {
-  data: any;
+  data: PipelineRecord;
   goalExpectationScore: number | null;
   contextualGoalExpectationScore: number | null;
   monteCarloProbability: number | null;
@@ -1137,7 +1139,7 @@ interface MonteCarloMetadata {
   simulationQuality: unknown;
 }
 
-function resolveGlobalConfidence(data: any): ResolvedSignal {
+function resolveGlobalConfidence(data: PipelineRecord): ResolvedSignal {
   const canonical = firstResolvedProbability([
     [data?.globalConfidence, "data.globalConfidence"],
     [data?.modelConfidence, "data.modelConfidence"],
@@ -1156,7 +1158,7 @@ function resolveGlobalConfidence(data: any): ResolvedSignal {
     : { value: legacy, source: "data.confidence:legacy" };
 }
 
-function resolveRawSampleReliability(data: any): ResolvedSignal {
+function resolveRawSampleReliability(data: PipelineRecord): ResolvedSignal {
   return firstResolvedProbability([
     [data?.sampleReliability, "data.sampleReliability"],
     [data?.dataQuality?.sampleReliability, "data.dataQuality.sampleReliability"],
@@ -1168,7 +1170,7 @@ function resolveRawSampleReliability(data: any): ResolvedSignal {
   ]);
 }
 
-function resolveInputQuality(data: any): ResolvedSignal {
+function resolveInputQuality(data: PipelineRecord): ResolvedSignal {
   return firstResolvedProbability([
     [data?.inputQuality, "data.inputQuality"],
     [data?.dataQuality?.inputQuality, "data.dataQuality.inputQuality"],
@@ -1206,7 +1208,7 @@ function resolveEffectiveSampleReliability(
   return { value: null, source: "missing" };
 }
 
-function resolveRawLeagueTrust(data: any): ResolvedSignal {
+function resolveRawLeagueTrust(data: PipelineRecord): ResolvedSignal {
   /*
    * Fonte oficial única.
    */
@@ -1234,7 +1236,7 @@ function resolveRawLeagueTrust(data: any): ResolvedSignal {
   ]);
 }
 
-function detectLeagueFallback(data: any): boolean {
+function detectLeagueFallback(data: PipelineRecord): boolean {
   /*
    * Fonte oficial única.
    */
@@ -1276,7 +1278,7 @@ function resolveEffectiveLeagueTrust(
     : raw;
 }
 
-function extractMonteCarloMetadata(data: any): MonteCarloMetadata {
+function extractMonteCarloMetadata(data: PipelineRecord): MonteCarloMetadata {
   return {
     valid: firstBoolean([
       data?.monteCarlo?.valid,

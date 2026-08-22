@@ -5,6 +5,7 @@ import {
 } from "../../domain/calibration/probabilityCalibration";
 
 import type { MarketCode } from "../../shared/types/marketCode";
+import type { PipelineRecord } from "./pipelineRecord";
 
 /* ==========================================
    PROBABILITY PIPELINE — QUANTIFY V7.1 ELITE
@@ -316,7 +317,7 @@ const ZERO_INDEPENDENT_VALUES:
 ========================================== */
 
 export function probabilityPipeline(
-  data: any
+  data: PipelineRecord
 ) {
   const warnings: string[] = [];
 
@@ -601,7 +602,7 @@ function collectExtractionWarnings(
 ========================================== */
 
 function extractResultProbabilities(
-  result: any
+  result: PipelineRecord
 ): ResultProbabilities | null {
   /*
    * Compatibilidade com os contratos atuais:
@@ -668,7 +669,7 @@ function extractResultProbabilities(
 ========================================== */
 
 function extractGoalsProbabilities(
-  goals: any
+  goals: PipelineRecord
 ): GoalsProbabilities | null {
   const over15 =
     firstValidProbability([
@@ -702,7 +703,7 @@ function extractGoalsProbabilities(
 ========================================== */
 
 function extractBttsProbabilities(
-  btts: any
+  btts: PipelineRecord
 ): BttsProbabilities | null {
   const explicitYes =
     firstValidProbability([
@@ -1469,7 +1470,7 @@ function didResultNormalizationAdjust(
 ========================================== */
 
 function createInvalidPipelineResult(
-  data: any,
+  data: PipelineRecord,
   warnings: string[]
 ) {
   const invalidCalibration =

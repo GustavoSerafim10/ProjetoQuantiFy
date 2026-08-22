@@ -12,9 +12,30 @@
  */
 
 interface ConfidenceInput {
-  goals: any;
-  btts: any;
-  result: any;
+  goals?: {
+    over25?: unknown;
+    over2_5?: unknown;
+    overTwoFive?: unknown;
+  };
+
+  btts?: {
+    yes?: unknown;
+    bttsYes?: unknown;
+    bothTeamsScore?: unknown;
+  };
+
+  result?: {
+    homeWin?: unknown;
+    home?: unknown;
+    homeProbability?: unknown;
+
+    draw?: unknown;
+    drawProbability?: unknown;
+
+    awayWin?: unknown;
+    away?: unknown;
+    awayProbability?: unknown;
+  };
 
   lambdaHome: number;
   lambdaAway: number;

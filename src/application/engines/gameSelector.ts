@@ -1,9 +1,20 @@
-function safe(n: any, fallback = 0) {
+interface GameSelectorTeamStats {
+  shots?: unknown;
+  cornersAvg?: unknown;
+  bigChances?: unknown;
+}
+
+interface GameSelectorContext {
+  homeStats?: GameSelectorTeamStats;
+  awayStats?: GameSelectorTeamStats;
+}
+
+function safe(n: unknown, fallback = 0) {
   const num = Number(n);
   return Number.isFinite(num) ? num : fallback;
 }
 
-export function gameSelector(context: any) {
+export function gameSelector(context: GameSelectorContext) {
   const { homeStats, awayStats } = context;
 
   const shotsHome = safe(homeStats?.shots, 8);

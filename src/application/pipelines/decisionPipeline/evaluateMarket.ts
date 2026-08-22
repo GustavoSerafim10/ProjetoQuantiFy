@@ -32,14 +32,16 @@ import { getClassificationPriority } from "./ranking";
 
 import { parseDecisionMarket } from "./marketCode";
 
+import type { PipelineRecord } from "../pipelineRecord";
+
 /* ==========================================
    AVALIAÇÃO DO MERCADO
 ========================================== */
 
 export function evaluateMarket(
-  market: any,
+  market: PipelineRecord,
   originalIndex: number,
-  data: any,
+  data: PipelineRecord,
   decisionContext:
     DecisionContextMetrics
 ): EvaluatedDecisionMarket {

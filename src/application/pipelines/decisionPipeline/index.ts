@@ -17,6 +17,8 @@ import { safeBuildCombo } from "./combo";
 
 import { createNoBetResult } from "./noBet";
 
+import type { PipelineRecord } from "../pipelineRecord";
+
 export * from "./types";
 
 export type {
@@ -58,9 +60,9 @@ export type {
 ========================================== */
 
 export function decisionPipeline(
-  data: any
+  data: PipelineRecord
 ) {
-  const inputMarkets: any[] =
+  const inputMarkets: PipelineRecord[] =
     Array.isArray(data?.markets)
       ? data.markets
       : [];
@@ -170,7 +172,7 @@ const evaluatedMarkets:
   EvaluatedDecisionMarket[] =
   inputMarkets.map(
     (
-      market: any,
+      market: PipelineRecord,
       index: number
     ) =>
       evaluateMarket(

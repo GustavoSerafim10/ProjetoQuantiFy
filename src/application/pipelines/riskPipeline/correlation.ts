@@ -4,6 +4,8 @@ import { STRUCTURE_THRESHOLDS } from "./policy";
 
 import { clamp, parseFiniteNumber, roundNumber } from "./helpers";
 
+import type { PipelineRecord } from "../pipelineRecord";
+
 /* ==========================================
    CORRELAÇÃO
 ========================================== */
@@ -15,7 +17,7 @@ export function addCorrelationComponent({
   components:
     RiskComponent[];
 
-  market: any;
+  market: PipelineRecord;
 }) {
   const correlationNet =
     parseFiniteNumber(

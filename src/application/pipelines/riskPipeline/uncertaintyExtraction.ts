@@ -3,6 +3,8 @@ import type {
   MonteCarloMetadata
 } from "./types";
 
+import type { PipelineRecord } from "../pipelineRecord";
+
 import {
   normalizeWarnings,
   parseNonNegativeNumber,
@@ -17,7 +19,7 @@ import {
 ========================================== */
 
 export function extractGlobalSamplingError(
-  data: any
+  data: PipelineRecord
 ): ResolvedNumber {
   return firstResolvedNonNegative([
     [data?.maxSamplingError, "data.maxSamplingError"],
@@ -29,7 +31,7 @@ export function extractGlobalSamplingError(
 }
 
 export function extractGlobalModelSimulationDivergence(
-  data: any
+  data: PipelineRecord
 ): ResolvedNumber {
   return firstResolvedNonNegative([
     [data?.modelSimulationDivergence?.maximum, "data.modelSimulationDivergence.maximum"],
@@ -49,8 +51,8 @@ export function extractMarketSamplingError({
   marketName,
   fallback
 }: {
-  data: any;
-  market: any;
+  data: PipelineRecord;
+  market: PipelineRecord;
   marketName: string;
   fallback: ResolvedNumber;
 }): ResolvedNumber {
@@ -65,7 +67,7 @@ export function extractMarketSamplingError({
   }
 
   const aliases = getSimulationAliases(marketName);
-  const containers: Array<[any, string]> = [
+  const containers: Array<[PipelineRecord, string]> = [
     [data?.monteCarlo?.samplingError, "data.monteCarlo.samplingError"],
     [data?.simulation?.samplingError, "data.simulation.samplingError"],
     [data?.debug?.simulationPipeline?.samplingError, "debug.simulationPipeline.samplingError"],
@@ -99,8 +101,8 @@ export function extractMarketModelSimulationDivergence({
   marketName,
   fallback
 }: {
-  data: any;
-  market: any;
+  data: PipelineRecord;
+  market: PipelineRecord;
   marketName: string;
   fallback: ResolvedNumber;
 }): ResolvedNumber {
@@ -116,7 +118,7 @@ export function extractMarketModelSimulationDivergence({
   }
 
   const aliases = getSimulationAliases(marketName);
-  const containers: Array<[any, string]> = [
+  const containers: Array<[PipelineRecord, string]> = [
     [data?.monteCarlo?.modelComparison, "data.monteCarlo.modelComparison"],
     [data?.debug?.simulationPipeline?.modelComparison, "debug.simulationPipeline.modelComparison"]
   ];
@@ -153,7 +155,7 @@ export function extractMarketModelSimulationDivergence({
 }
 
 export function extractMonteCarloMetadata(
-  data: any
+  data: PipelineRecord
 ): MonteCarloMetadata {
   return {
     valid: firstBoolean([
@@ -240,10 +242,12 @@ export function normalizeSimulationQuality(
   }
 
   if (typeof value === "object" && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+
     return normalizeSimulationQuality(
-      (value as any)?.classification ??
-      (value as any)?.level ??
-      (value as any)?.quality
+      record?.classification ??
+      record?.level ??
+      record?.quality
     );
   }
 

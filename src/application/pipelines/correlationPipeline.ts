@@ -2,6 +2,8 @@ import {
   applyCorrelationAdjustments
 } from "../../domain/correlation/correlationEngine";
 
+import type { PipelineRecord } from "./pipelineRecord";
+
 /* ==========================================
    CORRELATION PIPELINE — QUANTIFY V7
 ========================================== */
@@ -66,7 +68,7 @@ export interface CorrelationPipelineDebug {
 ========================================== */
 
 export function correlationPipeline(
-  data: any
+  data: PipelineRecord
 ) {
   const rawMarkets =
     Array.isArray(data?.markets)
@@ -184,7 +186,7 @@ export function correlationPipeline(
     const correlatedMarkets =
       engineResult.map(
         (
-          market: any,
+          market: PipelineRecord,
           index: number
         ) =>
           normalizeCorrelatedMarket(
@@ -289,7 +291,7 @@ export function correlationPipeline(
 ========================================== */
 
 function normalizeCorrelatedMarket(
-  market: any,
+  market: PipelineRecord,
   index: number
 ) {
   const warnings =
@@ -335,15 +337,15 @@ function normalizeCorrelatedMarket(
 ========================================== */
 
 function createFailedResult(
-  data: any,
-  rawMarkets: any[],
+  data: PipelineRecord,
+  rawMarkets: PipelineRecord[],
   context: CorrelationContext,
   error: string
 ) {
   const unchangedMarkets =
     rawMarkets.map(
       (
-        market: any,
+        market: PipelineRecord,
         index: number
       ) => {
         const warnings =
@@ -438,8 +440,8 @@ function createFailedResult(
 ========================================== */
 
 function countAdjustedMarkets(
-  rawMarkets: any[],
-  correlatedMarkets: any[]
+  rawMarkets: PipelineRecord[],
+  correlatedMarkets: PipelineRecord[]
 ): number {
   const count =
     Math.min(

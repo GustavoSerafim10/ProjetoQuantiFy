@@ -275,9 +275,15 @@ export default function GameAnalysisPanel({
   >("ALL");
 
   const safeMarkets =
-    Array.isArray(markets)
-      ? markets
-      : [];
+    useMemo(
+      () =>
+        Array.isArray(markets)
+          ? markets
+          : [],
+      [
+        markets
+      ]
+    );
 
   const rankedMarkets =
     useMemo(

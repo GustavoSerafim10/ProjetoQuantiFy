@@ -429,6 +429,15 @@ function getClassificationColor(
   }
 }
 
+/*
+ * Isolado fora do componente porque o timestamp só deve
+ * ser lido no momento do clique (dentro do handler), nunca
+ * durante o render.
+ */
+function currentTimestamp() {
+  return Date.now();
+}
+
 /* ==========================================
    DASHBOARD
 ========================================== */
@@ -459,6 +468,12 @@ export default function Dashboard({
           ? storedHistory
           : [];
       },
+      /*
+       * historyVersion não é lido no corpo do callback:
+       * é apenas o gatilho para reler getHistory(), que
+       * vem de um store externo mutável (trackingEngine).
+       */
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       [
         historyVersion
       ]
@@ -484,6 +499,12 @@ export default function Dashboard({
     useMemo(
       () =>
         getStats(),
+      /*
+       * Mesmo motivo do useMemo acima: historyVersion só
+       * força a releitura de getStats() após registrar ou
+       * liquidar uma entrada.
+       */
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       [
         historyVersion
       ]
@@ -509,7 +530,7 @@ const markets: DashboardMarket[] =
      AÇÕES
   ========================================== */
 
-  function register() {
+  function handleRegister() {
     if (!best) {
       return;
     }
@@ -567,7 +588,7 @@ const markets: DashboardMarket[] =
 
     registerBet({
       id:
-        Date.now()
+        currentTimestamp()
           .toString(),
 
    match:
@@ -592,7 +613,7 @@ const markets: DashboardMarket[] =
         suggestedStake,
 
       createdAt:
-        Date.now(),
+        currentTimestamp(),
 
       type:
         classification
@@ -1112,7 +1133,7 @@ const markets: DashboardMarket[] =
       <div className="flex gap-2">
         <button
           onClick={
-            register
+            handleRegister
           }
           disabled={
             !best

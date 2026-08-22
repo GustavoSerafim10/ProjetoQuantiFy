@@ -1,4 +1,5 @@
 import type { ResolvedNumber } from "./types";
+import type { PipelineRecord } from "../pipelineRecord";
 
 import {
   firstPositiveNumber,
@@ -11,7 +12,7 @@ import {
 ========================================== */
 
 export function extractLeagueAverageGoals(
-  data: any
+  data: PipelineRecord
 ): number | null {
   const candidates = [
     data?.leagueAvgGoals,
@@ -35,7 +36,7 @@ export function extractLeagueAverageGoals(
 }
 
 export function extractRecentGoalStd(
-  data: any
+  data: PipelineRecord
 ): number | null {
   const candidates = [
     data?.recentGoalStd,
@@ -56,7 +57,7 @@ export function extractRecentGoalStd(
 }
 
 export function extractSeasonGoalAverage(
-  data: any
+  data: PipelineRecord
 ): number | null {
   const candidates = [
     data?.seasonGoalAvg,
@@ -76,7 +77,7 @@ export function extractSeasonGoalAverage(
 }
 
 export function extractDataQualityScore(
-  data: any
+  data: PipelineRecord
 ): ResolvedNumber {
   return firstResolvedProbability([
     [data?.dataQualityScore, "data.dataQualityScore"],

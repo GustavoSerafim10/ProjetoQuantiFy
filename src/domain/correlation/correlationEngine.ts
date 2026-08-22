@@ -92,8 +92,15 @@ export interface CorrelationEngineMarketDebug {
    FUNÇÃO PRINCIPAL
 ========================================== */
 
+interface CorrelationCandidateMarket {
+  market?: unknown;
+  warnings?: unknown;
+  debug?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
 export function applyCorrelationAdjustments(
-  markets: any[],
+  markets: CorrelationCandidateMarket[],
   context: CorrelationEngineContext
 ) {
   if (!Array.isArray(markets)) {
@@ -107,7 +114,7 @@ export function applyCorrelationAdjustments(
 
   return markets.map(
     (
-      market: any,
+      market: CorrelationCandidateMarket,
       index: number
     ) => {
       const marketName =

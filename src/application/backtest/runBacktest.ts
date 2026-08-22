@@ -15,7 +15,7 @@ import { confidencePipeline } from "../pipelines/confidencePipeline";
 import { rankingPipeline } from "../pipelines/rankingPipeline";
 import { decisionPipeline } from "../pipelines/decisionPipeline";
 
-import { generateStatReport } from "./statReport";
+import { generateStatReport, type BetRecord } from "./statReport";
 
 import { classifyMarket } from "../../domain/utils/marketClassifier";
 import { calculateStakePro } from "../../domain/risk/kelly";
@@ -115,7 +115,7 @@ export function runBacktest(
   let totalProfit = 0;
 
   const bankrollHistory: number[] = [];
-  const betHistory: any[] = [];
+  const betHistory: BetRecord[] = [];
 
   /*
    * Reproducibilidade: sem isso, chamadas sucessivas de
@@ -218,7 +218,11 @@ export function runBacktest(
     /* ===========================
        FILTRO
     ============================ */
-    if (!best) {
+    if (
+      !best ||
+      best.market === undefined ||
+      best.odd === undefined
+    ) {
       bankrollHistory.push(bankroll);
       continue;
     }
@@ -277,13 +281,11 @@ betHistory.push({
 
   classification: best.classification,
 
-  prob: best.probability,
+  probability: best.probability,
   odd: best.odd,
   ev: best.ev,
-  risk: best.risk,
 
   stake,
-  result: win ? "win" : "loss",
   profit
 });
 

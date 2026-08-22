@@ -216,7 +216,7 @@ export function generateStatReport(
   const format = (
     source: Record<string, Aggregated>
   ) => {
-    const out: Record<string, any> = {};
+    const out: Record<string, ReturnType<typeof computeStats>> = {};
 
     for (const key in source) {
       out[key] =

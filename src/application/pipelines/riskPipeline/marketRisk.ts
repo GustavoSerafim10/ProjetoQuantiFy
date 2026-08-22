@@ -36,6 +36,8 @@ import {
   roundNullableNumber
 } from "./helpers";
 
+import type { PipelineRecord } from "../pipelineRecord";
+
 /* ==========================================
    CÁLCULO POR MERCADO
 ========================================== */
@@ -65,8 +67,8 @@ export function calculateMarketRisk({
 
   monteCarloMetadata
 }: {
-  market: any;
-  data: any;
+  market: PipelineRecord;
+  data: PipelineRecord;
 
   lambdaHome: number;
   lambdaAway: number;
@@ -94,7 +96,7 @@ export function calculateMarketRisk({
     MonteCarloMetadata;
 }): {
   valid: boolean;
-  market: any;
+  market: PipelineRecord;
 } {
   const marketName =
     normalizeMarketName(
