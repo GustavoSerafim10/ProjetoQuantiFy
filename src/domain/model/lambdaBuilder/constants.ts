@@ -6,12 +6,35 @@
  * Elasticidades inferiores a 1 comprimem
  * diferenças extremas entre as equipes.
  *
- * Devem ser calibradas futuramente com:
+ * Devem ser calibradas futuramente com backtest,
+ * Log Loss, Brier Score, calibração por faixa de
+ * probabilidade — MAS NÃO com o backtest sintético
+ * deste repo (2026-08-22, investigado a pedido do
+ * usuário após um caso real onde o modelo deu só 33%
+ * pro mandante contra ~48% implícito na odd).
  *
- * - backtest;
- * - Log Loss;
- * - Brier Score;
- * - calibração por faixa de probabilidade.
+ * Motivo: generateHistoricalMatches() (matchGenerator.ts)
+ * usa este MESMO buildLambda() — com estas mesmas
+ * constantes — pra gerar o "resultado verdadeiro" de cada
+ * partida sintética, e modelPipeline() chama o mesmo
+ * buildLambda() de novo, com os mesmos stats, pra prever.
+ * Ou seja, qualquer valor testado aqui "acerta perfeito"
+ * contra esse backtest, porque o gabarito é definido pela
+ * própria fórmula sendo testada — não há sinal real,
+ * só circularidade. O ROI medido no backtest sintético
+ * mede apenas o viés proposital inserido na geração das
+ * ODDS (distortLambda, favorite bias, over popularity
+ * bias) — válido pra calibrar thresholds de decisão em
+ * marketPolicies.ts, mas não a fórmula de probabilidade
+ * em si.
+ *
+ * Calibrar isso de verdade exige partidas REAIS já
+ * encerradas: os stats de entrada de cada time como
+ * estavam ANTES do jogo + o placar real que saiu depois,
+ * em volume suficiente (dezenas de partidas, não ~10) pra
+ * ter poder estatístico sobre 3 parâmetros interagindo.
+ * Sem isso, os valores abaixo continuam sendo o melhor
+ * palpite disponível, não algo validado.
  */
 export const ATTACK_ELASTICITY =
   0.82;
