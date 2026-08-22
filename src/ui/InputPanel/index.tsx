@@ -592,33 +592,6 @@ export default function InputPanel({
           />
         </Card>
 
-        {/* RENDIMENTO POR MANDO (OPCIONAL) */}
-
-        <Card title="🏟️ Rendimento por Mando (opcional)">
-          <p className="text-xs text-zinc-400 px-3 -mt-1 mb-2">
-            Só preencha se a sua fonte separar o desempenho específico do
-            mandante jogando em casa e do visitante jogando fora — não a
-            média geral (já coberta em "Gols" acima). Deixe em branco se
-            não tiver esse recorte; a análise usa a média geral normalmente.
-          </p>
-
-          <Row
-            label="Gols marcados"
-            home="homeGoalsScoredHome"
-            away="awayGoalsScoredAway"
-            form={form}
-            handleChange={handleChange}
-          />
-
-          <Row
-            label="Gols sofridos"
-            home="homeGoalsConcededHome"
-            away="awayGoalsConcededAway"
-            form={form}
-            handleChange={handleChange}
-          />
-        </Card>
-
         {/* ATAQUE */}
 
         <Card title="⚔️ Ataque">
