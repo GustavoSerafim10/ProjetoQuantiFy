@@ -67,17 +67,24 @@ export const MARKET_POLICIES:
       },
 
       /*
-       * bet.minimumProbability NÃO foi recalibrado (2026-08-22).
-       * Diagnóstico via backtest: a confidence real do mercado
-       * DRAW nesta base sintética varia só entre 0.467 e 0.578,
-       * nunca alcançando os 0.58 exigidos por este tier — ou seja,
-       * minimumProbability nunca é o gargalo (testado 0.27-0.35
-       * inteiro, zero variação no resultado do backtest). O
-       * mercado está efetivamente travado por minimumConfidence
-       * (e o EV mediano também é negativo), não pela
-       * probabilidade. Recalibrar esse mercado de verdade exige
-       * revisar minimumConfidence/minimumEv, não este campo —
-       * fora do escopo desta sessão.
+       * NÃO recalibrado (2026-08-22, investigado em duas rodadas).
+       * 1) minimumProbability não é o gargalo: sweep 0.27-0.35
+       *    inteiro deu zero variação no backtest.
+       * 2) minimumConfidence sozinho também não é: a confidence
+       *    real do DRAW nesta base sintética nunca passa de ~0.58
+       *    (fórmula em confidenceEngine.ts pune probabilidade
+       *    abaixo de 0.50, e DRAW nunca passa disso), mas sweep de
+       *    0.50-0.58 também deu zero variação.
+       * 3) Teste decisivo: com TODOS os campos do tier bet
+       *    abertos ao máximo (probability≥0, ev≥-1, risk≤1,
+       *    confidence≥0) simultaneamente, DRAW só venceu o
+       *    ranking em 6 de 2500 partidas. O gargalo real não é
+       *    threshold nenhum — é que DRAW quase nunca supera outros
+       *    mercados na comparação de ranking desta base sintética.
+       *    Threshold nenhum "calibra" isso; a amostra de 6 apostas
+       *    é ruído demais pra confiar em qualquer ROI medido. Se
+       *    isso for revisitado, o lugar certo pra olhar é a fórmula
+       *    de ranking/score em rankingPipeline, não este arquivo.
        */
       bet: {
         minimumProbability: 0.32,
@@ -139,14 +146,22 @@ export const MARKET_POLICIES:
       },
 
       /*
-       * bet.minimumProbability NÃO foi recalibrado (2026-08-22).
-       * Diagnóstico via backtest: o EV real do mercado OVER_1_5
-       * nesta base sintética varia até no máximo 0.095 (mediana
-       * negativa), mal cruzando os 0.09 exigidos por este tier —
-       * quase nenhuma partida passa do gate de EV, então testado
-       * 0.68-0.78 inteiro deu zero variação no resultado do
-       * backtest. minimumProbability não é o gargalo aqui;
-       * minimumEv é. Fora do escopo desta sessão.
+       * NÃO recalibrado (2026-08-22, investigado em duas rodadas).
+       * 1) minimumProbability não é o gargalo: sweep 0.68-0.78
+       *    inteiro deu zero variação no backtest.
+       * 2) minimumEv sozinho também não é: o EV real do OVER_1_5
+       *    nesta base sintética raramente passa de ~0.095 (a
+       *    margem de 5% aplicada uniformemente às odds em
+       *    matchGenerator.ts deixa pouca vantagem pra qualquer
+       *    mercado onde o modelo não diverge muito da probabilidade
+       *    "verdadeira"), mas sweep de 0.00-0.09 também deu zero
+       *    variação.
+       * 3) Teste decisivo: com TODOS os campos do tier bet
+       *    abertos ao máximo simultaneamente, OVER_1_5 só venceu o
+       *    ranking em 9 de 2500 partidas. Mesma conclusão do DRAW
+       *    (ver comentário lá): o gargalo real é a comparação de
+       *    ranking contra outros mercados, não um threshold
+       *    isolado — 9 apostas é ruído demais pra calibrar por ROI.
        */
       bet: {
         minimumProbability: 0.75,
