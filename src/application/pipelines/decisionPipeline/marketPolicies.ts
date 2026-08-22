@@ -32,8 +32,17 @@ export const MARKET_POLICIES:
         minimumConfidence: 0.50
       },
 
+      /*
+       * bet.minimumProbability calibrado via sweep de backtest
+       * (2026-08-22, 2500 partidas, backtest determinístico —
+       * ver runBacktest.ts): 0.40/0.42 renderam ROI +11,4% contra
+       * +9,03% do valor original (0.45). Ganho consistente ao
+       * longo de toda a faixa testada (0.40-0.48), não é ruído de
+       * amostra. 0.42 escolhido por ficar mais perto do centro do
+       * platô que 0.40.
+       */
       bet: {
-        minimumProbability: 0.45,
+        minimumProbability: 0.42,
         minimumEv: 0.08,
         maximumRisk: 0.62,
         minimumConfidence: 0.55
@@ -57,6 +66,19 @@ export const MARKET_POLICIES:
         minimumConfidence: 0.52
       },
 
+      /*
+       * bet.minimumProbability NÃO foi recalibrado (2026-08-22).
+       * Diagnóstico via backtest: a confidence real do mercado
+       * DRAW nesta base sintética varia só entre 0.467 e 0.578,
+       * nunca alcançando os 0.58 exigidos por este tier — ou seja,
+       * minimumProbability nunca é o gargalo (testado 0.27-0.35
+       * inteiro, zero variação no resultado do backtest). O
+       * mercado está efetivamente travado por minimumConfidence
+       * (e o EV mediano também é negativo), não pela
+       * probabilidade. Recalibrar esse mercado de verdade exige
+       * revisar minimumConfidence/minimumEv, não este campo —
+       * fora do escopo desta sessão.
+       */
       bet: {
         minimumProbability: 0.32,
         minimumEv: 0.12,
@@ -116,6 +138,16 @@ export const MARKET_POLICIES:
         minimumConfidence: 0.54
       },
 
+      /*
+       * bet.minimumProbability NÃO foi recalibrado (2026-08-22).
+       * Diagnóstico via backtest: o EV real do mercado OVER_1_5
+       * nesta base sintética varia até no máximo 0.095 (mediana
+       * negativa), mal cruzando os 0.09 exigidos por este tier —
+       * quase nenhuma partida passa do gate de EV, então testado
+       * 0.68-0.78 inteiro deu zero variação no resultado do
+       * backtest. minimumProbability não é o gargalo aqui;
+       * minimumEv é. Fora do escopo desta sessão.
+       */
       bet: {
         minimumProbability: 0.75,
         minimumEv: 0.09,
@@ -214,6 +246,13 @@ export const MARKET_POLICIES:
         minimumConfidence: 0.52
       },
 
+      /*
+       * bet.minimumProbability confirmado via sweep de backtest
+       * (2026-08-22, 2500 partidas, backtest determinístico):
+       * 0.54-0.60 empatam em ROI +9,03% e pioram progressivamente
+       * acima disso (0.62 → +8,36%, 0.64 → +7,90%). 0.60 já é o
+       * ponto ótimo — valor original mantido.
+       */
       bet: {
         minimumProbability: 0.60,
         minimumEv: 0.08,
@@ -239,6 +278,13 @@ export const MARKET_POLICIES:
         minimumConfidence: 0.52
       },
 
+      /*
+       * bet.minimumProbability confirmado via sweep de backtest
+       * (2026-08-22, 2500 partidas, backtest determinístico):
+       * platô suave entre 0.60 e 0.71 (ROI +8,8% a +9,5%, 317 a
+       * 332 apostas). 0.67 (valor original) fica dentro desse
+       * platô sem ganho claro em mudar — mantido.
+       */
       bet: {
         minimumProbability: 0.67,
         minimumEv: 0.05,

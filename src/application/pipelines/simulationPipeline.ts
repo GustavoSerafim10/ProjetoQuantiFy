@@ -244,7 +244,8 @@ const COMPARISON_CONFLICT_TOLERANCE = 0.005;
 
 export function simulationPipeline<TModel>(
   model: TModel,
-  simulations: number = DEFAULT_SIMULATIONS
+  simulations: number = DEFAULT_SIMULATIONS,
+  random?: () => number
 ): TModel & SimulationPipelineResult {
   const modelRecord = asRecord(model);
 
@@ -259,7 +260,9 @@ export function simulationPipeline<TModel>(
       ["lambdaAway"]
     ) as number,
 
-    simulations
+    simulations,
+
+    ...(random ? { random } : {})
   });
 
   const analyticalProbabilities =

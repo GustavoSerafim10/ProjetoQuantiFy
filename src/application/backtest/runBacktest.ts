@@ -1,4 +1,9 @@
-import { generateHistoricalMatches } from "../../domain/simulation/matchGenerator";
+import seedrandom from "seedrandom";
+
+import {
+  generateHistoricalMatches,
+  resetMatchGeneratorSeed
+} from "../../domain/simulation/matchGenerator";
 
 import { modelPipeline } from "../pipelines/modelPipeline";
 import { simulationPipeline } from "../pipelines/simulationPipeline";
@@ -58,12 +63,19 @@ export function resolveBet(
 =============================== */
 export interface RunBacktestOptions {
   /*
-   * Controla apenas o comparador diagnóstico interno do
-   * simulationPipeline (campo `monteCarlo`), que não é lido por
-   * correlationPipeline/decisionPipeline nesta cadeia — só por
-   * riskPipeline/confidencePipeline, que não são chamados aqui. Por
-   * isso pode ficar bem menor que os 50.000 usados na análise ao
-   * vivo sem alterar nenhum resultado de aposta do backtest.
+   * NOTA (2026-08-22): este comentário estava errado — dizia que
+   * confidencePipeline "não é chamado aqui", mas é (linha do loop
+   * abaixo). confidencePipeline lê `monteCarlo.probabilities` e
+   * penaliza `confidence` quando a simulação diverge do modelo
+   * analítico; `confidence` decide classificação (BET/ELITE/...).
+   * Antes da correção abaixo, isso tornava o backtest inteiro
+   * não-determinístico: o mesmo threshold rodado duas vezes podia
+   * dar contagens de aposta e ROI diferentes, porque monteCarloPoisson
+   * usa Math.random() sem seed por padrão. runBacktest() agora passa
+   * um RNG seedado (ver `monteCarloRandom` abaixo), então o valor
+   * aqui pode continuar bem menor que os 50.000 da análise ao vivo
+   * sem introduzir ruído — a diferença passa a ser só velocidade,
+   * não mais reprodutibilidade.
    */
   monteCarloSimulations?: number;
 
@@ -105,10 +117,35 @@ export function runBacktest(
   const bankrollHistory: number[] = [];
   const betHistory: any[] = [];
 
+  /*
+   * Reproducibilidade: sem isso, chamadas sucessivas de
+   * runBacktest() no mesmo processo (ex.: comparar dois
+   * thresholds, ou os multiplos it() de um sweep) avancam o
+   * RNG compartilhado do matchGenerator e cada uma acaba
+   * comparando um lote DIFERENTE de partidas sinteticas -
+   * invalidando a comparacao. resetMatchGeneratorSeed() garante
+   * que toda chamada comeca do mesmo ponto da sequencia.
+   */
+  resetMatchGeneratorSeed();
+
   const matches =
     generateHistoricalMatches(simulations);
 
-  for (const match of matches) {
+  /*
+   * Idem para a simulacao Monte Carlo: monteCarloPoisson usa
+   * Math.random() por padrao (nao seedado), e confidencePipeline
+   * usa a divergencia entre a probabilidade analitica e a da
+   * simulacao para penalizar confidence - que por sua vez decide
+   * classificacao (BET/ELITE/...). Sem seed, o mesmo threshold
+   * podia gerar contagens de aposta e ROI diferentes a cada
+   * execucao. Um gerador seedado, criado uma vez por chamada de
+   * runBacktest() e reutilizado em sequencia por todas as
+   * partidas, torna o resultado inteiro deterministico.
+   */
+  const monteCarloRandom =
+    seedrandom("quantify-backtest-montecarlo-v1");
+
+  for (const [matchIndex, match] of matches.entries()) {
     /* ===========================
        1️⃣ MODEL
     ============================ */
@@ -118,7 +155,11 @@ export function runBacktest(
        2️⃣ MONTE CARLO
     ============================ */
     const simulated =
-      simulationPipeline(model, monteCarloSimulations);
+      simulationPipeline(
+        model,
+        monteCarloSimulations,
+        monteCarloRandom
+      );
 
     /* ===========================
        3️⃣ PROBABILIDADES OFICIAIS
@@ -169,9 +210,7 @@ export function runBacktest(
         ...ranked,
         evFloor,
         marketPolicyOverrides,
-        match: `Match_${Math.random()
-          .toString(36)
-          .slice(2, 6)}`
+        match: `Match_${matchIndex}`
       });
 
     const best = decision?.best;
