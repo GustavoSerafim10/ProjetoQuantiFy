@@ -40,6 +40,38 @@ describe("kellyCriterion", () => {
     expect(kellyCriterion(0.6, NaN)).toBe(0);
     expect(kellyCriterion(0.6, Infinity)).toBe(0);
   });
+
+  /*
+   * DNB (Empate Anula): a fração ótima de log-crescimento para uma
+   * aposta com 3 resultados (ganha/perde/anula) é
+   *   f* = (p_win*b - p_lose) / (b*(p_win + p_lose))
+   * porque o resultado ANULA contribui ln(1)=0 e não participa da
+   * otimização. Substituindo p_win = p_cond*(1-p_void) e
+   * p_lose = (1-p_cond)*(1-p_void), o fator (1-p_void) cancela e
+   * f* vira exatamente kellyCriterion(p_cond, odd) — ou seja, o
+   * Kelly padrão já é a fórmula correta para DNB sem nenhum ajuste,
+   * mesmo que o mercado tenha um terceiro resultado.
+   */
+  it("matches the direct 3-outcome (win/lose/void) Kelly formula for a DNB-style bet", () => {
+    const pHome = 0.5;
+    const pDraw = 0.25;
+    const pAway = 0.25;
+    const odd = 2.2;
+    const b = odd - 1;
+
+    expect(pHome + pDraw + pAway).toBeCloseTo(1, 6);
+
+    const pConditional = pHome / (pHome + pAway);
+
+    const directThreeOutcomeKelly =
+      (pHome * b - pAway) / (b * (pHome + pAway));
+
+    // kellyCriterion arredonda para 4 casas decimais internamente.
+    expect(kellyCriterion(pConditional, odd)).toBeCloseTo(
+      directThreeOutcomeKelly,
+      3
+    );
+  });
 });
 
 describe("halfKelly / quarterKelly", () => {

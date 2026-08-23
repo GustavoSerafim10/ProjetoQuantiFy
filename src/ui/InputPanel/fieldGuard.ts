@@ -86,11 +86,17 @@ const FORM_FIELDS =
     "oddOver15",
     "oddOver25",
 
+    "oddUnder15",
+    "oddUnder25",
+
     "oddBTTSYes",
     "oddBTTSNo",
 
     "odd1X",
-    "oddX2"
+    "oddX2",
+
+    "oddDnbHome",
+    "oddDnbAway"
   ]);
 
 export function isFormField(

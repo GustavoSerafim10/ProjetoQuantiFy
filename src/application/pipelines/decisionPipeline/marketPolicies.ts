@@ -361,6 +361,138 @@ export const MARKET_POLICIES:
         maximumRisk: 0.46,
         minimumConfidence: 0.67
       }
+    },
+
+    /*
+     * PLACEHOLDER NÃO CALIBRADO (2026-08-22).
+     *
+     * Mercado novo (Under 1.5) — thresholds de ev/risk/
+     * confidence copiados de OVER_1_5 (mesma dimensão de
+     * qualidade de sinal). minimumOdd/minimumProbability
+     * recalculados a partir da taxa-base invertida (Under 1.5
+     * costuma ter probabilidade bem mais baixa que Over 1.5 em
+     * ligas de gol normal, logo odd mais alta). Pendente de
+     * sweep de backtest como HOME/BTTS_NO/DOUBLE_CHANCE_1X.
+     */
+    UNDER_1_5: {
+      minimumOdd: 2.00,
+
+      watchlist: {
+        minimumProbability: 0.28,
+        minimumEv: 0.04,
+        maximumRisk: 0.62,
+        minimumConfidence: 0.54
+      },
+
+      bet: {
+        minimumProbability: 0.32,
+        minimumEv: 0.09,
+        maximumRisk: 0.55,
+        minimumConfidence: 0.60
+      },
+
+      elite: {
+        minimumProbability: 0.38,
+        minimumEv: 0.14,
+        maximumRisk: 0.50,
+        minimumConfidence: 0.66
+      }
+    },
+
+    /*
+     * PLACEHOLDER NÃO CALIBRADO (2026-08-22).
+     * Mesma lógica do UNDER_1_5 acima, espelhando OVER_2_5.
+     */
+    UNDER_2_5: {
+      minimumOdd: 1.70,
+
+      watchlist: {
+        minimumProbability: 0.40,
+        minimumEv: 0.04,
+        maximumRisk: 0.65,
+        minimumConfidence: 0.52
+      },
+
+      bet: {
+        minimumProbability: 0.45,
+        minimumEv: 0.08,
+        maximumRisk: 0.58,
+        minimumConfidence: 0.58
+      },
+
+      elite: {
+        minimumProbability: 0.55,
+        minimumEv: 0.13,
+        maximumRisk: 0.53,
+        minimumConfidence: 0.63
+      }
+    },
+
+    /*
+     * PLACEHOLDER NÃO CALIBRADO (2026-08-22).
+     *
+     * Mercado novo (Empate Anula Casa). Thresholds herdados de
+     * DOUBLE_CHANCE_1X: ambos são mercados "mais seguros" que
+     * removem risco de empate, mesma lógica direcional na
+     * confidenceEngine. minimumProbability aqui é a
+     * probabilidade condicional (dado que não empata) — o
+     * desconto pela anulação já acontece no EV (valuePipeline),
+     * não neste threshold. Pendente de sweep de backtest.
+     */
+    DNB_HOME: {
+      minimumOdd: 1.35,
+
+      watchlist: {
+        minimumProbability: 0.55,
+        minimumEv: 0.025,
+        maximumRisk: 0.64,
+        minimumConfidence: 0.52
+      },
+
+      bet: {
+        minimumProbability: 0.60,
+        minimumEv: 0.05,
+        maximumRisk: 0.57,
+        minimumConfidence: 0.58
+      },
+
+      elite: {
+        minimumProbability: 0.65,
+        minimumEv: 0.08,
+        maximumRisk: 0.52,
+        minimumConfidence: 0.63
+      }
+    },
+
+    /*
+     * PLACEHOLDER NÃO CALIBRADO (2026-08-22).
+     * Mesma lógica do DNB_HOME acima; minimumProbability do
+     * tier bet um pouco menor, espelhando a assimetria já
+     * existente entre DOUBLE_CHANCE_1X (0.67) e X2 (0.55).
+     */
+    DNB_AWAY: {
+      minimumOdd: 1.35,
+
+      watchlist: {
+        minimumProbability: 0.55,
+        minimumEv: 0.025,
+        maximumRisk: 0.64,
+        minimumConfidence: 0.52
+      },
+
+      bet: {
+        minimumProbability: 0.50,
+        minimumEv: 0.05,
+        maximumRisk: 0.57,
+        minimumConfidence: 0.58
+      },
+
+      elite: {
+        minimumProbability: 0.65,
+        minimumEv: 0.08,
+        maximumRisk: 0.52,
+        minimumConfidence: 0.63
+      }
     }
   };
 

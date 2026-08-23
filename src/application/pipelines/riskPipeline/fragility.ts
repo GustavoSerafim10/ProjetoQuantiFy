@@ -133,6 +133,31 @@ export function addMarketFragilityComponents({
     }
 
     if (
+      (
+        marketType === "UNDER_1_5" ||
+        marketType === "UNDER_2_5"
+      ) &&
+      goalExpectationScore >
+        STRUCTURE_THRESHOLDS
+          .highGoalScore
+    ) {
+      components.push({
+        source:
+          "CONTEXT_GOAL_SCORE_CONTRADICTS_UNDER",
+
+        category:
+          "CONTEXT",
+
+        adjustment:
+          RISK_POLICY
+            .goalScoreContradictsUnder,
+
+        warning:
+          "GOAL_SCORE_CONTRADICTS_UNDER_MARKET"
+      });
+    }
+
+    if (
       marketType === "BTTS_YES" &&
       goalExpectationScore <
         STRUCTURE_THRESHOLDS
@@ -303,6 +328,25 @@ export function addMarketFragilityComponents({
 
         warning:
           "BALANCED_GAME_BTTS_NO_RISK"
+      });
+    }
+
+    if (
+      marketType === "DNB"
+    ) {
+      components.push({
+        source:
+          "CONTEXT_BALANCED_DNB",
+
+        category:
+          "CONTEXT",
+
+        adjustment:
+          RISK_POLICY
+            .balancedDnb,
+
+        warning:
+          "BALANCED_GAME_DNB_RISK"
       });
     }
   }

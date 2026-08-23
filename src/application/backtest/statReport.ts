@@ -10,11 +10,19 @@ export interface BetRecord {
 
   ev?: number;
   probability?: number;
+
+  /*
+   * Ausente = tratado como resultado binário legado
+   * (profit > 0 é vitória). Mercados com anulação (DNB)
+   * sempre preenchem este campo.
+   */
+  outcome?: "WIN" | "LOSS" | "VOID";
 }
 
 interface Aggregated {
   bets: number;
   wins: number;
+  voids: number;
 
   totalStake: number;
   totalProfit: number;
@@ -29,6 +37,7 @@ function createEmpty(): Aggregated {
   return {
     bets: 0,
     wins: 0,
+    voids: 0,
 
     totalStake: 0,
     totalProfit: 0,
@@ -38,6 +47,46 @@ function createEmpty(): Aggregated {
 
     probabilities: []
   };
+}
+
+/*
+ * Acumulação compartilhada entre os agrupamentos (por
+ * mercado, por tipo, por classificação, por faixa de odd
+ * e geral) — evita repetir a mesma lógica em 4 lugares e
+ * esquecer o tratamento de VOID em algum deles.
+ */
+function accumulate(
+  data: Aggregated,
+  bet: BetRecord
+): void {
+  data.bets++;
+  data.totalStake += bet.stake;
+  data.totalProfit += bet.profit;
+
+  data.totalOdds += bet.odd;
+  data.totalEV += bet.ev ?? 0;
+
+  if (bet.outcome === "VOID") {
+    data.voids++;
+  } else if (bet.profit > 0) {
+    data.wins++;
+  }
+
+  /*
+   * A probabilidade de um mercado com anulação é
+   * condicional (dado que não anula) — misturá-la com o
+   * winRate sem excluir os voids do denominador
+   * distorceria calibrationError. Por isso voids não
+   * entram em `probabilities`.
+   */
+  if (
+    bet.probability !== undefined &&
+    bet.outcome !== "VOID"
+  ) {
+    data.probabilities.push(
+      bet.probability
+    );
+  }
 }
 
 /* ===========================
@@ -51,9 +100,17 @@ function computeStats(data: Aggregated) {
       ? data.totalProfit / data.totalStake
       : 0;
 
+  const decidedBets =
+    data.bets - data.voids;
+
   const winRate =
+    decidedBets > 0
+      ? data.wins / decidedBets
+      : 0;
+
+  const voidRate =
     data.bets > 0
-      ? data.wins / data.bets
+      ? data.voids / data.bets
       : 0;
 
   const avgOdd =
@@ -91,9 +148,11 @@ function computeStats(data: Aggregated) {
 
   return {
     bets: data.bets,
+    voids: data.voids,
 
     roi,
     winRate,
+    voidRate,
 
     avgOdd,
     avgEV,
@@ -150,26 +209,10 @@ export function generateStatReport(
         group[key] = createEmpty();
       }
 
-      const data = group[key];
-
-      data.bets++;
-      data.totalStake += bet.stake;
-      data.totalProfit += bet.profit;
-
-      data.totalOdds += bet.odd;
-      data.totalEV += bet.ev ?? 0;
-
-      if (bet.profit > 0) {
-        data.wins++;
-      }
-
-      if (
-        bet.probability !== undefined
-      ) {
-        data.probabilities.push(
-          bet.probability
-        );
-      }
+      accumulate(
+        group[key],
+        bet
+      );
     }
 
     /* ===========================
@@ -188,27 +231,10 @@ export function generateStatReport(
             createEmpty();
         }
 
-        const data =
-          byOddsRange[bucket.label];
-
-        data.bets++;
-        data.totalStake += bet.stake;
-        data.totalProfit += bet.profit;
-
-        data.totalOdds += bet.odd;
-        data.totalEV += bet.ev ?? 0;
-
-        if (bet.profit > 0) {
-          data.wins++;
-        }
-
-        if (
-          bet.probability !== undefined
-        ) {
-          data.probabilities.push(
-            bet.probability
-          );
-        }
+        accumulate(
+          byOddsRange[bucket.label],
+          bet
+        );
       }
     }
   }
@@ -226,33 +252,14 @@ export function generateStatReport(
     return out;
   };
 
+  const overall = createEmpty();
+
+  for (const bet of betHistory) {
+    accumulate(overall, bet);
+  }
+
   return {
-    overall: computeStats(
-      betHistory.reduce(
-        (acc, bet) => {
-          acc.bets++;
-          acc.totalStake += bet.stake;
-          acc.totalProfit += bet.profit;
-          acc.totalOdds += bet.odd;
-          acc.totalEV += bet.ev ?? 0;
-
-          if (bet.profit > 0) {
-            acc.wins++;
-          }
-
-          if (
-            bet.probability !== undefined
-          ) {
-            acc.probabilities.push(
-              bet.probability
-            );
-          }
-
-          return acc;
-        },
-        createEmpty()
-      )
-    ),
+    overall: computeStats(overall),
 
     byClassification:
       format(byClassification),

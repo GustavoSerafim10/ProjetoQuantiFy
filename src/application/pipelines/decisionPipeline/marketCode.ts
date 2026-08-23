@@ -37,6 +37,16 @@ export function parseDecisionMarket(
     case "OVER 2.5":
       return "OVER_2_5";
 
+    case "UNDER_1_5":
+    case "UNDER15":
+    case "UNDER 1.5":
+      return "UNDER_1_5";
+
+    case "UNDER_2_5":
+    case "UNDER25":
+    case "UNDER 2.5":
+      return "UNDER_2_5";
+
     case "BTTS_YES":
     case "BTTS YES":
       return "BTTS_YES";
@@ -52,6 +62,14 @@ export function parseDecisionMarket(
     case "DOUBLE_CHANCE_X2":
     case "X2":
       return "DOUBLE_CHANCE_X2";
+
+    case "DNB_HOME":
+    case "DNB1":
+      return "DNB_HOME";
+
+    case "DNB_AWAY":
+    case "DNB2":
+      return "DNB_AWAY";
 
     default:
       return null;

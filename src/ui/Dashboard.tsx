@@ -158,8 +158,14 @@ const MARKET_LABELS: Record<MarketCode, string> = {
   OVER_1_5: "⚽ Mais de 1.5 Gols",
   OVER_2_5: "⚽ Mais de 2.5 Gols",
 
+  UNDER_1_5: "🥅 Menos de 1.5 Gols",
+  UNDER_2_5: "🥅 Menos de 2.5 Gols",
+
   BTTS_YES: "🎯 Ambas Marcam – Sim",
-  BTTS_NO: "🚫 Ambas Marcam – Não"
+  BTTS_NO: "🚫 Ambas Marcam – Não",
+
+  DNB_HOME: "🏠🛡️ Empate Anula (Casa)",
+  DNB_AWAY: "✈️🛡️ Empate Anula (Fora)"
 };
 
 function isMarketCode(

@@ -10,7 +10,11 @@ export type MarketCode =
   | "AWAY"
   | "OVER_1_5"
   | "OVER_2_5"
+  | "UNDER_1_5"
+  | "UNDER_2_5"
   | "BTTS_YES"
   | "BTTS_NO"
   | "DOUBLE_CHANCE_1X"
-  | "DOUBLE_CHANCE_X2";
+  | "DOUBLE_CHANCE_X2"
+  | "DNB_HOME"
+  | "DNB_AWAY";

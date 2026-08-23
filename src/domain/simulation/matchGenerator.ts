@@ -382,6 +382,9 @@ export function generateHistoricalMatches(
       "OVER_2_5":
         safeOdd(ou25.over),
 
+      "UNDER_1_5":
+        safeOdd(ou15.under),
+
       "UNDER_2_5":
         safeOdd(ou25.under),
 
@@ -401,6 +404,18 @@ export function generateHistoricalMatches(
         safeOdd(
           matchProbs.awayWin +
           matchProbs.draw
+        ),
+
+      "DNB_HOME":
+        safeOdd(
+          matchProbs.homeWin /
+          (matchProbs.homeWin + matchProbs.awayWin)
+        ),
+
+      "DNB_AWAY":
+        safeOdd(
+          matchProbs.awayWin /
+          (matchProbs.homeWin + matchProbs.awayWin)
         )
     };
 

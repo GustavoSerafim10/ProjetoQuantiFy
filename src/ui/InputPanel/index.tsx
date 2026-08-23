@@ -798,6 +798,22 @@ export default function InputPanel({
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
             <OddInput
+              name="oddUnder15"
+              placeholder="Under 1.5"
+              form={form}
+              onChange={handleChange}
+            />
+
+            <OddInput
+              name="oddUnder25"
+              placeholder="Under 2.5"
+              form={form}
+              onChange={handleChange}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+            <OddInput
               name="oddBTTSYes"
               placeholder="BTTS Sim"
               form={form}
@@ -823,6 +839,22 @@ export default function InputPanel({
             <OddInput
               name="oddX2"
               placeholder="X2 (Fora/Empate)"
+              form={form}
+              onChange={handleChange}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+            <OddInput
+              name="oddDnbHome"
+              placeholder="Empate Anula (Casa)"
+              form={form}
+              onChange={handleChange}
+            />
+
+            <OddInput
+              name="oddDnbAway"
+              placeholder="Empate Anula (Fora)"
               form={form}
               onChange={handleChange}
             />

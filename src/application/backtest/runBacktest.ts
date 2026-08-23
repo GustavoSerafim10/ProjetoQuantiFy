@@ -26,6 +26,15 @@ import type { MarketPolicyOverrides } from "../pipelines/decisionPipeline";
 /* ===============================
    🧠 RESULT ENGINE
 =============================== */
+
+/*
+ * WIN/LOSS/VOID: a maioria dos mercados só tem dois
+ * resultados possíveis, mas Empate Anula (DNB) tem três —
+ * se o jogo empata, a aposta é anulada (stake devolvido,
+ * sem ganho nem perda). Por isso o retorno não é boolean.
+ */
+export type BetOutcome = "WIN" | "LOSS" | "VOID";
+
 export function resolveBet(
   market: MarketCode | string,
   match: {
@@ -34,27 +43,36 @@ export function resolveBet(
       awayGoals: number;
     };
   }
-) {
+): BetOutcome {
   const home = match.result.homeGoals || 0;
   const away = match.result.awayGoals || 0;
   const total = home + away;
 
   switch (market) {
-    case "HOME": return home > away;
-    case "AWAY": return away > home;
-    case "DRAW": return home === away;
+    case "HOME": return home > away ? "WIN" : "LOSS";
+    case "AWAY": return away > home ? "WIN" : "LOSS";
+    case "DRAW": return home === away ? "WIN" : "LOSS";
 
-    case "DOUBLE_CHANCE_1X": return home >= away;
-    case "DOUBLE_CHANCE_X2": return away >= home;
+    case "DOUBLE_CHANCE_1X": return home >= away ? "WIN" : "LOSS";
+    case "DOUBLE_CHANCE_X2": return away >= home ? "WIN" : "LOSS";
 
-    case "OVER_1_5": return total > 1.5;
-    case "OVER_2_5": return total > 2.5;
-    case "UNDER_2_5": return total < 2.5;
+    case "OVER_1_5": return total > 1.5 ? "WIN" : "LOSS";
+    case "OVER_2_5": return total > 2.5 ? "WIN" : "LOSS";
+    case "UNDER_1_5": return total < 1.5 ? "WIN" : "LOSS";
+    case "UNDER_2_5": return total < 2.5 ? "WIN" : "LOSS";
 
-    case "BTTS_YES": return home > 0 && away > 0;
-    case "BTTS_NO": return !(home > 0 && away > 0);
+    case "BTTS_YES": return home > 0 && away > 0 ? "WIN" : "LOSS";
+    case "BTTS_NO": return !(home > 0 && away > 0) ? "WIN" : "LOSS";
 
-    default: return false;
+    case "DNB_HOME":
+      if (home === away) return "VOID";
+      return home > away ? "WIN" : "LOSS";
+
+    case "DNB_AWAY":
+      if (home === away) return "VOID";
+      return away > home ? "WIN" : "LOSS";
+
+    default: return "LOSS";
   }
 }
 
@@ -110,6 +128,7 @@ export function runBacktest(
   let totalBets = 0;
   let wins = 0;
   let losses = 0;
+  let voids = 0;
 
   let totalStaked = 0;
   let totalProfit = 0;
@@ -246,23 +265,38 @@ export function runBacktest(
     }
 
     totalBets++;
+    /*
+     * totalStaked inclui o stake de apostas anuladas
+     * (VOID) — convenção padrão de ROI por giro/turnover:
+     * o capital foi de fato colocado em jogo, mesmo que
+     * devolvido depois. Decisão explícita, não descuido.
+     */
     totalStaked += stake;
 
     /* ===========================
        RESULTADO REAL
     ============================ */
-    const win =
+    const outcome =
       resolveBet(best.market, match);
 
     let profit = 0;
 
-    if (win) {
+    if (outcome === "WIN") {
       profit =
         stake * (best.odd - 1);
 
       bankroll += profit;
       totalProfit += profit;
       wins++;
+    } else if (outcome === "VOID") {
+      /*
+       * Empate anula: stake devolvido integralmente.
+       * Não mexe em bankroll/totalProfit, não conta como
+       * vitória nem derrota.
+       */
+      profit = 0;
+
+      voids++;
     } else {
       profit = -stake;
 
@@ -286,7 +320,8 @@ betHistory.push({
   ev: best.ev,
 
   stake,
-  profit
+  profit,
+  outcome
 });
 
     /* ===========================
@@ -319,6 +354,7 @@ betHistory.push({
     totalBets,
     wins,
     losses,
+    voids,
 
     totalStaked,
     totalProfit,

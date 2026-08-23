@@ -210,6 +210,14 @@ export function getSimulationAliases(
     case "OVER25":
       return ["OVER_2_5", "over25"];
 
+    case "UNDER_1_5":
+    case "UNDER15":
+      return ["UNDER_1_5", "under15"];
+
+    case "UNDER_2_5":
+    case "UNDER25":
+      return ["UNDER_2_5", "under25"];
+
     case "BTTS_YES":
       return ["BTTS_YES", "bttsYes"];
 
@@ -223,6 +231,14 @@ export function getSimulationAliases(
     case "DOUBLE_CHANCE_X2":
     case "X2":
       return ["DOUBLE_CHANCE_X2", "doubleChanceX2", "xTwo"];
+
+    case "DNB_HOME":
+    case "DNB1":
+      return ["DNB_HOME", "dnbHome"];
+
+    case "DNB_AWAY":
+    case "DNB2":
+      return ["DNB_AWAY", "dnbAway"];
 
     default:
       return [];

@@ -38,6 +38,7 @@ import {
 export type SimulationMarket =
   | "OVER_1_5"
   | "OVER_2_5"
+  | "UNDER_1_5"
   | "UNDER_2_5"
   | "BTTS_YES"
   | "BTTS_NO"
@@ -45,7 +46,9 @@ export type SimulationMarket =
   | "DRAW"
   | "AWAY_WIN"
   | "DOUBLE_CHANCE_1X"
-  | "DOUBLE_CHANCE_X2";
+  | "DOUBLE_CHANCE_X2"
+  | "DNB_HOME"
+  | "DNB_AWAY";
 
 export type AnalyticalProbabilitySource =
   | "markets"
@@ -56,6 +59,7 @@ export type AnalyticalProbabilitySource =
   | "legacy"
   | "complement"
   | "sum"
+  | "ratio"
   | "missing";
 
 export interface ProbabilityInterval95 {
@@ -215,6 +219,7 @@ interface AnalyticalProbabilityMap {
 
   over15: ResolvedAnalyticalProbability;
   over25: ResolvedAnalyticalProbability;
+  under15: ResolvedAnalyticalProbability;
   under25: ResolvedAnalyticalProbability;
 
   bttsYes: ResolvedAnalyticalProbability;
@@ -222,6 +227,9 @@ interface AnalyticalProbabilityMap {
 
   doubleChance1X: ResolvedAnalyticalProbability;
   doubleChanceX2: ResolvedAnalyticalProbability;
+
+  dnbHome: ResolvedAnalyticalProbability;
+  dnbAway: ResolvedAnalyticalProbability;
 }
 
 interface ProbabilityCandidate {
@@ -782,6 +790,27 @@ function extractAnalyticalProbabilities(
     )
   ]);
 
+  const explicitUnder15 = resolveProbability([
+    candidate(
+      model,
+      ["markets", "under15"],
+      "markets"
+    ),
+    candidate(
+      model,
+      ["goals", "under15"],
+      "goals"
+    )
+  ]);
+
+  const under15 =
+    explicitUnder15.value !== null
+      ? explicitUnder15
+      : deriveComplement(
+          over15,
+          "goals.over15"
+        );
+
   const explicitUnder25 = resolveProbability([
     candidate(
       model,
@@ -923,17 +952,54 @@ function extractAnalyticalProbabilities(
           "result.draw + result.away"
         );
 
+  const explicitDnbHome = resolveProbability([
+    candidate(
+      model,
+      ["markets", "dnbHome"],
+      "markets"
+    )
+  ]);
+
+  const dnbHome =
+    explicitDnbHome.value !== null
+      ? explicitDnbHome
+      : deriveRatio(
+          homeWin,
+          awayWin,
+          "result.home / (result.home + result.away)"
+        );
+
+  const explicitDnbAway = resolveProbability([
+    candidate(
+      model,
+      ["markets", "dnbAway"],
+      "markets"
+    )
+  ]);
+
+  const dnbAway =
+    explicitDnbAway.value !== null
+      ? explicitDnbAway
+      : deriveRatio(
+          awayWin,
+          homeWin,
+          "result.away / (result.home + result.away)"
+        );
+
   return {
     homeWin,
     draw,
     awayWin,
     over15,
     over25,
+    under15,
     under25,
     bttsYes,
     bttsNo,
     doubleChance1X,
-    doubleChanceX2
+    doubleChanceX2,
+    dnbHome,
+    dnbAway
   };
 }
 
@@ -1073,6 +1139,49 @@ function deriveSum(
   };
 }
 
+/*
+ * Probabilidade condicional a/(a+b) — usada pelo DNB
+ * (Empate Anula): probabilidade de vitória do lado
+ * escolhido dado que a partida não termina empatada.
+ */
+function deriveRatio(
+  numerator: ResolvedAnalyticalProbability,
+  denominatorOther: ResolvedAnalyticalProbability,
+  path: string
+): ResolvedAnalyticalProbability {
+  if (
+    numerator.value === null ||
+    denominatorOther.value === null
+  ) {
+    return createMissingProbability();
+  }
+
+  const denominator =
+    numerator.value +
+    denominatorOther.value;
+
+  if (denominator <= 0) {
+    return createMissingProbability();
+  }
+
+  return {
+    value:
+      clampProbability(
+        numerator.value /
+        denominator
+      ),
+
+    source: "ratio",
+    path,
+
+    conflictDetected:
+      numerator.conflictDetected ||
+      denominatorOther.conflictDetected,
+
+    alternatives: []
+  };
+}
+
 function createMissingProbability():
   ResolvedAnalyticalProbability {
   return {
@@ -1108,6 +1217,22 @@ function buildModelComparison(
       probabilities.over25,
       simulation.samplingError.over25,
       simulation.confidenceInterval95.over25
+    ),
+
+    /*
+     * O monteCarloAdapter ainda não simula under15/dnbHome/
+     * dnbAway diretamente (só under25/doubleChance1X/X2
+     * hoje) — comparação Monte Carlo fica indisponível para
+     * esses 3 mercados (degrada para monteCarlo:0,
+     * samplingError:null dentro de compareProbability, sem
+     * quebrar nada; este pipeline é só diagnóstico, não
+     * autoritativo).
+     */
+    UNDER_1_5: compareProbability(
+      analytical.under15,
+      undefined,
+      undefined,
+      undefined
     ),
 
     UNDER_2_5: compareProbability(
@@ -1164,6 +1289,20 @@ function buildModelComparison(
       probabilities.doubleChanceX2,
       simulation.samplingError.doubleChanceX2,
       simulation.confidenceInterval95.doubleChanceX2
+    ),
+
+    DNB_HOME: compareProbability(
+      analytical.dnbHome,
+      undefined,
+      undefined,
+      undefined
+    ),
+
+    DNB_AWAY: compareProbability(
+      analytical.dnbAway,
+      undefined,
+      undefined,
+      undefined
     )
   };
 }

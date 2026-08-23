@@ -39,10 +39,14 @@ export type ConfidenceMarket =
   | "AWAY"
   | "OVER_1_5"
   | "OVER_2_5"
+  | "UNDER_1_5"
+  | "UNDER_2_5"
   | "BTTS_YES"
   | "BTTS_NO"
   | "DOUBLE_CHANCE_1X"
-  | "DOUBLE_CHANCE_X2";
+  | "DOUBLE_CHANCE_X2"
+  | "DNB_HOME"
+  | "DNB_AWAY";
 
 export interface MarketConfidenceInput {
   probability: number;
@@ -399,7 +403,8 @@ function buildStructuralMetrics(
 
   if (
     market === "HOME" ||
-    market === "DOUBLE_CHANCE_1X"
+    market === "DOUBLE_CHANCE_1X" ||
+    market === "DNB_HOME"
   ) {
     directionalAdvantage =
       lambdaHome - lambdaAway;
@@ -407,7 +412,8 @@ function buildStructuralMetrics(
 
   if (
     market === "AWAY" ||
-    market === "DOUBLE_CHANCE_X2"
+    market === "DOUBLE_CHANCE_X2" ||
+    market === "DNB_AWAY"
   ) {
     directionalAdvantage =
       lambdaAway - lambdaHome;
@@ -555,6 +561,17 @@ function addMarketStructureComponents({
       });
       return;
 
+    case "UNDER_1_5":
+    case "UNDER_2_5":
+      addUnderStructure({
+        components,
+        market,
+        totalLambda: metrics.totalLambda,
+        goalExpectationScore,
+        contextualGoalExpectationScore
+      });
+      return;
+
     case "BTTS_YES":
       addBttsYesStructure({
         components,
@@ -599,6 +616,18 @@ function addMarketStructureComponents({
     case "DOUBLE_CHANCE_1X":
     case "DOUBLE_CHANCE_X2":
       addDoubleChanceStructure({
+        components,
+        market,
+        lambdaHome,
+        lambdaAway,
+        directionalAdvantage:
+          metrics.directionalAdvantage as number
+      });
+      return;
+
+    case "DNB_HOME":
+    case "DNB_AWAY":
+      addDnbStructure({
         components,
         market,
         lambdaHome,
@@ -690,6 +719,92 @@ function addOverStructure({
       market === "OVER_1_5"
         ? 0.52
         : 0.57,
+    weight: 0.06,
+    minimum: -0.020,
+    maximum: 0.025
+  });
+}
+
+/*
+ * Espelha addOverStructure com sinal invertido: totalLambda
+ * mais baixo (menos gols esperados) é o sinal alinhado para
+ * Under, não penalidade. Segue o mesmo padrão de inversão
+ * que addBttsNoStructure já usa contra addBttsYesStructure
+ * (goalExpectationScore vira 1 - score).
+ */
+function addUnderStructure({
+  components,
+  market,
+  totalLambda,
+  goalExpectationScore,
+  contextualGoalExpectationScore
+}: {
+  components: MarketConfidenceComponent[];
+  market: "UNDER_1_5" | "UNDER_2_5";
+  totalLambda: number;
+  goalExpectationScore: number | null;
+  contextualGoalExpectationScore: number | null;
+}) {
+  if (market === "UNDER_1_5") {
+    addComponent(
+      components,
+      "STRUCTURE_UNDER_1_5_TOTAL_LAMBDA",
+      clamp(
+        (2.20 - totalLambda) * 0.065,
+        -0.060,
+        0.070
+      )
+    );
+  }
+
+  if (market === "UNDER_2_5") {
+    addComponent(
+      components,
+      "STRUCTURE_UNDER_2_5_TOTAL_LAMBDA",
+      clamp(
+        (2.65 - totalLambda) * 0.075,
+        -0.075,
+        0.080
+      )
+    );
+  }
+
+  addGoalExpectationComponent({
+    components,
+    source:
+      market === "UNDER_1_5"
+        ? "STRUCTURE_UNDER_1_5_GOAL_SCORE"
+        : "STRUCTURE_UNDER_2_5_GOAL_SCORE",
+    score:
+      goalExpectationScore === null
+        ? null
+        : 1 - goalExpectationScore,
+    neutralPoint:
+      market === "UNDER_1_5"
+        ? 0.48
+        : 0.43,
+    weight:
+      market === "UNDER_1_5"
+        ? 0.13
+        : 0.15,
+    minimum: -0.050,
+    maximum: 0.060
+  });
+
+  addGoalExpectationComponent({
+    components,
+    source:
+      market === "UNDER_1_5"
+        ? "STRUCTURE_UNDER_1_5_CONTEXTUAL_GOAL_SCORE"
+        : "STRUCTURE_UNDER_2_5_CONTEXTUAL_GOAL_SCORE",
+    score:
+      contextualGoalExpectationScore === null
+        ? null
+        : 1 - contextualGoalExpectationScore,
+    neutralPoint:
+      market === "UNDER_1_5"
+        ? 0.48
+        : 0.43,
     weight: 0.06,
     minimum: -0.020,
     maximum: 0.025
@@ -986,6 +1101,59 @@ function addDoubleChanceStructure({
   }
 }
 
+/*
+ * Reaproveita a mesma vantagem direcional de
+ * addDoubleChanceStructure (DNB é estruturalmente idêntico
+ * a Dupla Chance nesse eixo — só sem o componente do
+ * empate, já que aqui o empate anula em vez de ganhar).
+ */
+function addDnbStructure({
+  components,
+  market,
+  lambdaHome,
+  lambdaAway,
+  directionalAdvantage
+}: {
+  components: MarketConfidenceComponent[];
+  market:
+    | "DNB_HOME"
+    | "DNB_AWAY";
+  lambdaHome: number;
+  lambdaAway: number;
+  directionalAdvantage: number;
+}) {
+  addComponent(
+    components,
+    "STRUCTURE_DNB_DIRECTIONAL_ADVANTAGE",
+    clamp(
+      directionalAdvantage * 0.055,
+      -0.065,
+      0.060
+    )
+  );
+
+  const selectedLambda =
+    market === "DNB_HOME"
+      ? lambdaHome
+      : lambdaAway;
+
+  const opponentLambda =
+    market === "DNB_HOME"
+      ? lambdaAway
+      : lambdaHome;
+
+  if (
+    selectedLambda + 0.35 <
+    opponentLambda
+  ) {
+    addComponent(
+      components,
+      "STRUCTURE_DNB_WEAK_SELECTED_SIDE",
+      -0.050
+    );
+  }
+}
+
 function addGoalExpectationComponent({
   components,
   source,
@@ -1069,6 +1237,14 @@ function normalizeMarket(
     case "OVER25":
       return "OVER_2_5";
 
+    case "UNDER_1_5":
+    case "UNDER15":
+      return "UNDER_1_5";
+
+    case "UNDER_2_5":
+    case "UNDER25":
+      return "UNDER_2_5";
+
     case "BTTS_YES":
       return "BTTS_YES";
 
@@ -1082,6 +1258,14 @@ function normalizeMarket(
     case "DOUBLE_CHANCE_X2":
     case "X2":
       return "DOUBLE_CHANCE_X2";
+
+    case "DNB_HOME":
+    case "DNB1":
+      return "DNB_HOME";
+
+    case "DNB_AWAY":
+    case "DNB2":
+      return "DNB_AWAY";
 
     default:
       return null;

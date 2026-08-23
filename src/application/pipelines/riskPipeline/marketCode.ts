@@ -41,11 +41,25 @@ export function getMarketType(
     case "OVER25":
       return "OVER_2_5";
 
+    case "UNDER_1_5":
+    case "UNDER15":
+      return "UNDER_1_5";
+
+    case "UNDER_2_5":
+    case "UNDER25":
+      return "UNDER_2_5";
+
     case "BTTS_YES":
       return "BTTS_YES";
 
     case "BTTS_NO":
       return "BTTS_NO";
+
+    case "DNB_HOME":
+    case "DNB_AWAY":
+    case "DNB1":
+    case "DNB2":
+      return "DNB";
 
     default:
       return "OTHER";

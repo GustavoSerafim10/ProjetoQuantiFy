@@ -38,6 +38,30 @@ describe("expectedValue", () => {
     expect(expectedValue(0, 2.0)).toBeCloseTo(-1, 10);
     expect(expectedValue(1, 2.0)).toBeCloseTo(1, 10);
   });
+
+  it("defaults voidProbability to 0, matching the 2-arg call exactly (regression for the 9 pre-existing markets)", () => {
+    expect(expectedValue(0.6, 2.0, 0)).toBe(expectedValue(0.6, 2.0));
+    expect(expectedValue(0.42, 3.5, 0)).toBe(expectedValue(0.42, 3.5));
+  });
+
+  /*
+   * Empate Anula (DNB): EV = (1 - voidProbability) * (p*odd - 1).
+   * p = 0.6, odd = 2.0 -> raw p*odd-1 = 0.2; com 20% de chance de
+   * anulação, o EV real é 80% disso.
+   */
+  it("discounts EV by voidProbability for markets that can push", () => {
+    expect(expectedValue(0.6, 2.0, 0.2)).toBeCloseTo(0.16, 6);
+  });
+
+  it("returns NaN for an invalid voidProbability (must be in [0, 1))", () => {
+    expect(Number.isNaN(expectedValue(0.6, 2.0, -0.1))).toBe(true);
+    expect(Number.isNaN(expectedValue(0.6, 2.0, 1))).toBe(true);
+    expect(Number.isNaN(expectedValue(0.6, 2.0, 1.5))).toBe(true);
+  });
+
+  it("returns NaN for a non-finite voidProbability", () => {
+    expect(Number.isNaN(expectedValue(0.6, 2.0, NaN))).toBe(true);
+  });
 });
 
 describe("classifyBet", () => {

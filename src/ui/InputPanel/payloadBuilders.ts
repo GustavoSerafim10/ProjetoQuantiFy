@@ -240,6 +240,18 @@ export function buildOddsPayload(
         "oddOver25"
       ),
 
+    under15:
+      readNumber(
+        form,
+        "oddUnder15"
+      ),
+
+    under25:
+      readNumber(
+        form,
+        "oddUnder25"
+      ),
+
     bttsYes:
       readNumber(
         form,
@@ -262,6 +274,18 @@ export function buildOddsPayload(
       readNumber(
         form,
         "oddX2"
+      ),
+
+    dnbHome:
+      readNumber(
+        form,
+        "oddDnbHome"
+      ),
+
+    dnbAway:
+      readNumber(
+        form,
+        "oddDnbAway"
       )
   });
 }

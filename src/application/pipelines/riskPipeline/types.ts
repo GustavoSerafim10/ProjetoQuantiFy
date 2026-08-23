@@ -11,8 +11,11 @@ export type RiskMarketType =
   | "DOUBLE_CHANCE"
   | "OVER_1_5"
   | "OVER_2_5"
+  | "UNDER_1_5"
+  | "UNDER_2_5"
   | "BTTS_YES"
   | "BTTS_NO"
+  | "DNB"
   | "OTHER";
 
 export type RiskComponentCategory =

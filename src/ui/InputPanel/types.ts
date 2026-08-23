@@ -83,11 +83,17 @@ export type FormField =
   | "oddOver15"
   | "oddOver25"
 
+  | "oddUnder15"
+  | "oddUnder25"
+
   | "oddBTTSYes"
   | "oddBTTSNo"
 
   | "odd1X"
-  | "oddX2";
+  | "oddX2"
+
+  | "oddDnbHome"
+  | "oddDnbAway";
 
 export type FormState =
   Partial<Record<FormField, string>>;
@@ -171,11 +177,17 @@ export interface OddsPayload {
   over15?: number;
   over25?: number;
 
+  under15?: number;
+  under25?: number;
+
   bttsYes?: number;
   bttsNo?: number;
 
   homeOrDraw?: number;
   awayOrDraw?: number;
+
+  dnbHome?: number;
+  dnbAway?: number;
 }
 
 export interface AnalysisPayload {

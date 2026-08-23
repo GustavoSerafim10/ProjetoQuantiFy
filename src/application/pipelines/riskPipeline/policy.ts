@@ -32,6 +32,16 @@ export const RISK_POLICY = {
   balancedDoubleChance:
     0.03,
 
+  /*
+   * Empate Anula (DNB): jogo equilibrado é MENOS arriscado
+   * aqui do que em DOUBLE_CHANCE, porque o próprio cenário
+   * que mais preocupa num jogo equilibrado — o empate — é
+   * justamente anulado (stake devolvido), não perdido. Por
+   * isso o valor é bem mais leve, não uma cópia direta.
+   */
+  balancedDnb:
+    0.015,
+
   balancedBttsNo:
     0.035,
 
@@ -43,6 +53,14 @@ export const RISK_POLICY = {
 
   goalScoreModeratelyContradictsOver:
     0.035,
+
+  /*
+   * Espelha goalScoreContradictsOver para os mercados
+   * Under (mesma magnitude, sinal invertido: aqui é
+   * goalExpectationScore alto demais que contradiz).
+   */
+  goalScoreContradictsUnder:
+    0.065,
 
   goalScoreContradictsBttsYes:
     0.05,

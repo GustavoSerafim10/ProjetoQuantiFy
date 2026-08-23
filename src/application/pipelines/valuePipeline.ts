@@ -175,6 +175,20 @@ const ODDS_ALIASES:
       "over2_5"
     ],
 
+    UNDER_1_5: [
+      "UNDER_1_5",
+      "under15",
+      "UNDER15",
+      "under1_5"
+    ],
+
+    UNDER_2_5: [
+      "UNDER_2_5",
+      "under25",
+      "UNDER25",
+      "under2_5"
+    ],
+
     BTTS_YES: [
       "BTTS_YES",
       "bttsYes",
@@ -197,6 +211,18 @@ const ODDS_ALIASES:
       "DOUBLE_CHANCE_X2",
       "awayOrDraw",
       "X2"
+    ],
+
+    DNB_HOME: [
+      "DNB_HOME",
+      "dnbHome",
+      "DNB1"
+    ],
+
+    DNB_AWAY: [
+      "DNB_AWAY",
+      "dnbAway",
+      "DNB2"
     ]
   };
 
@@ -215,6 +241,17 @@ export function valuePipeline(
     getProbabilityEntries(
       data?.probs
     );
+
+  /*
+   * Só usado pelos mercados Empate Anula (DNB): fração
+   * das partidas em que a aposta é anulada (stake
+   * devolvido). Para os demais mercados o desconto fica
+   * em 0 e o EV volta a ser exatamente p × odd - 1.
+   */
+  const drawProbability =
+    parseProbability(
+      data?.probs?.DRAW
+    ) ?? 0;
 
   const safeOdds =
     isRecord(odds)
@@ -351,10 +388,23 @@ export function valuePipeline(
         ? 1 / probability
         : Number.POSITIVE_INFINITY;
 
+    /*
+     * Empate Anula: se a partida empata, a aposta é
+     * anulada (stake devolvido) — o EV precisa ser
+     * descontado por essa fração. Para os demais
+     * mercados o desconto é 0 e a fórmula não muda.
+     */
+    const voidProbability =
+      market === "DNB_HOME" ||
+      market === "DNB_AWAY"
+        ? drawProbability
+        : 0;
+
     const rawEv =
       expectedValue(
         probability,
-        odd
+        odd,
+        voidProbability
       );
 
     const ev =
@@ -376,12 +426,15 @@ export function valuePipeline(
     /*
      * Verificação independente da fórmula oficial:
      *
-     * EV = probability × odd - 1
+     * EV = (1 - voidProbability) × (probability × odd - 1)
      */
     const directEv =
-      probability *
-      odd -
-      1;
+      (1 - voidProbability) *
+      (
+        probability *
+        odd -
+        1
+      );
 
     const evDifference =
       Math.abs(
@@ -680,10 +733,14 @@ function parseValueMarket(
     case "AWAY":
     case "OVER_1_5":
     case "OVER_2_5":
+    case "UNDER_1_5":
+    case "UNDER_2_5":
     case "BTTS_YES":
     case "BTTS_NO":
     case "DOUBLE_CHANCE_1X":
     case "DOUBLE_CHANCE_X2":
+    case "DNB_HOME":
+    case "DNB_AWAY":
       return market;
 
     default:

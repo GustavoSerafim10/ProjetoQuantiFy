@@ -17,7 +17,13 @@ describe("classifyMarket", () => {
   it("classifies over/under codes as TOTAL_GOALS", () => {
     expect(classifyMarket("OVER_1_5")).toBe("TOTAL_GOALS");
     expect(classifyMarket("OVER_2_5")).toBe("TOTAL_GOALS");
+    expect(classifyMarket("UNDER_1_5")).toBe("TOTAL_GOALS");
     expect(classifyMarket("UNDER_2_5")).toBe("TOTAL_GOALS");
+  });
+
+  it("classifies DNB codes as DNB", () => {
+    expect(classifyMarket("DNB_HOME")).toBe("DNB");
+    expect(classifyMarket("DNB_AWAY")).toBe("DNB");
   });
 
   it("classifies BTTS codes as BOTH_TEAMS", () => {

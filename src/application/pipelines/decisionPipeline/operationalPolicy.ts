@@ -98,6 +98,12 @@ const isDoubleChance =
   marketName ===
     "DOUBLE_CHANCE_X2";
 
+const isDnb =
+  marketName ===
+    "DNB_HOME" ||
+  marketName ===
+    "DNB_AWAY";
+
 const isGoalMarket =
   marketName === "OVER_1_5" ||
   marketName === "OVER_2_5" ||
@@ -216,6 +222,29 @@ if (
     );
 }
 
+  /*
+   * Empate Anula: quanto maior drawProbability, maior a
+   * fração da aposta que evapora em anulação (não em
+   * ganho, ao contrário da Dupla Chance). O EV já é
+   * descontado por isso no valuePipeline — aqui limitamos
+   * agressividade quando esse desconto é grande demais
+   * para confiar na classificação alta.
+   */
+if (
+  isDnb &&
+  context.drawProbability !== null &&
+  context.drawProbability > 0.32
+) {
+  warnings.push(
+    "HIGH_VOID_RISK_DNB"
+  );
+
+  maximumClassification =
+    restrictClassification(
+      maximumClassification,
+      "WATCHLIST"
+    );
+}
 
   /*
    * Amostra muito pequena:
@@ -407,6 +436,12 @@ export function getDynamicMinimumEv(
     market ===
       "DOUBLE_CHANCE_X2";
 
+  const isDnb =
+    market ===
+      "DNB_HOME" ||
+    market ===
+      "DNB_AWAY";
+
   const isResultMarket =
     market === "HOME" ||
     market === "DRAW" ||
@@ -418,6 +453,21 @@ export function getDynamicMinimumEv(
     if (odd < 2.20) return 0.09;
 
     return 0.12;
+  }
+
+  /*
+   * Empate Anula: piso um pouco mais alto que Dupla
+   * Chance na mesma faixa de odd, porque o EV já vem
+   * descontado pela anulação (valuePipeline) — exigir um
+   * pouco mais aqui compensa a incerteza extra de um
+   * mercado novo, ainda não calibrado por backtest.
+   */
+  if (isDnb) {
+    if (odd < 1.40) return 0.09;
+    if (odd < 1.70) return 0.08;
+    if (odd < 2.20) return 0.10;
+
+    return 0.13;
   }
 
   if (isResultMarket) {
@@ -447,11 +497,13 @@ export function getMarketDominanceScore(
   switch (market) {
     case "HOME":
     case "DOUBLE_CHANCE_1X":
+    case "DNB_HOME":
       return context
         .homeDominanceScore;
 
     case "AWAY":
     case "DOUBLE_CHANCE_X2":
+    case "DNB_AWAY":
       return context
         .awayDominanceScore;
 

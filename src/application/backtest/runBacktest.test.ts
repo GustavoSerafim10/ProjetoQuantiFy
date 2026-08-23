@@ -8,26 +8,26 @@ function match(homeGoals: number, awayGoals: number) {
 
 describe("resolveBet", () => {
   it("resolves HOME/AWAY/DRAW by the final score", () => {
-    expect(resolveBet("HOME", match(2, 1))).toBe(true);
-    expect(resolveBet("HOME", match(1, 2))).toBe(false);
+    expect(resolveBet("HOME", match(2, 1))).toBe("WIN");
+    expect(resolveBet("HOME", match(1, 2))).toBe("LOSS");
 
-    expect(resolveBet("AWAY", match(1, 2))).toBe(true);
-    expect(resolveBet("AWAY", match(2, 1))).toBe(false);
+    expect(resolveBet("AWAY", match(1, 2))).toBe("WIN");
+    expect(resolveBet("AWAY", match(2, 1))).toBe("LOSS");
 
-    expect(resolveBet("DRAW", match(1, 1))).toBe(true);
-    expect(resolveBet("DRAW", match(1, 2))).toBe(false);
+    expect(resolveBet("DRAW", match(1, 1))).toBe("WIN");
+    expect(resolveBet("DRAW", match(1, 2))).toBe("LOSS");
   });
 
   it("resolves double chance markets", () => {
     // 1X: home win or draw
-    expect(resolveBet("DOUBLE_CHANCE_1X", match(2, 1))).toBe(true);
-    expect(resolveBet("DOUBLE_CHANCE_1X", match(1, 1))).toBe(true);
-    expect(resolveBet("DOUBLE_CHANCE_1X", match(0, 1))).toBe(false);
+    expect(resolveBet("DOUBLE_CHANCE_1X", match(2, 1))).toBe("WIN");
+    expect(resolveBet("DOUBLE_CHANCE_1X", match(1, 1))).toBe("WIN");
+    expect(resolveBet("DOUBLE_CHANCE_1X", match(0, 1))).toBe("LOSS");
 
     // X2: away win or draw
-    expect(resolveBet("DOUBLE_CHANCE_X2", match(0, 1))).toBe(true);
-    expect(resolveBet("DOUBLE_CHANCE_X2", match(1, 1))).toBe(true);
-    expect(resolveBet("DOUBLE_CHANCE_X2", match(2, 1))).toBe(false);
+    expect(resolveBet("DOUBLE_CHANCE_X2", match(0, 1))).toBe("WIN");
+    expect(resolveBet("DOUBLE_CHANCE_X2", match(1, 1))).toBe("WIN");
+    expect(resolveBet("DOUBLE_CHANCE_X2", match(2, 1))).toBe("LOSS");
   });
 
   /*
@@ -37,15 +37,18 @@ describe("resolveBet", () => {
    * through to `false` — every winning over bet was scored as a
    * loss.
    */
-  it("resolves OVER_1_5/OVER_2_5/UNDER_2_5 by total goals", () => {
-    expect(resolveBet("OVER_1_5", match(1, 1))).toBe(true); // 2 > 1.5
-    expect(resolveBet("OVER_1_5", match(0, 1))).toBe(false); // 1 <= 1.5
+  it("resolves OVER_1_5/OVER_2_5/UNDER_1_5/UNDER_2_5 by total goals", () => {
+    expect(resolveBet("OVER_1_5", match(1, 1))).toBe("WIN"); // 2 > 1.5
+    expect(resolveBet("OVER_1_5", match(0, 1))).toBe("LOSS"); // 1 <= 1.5
 
-    expect(resolveBet("OVER_2_5", match(2, 1))).toBe(true); // 3 > 2.5
-    expect(resolveBet("OVER_2_5", match(1, 1))).toBe(false); // 2 <= 2.5
+    expect(resolveBet("OVER_2_5", match(2, 1))).toBe("WIN"); // 3 > 2.5
+    expect(resolveBet("OVER_2_5", match(1, 1))).toBe("LOSS"); // 2 <= 2.5
 
-    expect(resolveBet("UNDER_2_5", match(1, 0))).toBe(true); // 1 < 2.5
-    expect(resolveBet("UNDER_2_5", match(2, 1))).toBe(false); // 3 >= 2.5
+    expect(resolveBet("UNDER_1_5", match(0, 1))).toBe("WIN"); // 1 < 1.5
+    expect(resolveBet("UNDER_1_5", match(1, 1))).toBe("LOSS"); // 2 >= 1.5
+
+    expect(resolveBet("UNDER_2_5", match(1, 0))).toBe("WIN"); // 1 < 2.5
+    expect(resolveBet("UNDER_2_5", match(2, 1))).toBe("LOSS"); // 3 >= 2.5
   });
 
   /*
@@ -54,18 +57,28 @@ describe("resolveBet", () => {
    * "did both teams score" — so BTTS_NO paid out backwards.
    */
   it("resolves BTTS_YES/BTTS_NO as true opposites of each other", () => {
-    expect(resolveBet("BTTS_YES", match(1, 1))).toBe(true);
-    expect(resolveBet("BTTS_NO", match(1, 1))).toBe(false);
+    expect(resolveBet("BTTS_YES", match(1, 1))).toBe("WIN");
+    expect(resolveBet("BTTS_NO", match(1, 1))).toBe("LOSS");
 
-    expect(resolveBet("BTTS_YES", match(1, 0))).toBe(false);
-    expect(resolveBet("BTTS_NO", match(1, 0))).toBe(true);
+    expect(resolveBet("BTTS_YES", match(1, 0))).toBe("LOSS");
+    expect(resolveBet("BTTS_NO", match(1, 0))).toBe("WIN");
 
-    expect(resolveBet("BTTS_YES", match(0, 0))).toBe(false);
-    expect(resolveBet("BTTS_NO", match(0, 0))).toBe(true);
+    expect(resolveBet("BTTS_YES", match(0, 0))).toBe("LOSS");
+    expect(resolveBet("BTTS_NO", match(0, 0))).toBe("WIN");
   });
 
-  it("returns false for an unrecognized market instead of throwing", () => {
-    expect(resolveBet("SOMETHING_UNKNOWN", match(1, 1))).toBe(false);
+  it("resolves DNB_HOME/DNB_AWAY with a VOID on draw", () => {
+    expect(resolveBet("DNB_HOME", match(2, 1))).toBe("WIN");
+    expect(resolveBet("DNB_HOME", match(1, 2))).toBe("LOSS");
+    expect(resolveBet("DNB_HOME", match(1, 1))).toBe("VOID");
+
+    expect(resolveBet("DNB_AWAY", match(1, 2))).toBe("WIN");
+    expect(resolveBet("DNB_AWAY", match(2, 1))).toBe("LOSS");
+    expect(resolveBet("DNB_AWAY", match(1, 1))).toBe("VOID");
+  });
+
+  it("returns LOSS for an unrecognized market instead of throwing", () => {
+    expect(resolveBet("SOMETHING_UNKNOWN", match(1, 1))).toBe("LOSS");
   });
 });
 
@@ -89,7 +102,7 @@ describe("runBacktest (integration)", () => {
     const result = runBacktest(200, 1000, { monteCarloSimulations: 300 });
 
     expect(result.totalBets).toBeGreaterThan(0);
-    expect(result.wins + result.losses).toBe(result.totalBets);
+    expect(result.wins + result.losses + result.voids).toBe(result.totalBets);
     expect(Number.isFinite(result.roi)).toBe(true);
     expect(result.totalStaked).toBeGreaterThan(0);
     expect(result.bankrollHistory).toHaveLength(200);

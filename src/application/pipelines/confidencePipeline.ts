@@ -1306,10 +1306,14 @@ function getSimulationComparisonKey(market: string): string | null {
     case "AWAY": return "AWAY_WIN";
     case "OVER_1_5": return "OVER_1_5";
     case "OVER_2_5": return "OVER_2_5";
+    case "UNDER_1_5": return "UNDER_1_5";
+    case "UNDER_2_5": return "UNDER_2_5";
     case "BTTS_YES": return "BTTS_YES";
     case "BTTS_NO": return "BTTS_NO";
     case "DOUBLE_CHANCE_1X": return "DOUBLE_CHANCE_1X";
     case "DOUBLE_CHANCE_X2": return "DOUBLE_CHANCE_X2";
+    case "DNB_HOME": return "DNB_HOME";
+    case "DNB_AWAY": return "DNB_AWAY";
     default: return null;
   }
 }
@@ -1405,6 +1409,22 @@ function getProbabilityAliases(
         "over2.5"
       ];
 
+    case "UNDER_1_5":
+      return [
+        "UNDER_1_5",
+        "under15",
+        "under1_5",
+        "under1.5"
+      ];
+
+    case "UNDER_2_5":
+      return [
+        "UNDER_2_5",
+        "under25",
+        "under2_5",
+        "under2.5"
+      ];
+
     case "BTTS_YES":
       return [
         "BTTS_YES",
@@ -1433,6 +1453,20 @@ function getProbabilityAliases(
         "X2",
         "doubleChanceX2",
         "awayOrDraw"
+      ];
+
+    case "DNB_HOME":
+      return [
+        "DNB_HOME",
+        "dnbHome",
+        "DNB1"
+      ];
+
+    case "DNB_AWAY":
+      return [
+        "DNB_AWAY",
+        "dnbAway",
+        "DNB2"
       ];
 
     default:
@@ -1474,6 +1508,14 @@ function normalizeMarketName(
     case "OVER25":
       return "OVER_2_5";
 
+    case "UNDER_1_5":
+    case "UNDER15":
+      return "UNDER_1_5";
+
+    case "UNDER_2_5":
+    case "UNDER25":
+      return "UNDER_2_5";
+
     case "BTTS_YES":
       return "BTTS_YES";
 
@@ -1487,6 +1529,14 @@ function normalizeMarketName(
     case "DOUBLE_CHANCE_X2":
     case "X2":
       return "DOUBLE_CHANCE_X2";
+
+    case "DNB_HOME":
+    case "DNB1":
+      return "DNB_HOME";
+
+    case "DNB_AWAY":
+    case "DNB2":
+      return "DNB_AWAY";
 
     default:
       return "";

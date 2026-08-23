@@ -51,14 +51,30 @@ function isValidNumber(
  *
  * EV = 0.20
  * retorno esperado = 20%
+ *
+ * voidProbability (opcional, default 0):
+ *
+ * Para mercados com anulação (ex.: Empate Anula), uma
+ * fração das partidas não gera ganho nem perda — o
+ * stake é devolvido. Isso desconta o EV proporcionalmente,
+ * já que essa fração não contribui capital ao retorno
+ * esperado:
+ *
+ * EV = (1 - voidProbability) × (p × odd - 1)
+ *
+ * Com voidProbability = 0 (padrão), a fórmula volta a
+ * ser exatamente a original — nenhum mercado existente
+ * muda de comportamento.
  */
 export function expectedValue(
   probability: number,
-  odd: number
+  odd: number,
+  voidProbability: number = 0
 ): number {
   if (
     !isValidNumber(probability) ||
-    !isValidNumber(odd)
+    !isValidNumber(odd) ||
+    !isValidNumber(voidProbability)
   ) {
     return Number.NaN;
   }
@@ -66,15 +82,20 @@ export function expectedValue(
   if (
     probability < 0 ||
     probability > 1 ||
-    odd <= 1
+    odd <= 1 ||
+    voidProbability < 0 ||
+    voidProbability >= 1
   ) {
     return Number.NaN;
   }
 
   return (
-    probability *
-    odd -
-    1
+    (1 - voidProbability) *
+    (
+      probability *
+      odd -
+      1
+    )
   );
 }
 

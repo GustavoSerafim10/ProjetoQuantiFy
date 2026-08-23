@@ -293,11 +293,17 @@ const INVALID_PROBABILITIES: ProbabilityMap = {
   OVER_1_5: 0,
   OVER_2_5: 0,
 
+  UNDER_1_5: 0,
+  UNDER_2_5: 0,
+
   BTTS_YES: 0,
   BTTS_NO: 0,
 
   DOUBLE_CHANCE_1X: 0,
-  DOUBLE_CHANCE_X2: 0
+  DOUBLE_CHANCE_X2: 0,
+
+  DNB_HOME: 0,
+  DNB_AWAY: 0
 };
 
 const ZERO_INDEPENDENT_VALUES:
@@ -1122,6 +1128,16 @@ function buildRawProbabilityMap(
     OVER_2_5:
       goals.over25,
 
+    UNDER_1_5:
+      deriveUnder(
+        goals.over15
+      ),
+
+    UNDER_2_5:
+      deriveUnder(
+        goals.over25
+      ),
+
     BTTS_YES:
       btts.yes,
 
@@ -1135,6 +1151,16 @@ function buildRawProbabilityMap(
 
     DOUBLE_CHANCE_X2:
       deriveDoubleChanceX2(
+        result
+      ),
+
+    DNB_HOME:
+      deriveDnbHome(
+        result
+      ),
+
+    DNB_AWAY:
+      deriveDnbAway(
         result
       )
   };
@@ -1166,6 +1192,16 @@ function buildFinalProbabilityMap(
     OVER_2_5:
       goals.over25,
 
+    UNDER_1_5:
+      deriveUnder(
+        goals.over15
+      ),
+
+    UNDER_2_5:
+      deriveUnder(
+        goals.over25
+      ),
+
     BTTS_YES:
       btts.yes,
 
@@ -1180,8 +1216,32 @@ function buildFinalProbabilityMap(
     DOUBLE_CHANCE_X2:
       deriveDoubleChanceX2(
         result
+      ),
+
+    DNB_HOME:
+      deriveDnbHome(
+        result
+      ),
+
+    DNB_AWAY:
+      deriveDnbAway(
+        result
       )
   };
+}
+
+/* ==========================================
+   DERIVAÇÃO — GOLS (COMPLEMENTO)
+========================================== */
+
+function deriveUnder(
+  over:
+    number
+): number {
+  return clampProbability(
+    1 -
+    over
+  );
 }
 
 /* ==========================================
@@ -1205,6 +1265,56 @@ function deriveDoubleChanceX2(
   return clampProbability(
     result.draw +
     result.awayWin
+  );
+}
+
+/* ==========================================
+   DERIVAÇÃO — EMPATE ANULA (DNB)
+========================================== */
+
+/*
+ * Probabilidade condicional (dado que o jogo não
+ * termina empatado): p_home / (p_home + p_away).
+ *
+ * Não multiplicamos por (1 - draw) aqui: o EV do
+ * valuePipeline é quem aplica o desconto pela
+ * anulação, e o Kelly usa exatamente essa condicional
+ * (o resultado ANULA tem log-retorno zero e não
+ * participa da otimização de crescimento).
+ */
+function deriveDnbHome(
+  result:
+    ResultProbabilities
+): number {
+  const denominator =
+    result.homeWin +
+    result.awayWin;
+
+  if (denominator <= 0) {
+    return 0.5;
+  }
+
+  return clampProbability(
+    result.homeWin /
+    denominator
+  );
+}
+
+function deriveDnbAway(
+  result:
+    ResultProbabilities
+): number {
+  const denominator =
+    result.homeWin +
+    result.awayWin;
+
+  if (denominator <= 0) {
+    return 0.5;
+  }
+
+  return clampProbability(
+    result.awayWin /
+    denominator
   );
 }
 
@@ -1250,6 +1360,18 @@ function calculateProbabilityDelta(
         final.OVER_2_5
       ),
 
+    UNDER_1_5:
+      calculateDelta(
+        raw.UNDER_1_5,
+        final.UNDER_1_5
+      ),
+
+    UNDER_2_5:
+      calculateDelta(
+        raw.UNDER_2_5,
+        final.UNDER_2_5
+      ),
+
     BTTS_YES:
       calculateDelta(
         raw.BTTS_YES,
@@ -1272,6 +1394,18 @@ function calculateProbabilityDelta(
       calculateDelta(
         raw.DOUBLE_CHANCE_X2,
         final.DOUBLE_CHANCE_X2
+      ),
+
+    DNB_HOME:
+      calculateDelta(
+        raw.DNB_HOME,
+        final.DNB_HOME
+      ),
+
+    DNB_AWAY:
+      calculateDelta(
+        raw.DNB_AWAY,
+        final.DNB_AWAY
       )
   };
 }
@@ -1806,6 +1940,16 @@ function roundProbabilityMap(
         probabilities.OVER_2_5
       ),
 
+    UNDER_1_5:
+      roundProbability(
+        probabilities.UNDER_1_5
+      ),
+
+    UNDER_2_5:
+      roundProbability(
+        probabilities.UNDER_2_5
+      ),
+
     BTTS_YES:
       roundProbability(
         probabilities.BTTS_YES
@@ -1824,6 +1968,16 @@ function roundProbabilityMap(
     DOUBLE_CHANCE_X2:
       roundProbability(
         probabilities.DOUBLE_CHANCE_X2
+      ),
+
+    DNB_HOME:
+      roundProbability(
+        probabilities.DNB_HOME
+      ),
+
+    DNB_AWAY:
+      roundProbability(
+        probabilities.DNB_AWAY
       )
   };
 }
