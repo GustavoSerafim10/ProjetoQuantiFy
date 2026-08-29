@@ -14,6 +14,8 @@ import {
   getStats
 } from "../domain/tracking/trackingEngine";
 
+import type { AnalysisSnapshot } from "../domain/tracking/trackingEngine";
+
 import type { MarketCode } from "../shared/types/marketCode";
 
 /* ==========================================
@@ -622,7 +624,12 @@ const markets: DashboardMarket[] =
         currentTimestamp(),
 
       type:
-        classification
+        classification,
+
+      analysisSnapshot:
+        buildAnalysisSnapshot(
+          dashboardData
+        )
     });
 
     setHistoryVersion(
@@ -1241,6 +1248,81 @@ function nonNegativeNumber(
   }
 
   return parsed;
+}
+
+/*
+ * Guarda o payload bruto da análise junto com a aposta, para
+ * permitir auditoria futura contra jogos já encerrados (sem
+ * isso, o histórico só tem odd/probabilidade/EV do resultado,
+ * nunca os stats digitados nem os fatores intermediários que
+ * geraram aquele número).
+ */
+function buildAnalysisSnapshot(
+  dashboardData: DashboardData
+): AnalysisSnapshot {
+  const debug =
+    dashboardData.debug as
+      | Record<string, unknown>
+      | undefined;
+
+  const modelDebug =
+    debug?.modelPipeline as
+      | Record<string, unknown>
+      | undefined;
+
+  const contextAdjusted =
+    modelDebug?.contextAdjusted as
+      | Record<string, unknown>
+      | undefined;
+
+  return {
+    input:
+      dashboardData.input,
+
+    homeStats:
+      dashboardData.homeStats,
+
+    awayStats:
+      dashboardData.awayStats,
+
+    league:
+      typeof dashboardData.league ===
+        "string"
+        ? dashboardData.league
+        : undefined,
+
+    lambdaHome:
+      toFiniteNumber(
+        dashboardData.lambdaHome
+      ) ??
+      undefined,
+
+    lambdaAway:
+      toFiniteNumber(
+        dashboardData.lambdaAway
+      ) ??
+      undefined,
+
+    totalLambda:
+      toFiniteNumber(
+        dashboardData.totalLambda
+      ) ??
+      undefined,
+
+    tempoFactor:
+      toFiniteNumber(
+        dashboardData.tempoFactor ??
+        contextAdjusted?.tempoFactor
+      ) ??
+      undefined,
+
+    pressureFactor:
+      toFiniteNumber(
+        dashboardData.pressureFactor ??
+        contextAdjusted?.pressureFactor
+      ) ??
+      undefined
+  };
 }
 
 function clampProbability(

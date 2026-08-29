@@ -1,3 +1,30 @@
+/*
+ * Snapshot bruto da análise no momento em que a aposta foi
+ * registrada. Sem isso, uma aposta já liquidada nunca pode ser
+ * re-auditada — o histórico guardava só odd/probabilidade/EV do
+ * resultado final, nunca os stats de entrada nem os fatores
+ * intermediários (tempoFactor, pressureFactor etc.) que geraram
+ * aquele número. `input` é o payload bruto (stats digitados,
+ * odds, liga) exatamente como chegou no modelPipeline — é o que
+ * permite re-rodar essa mesma partida pelo pipeline no futuro
+ * para conferir se os fatores fizeram sentido.
+ */
+export type AnalysisSnapshot = {
+  input?: unknown;
+
+  homeStats?: unknown;
+  awayStats?: unknown;
+
+  league?: string;
+
+  lambdaHome?: number;
+  lambdaAway?: number;
+  totalLambda?: number;
+
+  tempoFactor?: number;
+  pressureFactor?: number;
+};
+
 export type Bet = {
   id: string;
 
@@ -19,6 +46,8 @@ export type Bet = {
   createdAt: number;
 
  type: "SCALPER" | "ELITE" | "BET" | "WATCHLIST";
+
+  analysisSnapshot?: AnalysisSnapshot;
 };
 
 /* ===========================
