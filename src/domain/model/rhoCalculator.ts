@@ -1,19 +1,23 @@
+/*
+ * `shotsPressure`, `shotVolume` e `cardsIntensity` existiam como
+ * parâmetros aqui, mas o único chamador (calculateRho, em
+ * goalsModel/rho.ts) nunca os passa — de propósito, para não contar
+ * duas vezes o efeito de chutes/escanteios, que já entra no lambda
+ * via contextEngine.ts antes de chegar aqui. Na prática isso deixava
+ * metade das seções desta função sempre computando contra os mesmos
+ * valores-padrão fixos (shotVolume=20, cardsIntensity=1), nunca
+ * disparando — código morto que parecia reagir a dado real de jogo
+ * sem nunca reagir. Removido 2026-08-29; só o que realmente influencia
+ * `rho` hoje (ritmo via totalLambda, equilíbrio via diff) ficou.
+ */
 export function calculateDynamicRhoAdvanced(params: {
   lambdaHome: number;
   lambdaAway: number;
-
-  shotsPressure?: number;
-  shotVolume?: number;
-
-  cardsIntensity?: number;
 }) {
 
   const {
     lambdaHome,
-    lambdaAway,
-    shotsPressure = 1,
-    shotVolume = 20,
-    cardsIntensity = 1
+    lambdaAway
   } = params;
 
   const totalLambda = lambdaHome + lambdaAway;
@@ -33,19 +37,7 @@ export function calculateDynamicRhoAdvanced(params: {
   }
 
   /* ===========================
-     🔥 2. PRESSÃO (SHOTS)
-  ============================ */
-
-  if (shotVolume >= 24 && shotsPressure >= 1.15) {
-    rho += 0.02; // mais aberto
-  }
-
-  if (shotVolume <= 18) {
-    rho -= 0.02; // mais travado
-  }
-
-  /* ===========================
-     🔥 3. EQUILÍBRIO
+     🔥 2. EQUILÍBRIO
   ============================ */
 
   if (diff > 1.5) {
@@ -54,18 +46,6 @@ export function calculateDynamicRhoAdvanced(params: {
 
   if (diff < 0.5) {
     rho += 0.01; // jogo aberto
-  }
-
-  /* ===========================
-     🔥 4. INTENSIDADE (CARDS)
-  ============================ */
-
-  if (cardsIntensity > 1.2) {
-    rho -= 0.02; // jogo truncado
-  }
-
-  if (cardsIntensity < 0.8) {
-    rho += 0.01; // jogo fluido
   }
 
   /* ===========================
