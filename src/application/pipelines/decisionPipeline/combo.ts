@@ -9,7 +9,11 @@ import type { EvaluatedDecisionMarket } from "./types";
 ========================================== */
 
 export function safeBuildCombo(
-  markets: EvaluatedDecisionMarket[]
+  markets: EvaluatedDecisionMarket[],
+  matchContext?: {
+    lambdaHome?: number | null;
+    lambdaAway?: number | null;
+  }
 ) {
   if (
     !Array.isArray(markets) ||
@@ -20,7 +24,8 @@ export function safeBuildCombo(
 
   try {
     return buildCombo(
-      markets
+      markets,
+      matchContext
     );
   } catch (error) {
     console.warn(

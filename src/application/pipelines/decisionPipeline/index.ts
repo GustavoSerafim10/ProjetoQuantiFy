@@ -279,7 +279,14 @@ const evaluatedMarkets:
 
   const combo =
     safeBuildCombo(
-      comboCandidates
+      comboCandidates,
+      {
+        lambdaHome:
+          decisionContext.lambdaHome,
+
+        lambdaAway:
+          decisionContext.lambdaAway
+      }
     );
 
   const noBet =

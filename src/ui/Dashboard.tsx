@@ -788,6 +788,11 @@ const markets: DashboardMarket[] =
 
       {/* ESTATÍSTICAS */}
 
+      <div className="text-xs text-zinc-500 -mb-2">
+        📊 Histórico consolidado de todas as entradas já registradas —
+        independente da análise em tela acima.
+      </div>
+
       <div className="grid md:grid-cols-5 gap-4">
 
         <Card>
