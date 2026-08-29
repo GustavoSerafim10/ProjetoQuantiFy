@@ -31,6 +31,12 @@ const FORM_FIELDS =
     "homeShotsOnTarget",
     "awayShotsOnTarget",
 
+    "homeShots",
+    "awayShots",
+
+    "homeCorners",
+    "awayCorners",
+
     "homeBigChances",
     "awayBigChances",
 

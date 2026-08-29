@@ -53,6 +53,18 @@ export function buildTeamStats(
       `${prefix}ShotsOnTarget`
     );
 
+  const shotsPerGame =
+    readNumber(
+      form,
+      `${prefix}Shots`
+    );
+
+  const cornersAvg =
+    readNumber(
+      form,
+      `${prefix}Corners`
+    );
+
   return removeInvalidTeamStats({
     rating:
       readNumber(
@@ -108,6 +120,23 @@ export function buildTeamStats(
       shotsOnTargetPerGame,
 
     shotsOnTargetPerGame,
+
+    /*
+     * Finalizações totais e escanteios:
+     *
+     * alimentam o ajuste de ritmo/pressão do
+     * contextEngine. Enviados apenas quando
+     * realmente preenchidos.
+     */
+    avgShots:
+      shotsPerGame,
+
+    shots:
+      shotsPerGame,
+
+    shotsPerGame,
+
+    cornersAvg,
 
     bigChances:
       readNumber(

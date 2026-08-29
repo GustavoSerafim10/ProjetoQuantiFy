@@ -95,6 +95,9 @@ export type StatSource =
   | "shotsOnTargetPerMatch"
   | "shotsOnTarget"
 
+  | "cornersAvg"
+  | "cornersPerGame"
+
   | "matchesPlayed"
   | "matches"
 
@@ -147,7 +150,7 @@ export interface SanitizedStats {
   avgShotsOnTarget?: number;
   shotsOnTargetPerMatch?: number;
 
-  cornersAvg: number;
+  cornersAvg?: number;
   bigChancesPerMatch: number;
 
   foulsPerMatch: number;
@@ -171,6 +174,7 @@ export interface SanitizedStats {
     goalsAgainstRate: StatSource;
     shots: StatSource;
     shotsOnTarget: StatSource;
+    cornersAvg: StatSource;
   };
 
   inputQuality: number;

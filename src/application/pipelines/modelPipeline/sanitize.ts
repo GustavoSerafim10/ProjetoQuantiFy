@@ -153,6 +153,33 @@ export function sanitizeStats(
       ? shotsResult.value
       : undefined;
 
+  const cornersResult =
+    resolveOptionalNumber(
+      [
+        {
+          value:
+            rawStats.cornersAvg,
+
+          source:
+            "cornersAvg"
+        },
+
+        {
+          value:
+            rawStats.cornersPerGame,
+
+          source:
+            "cornersPerGame"
+        }
+      ],
+      20
+    );
+
+  const cornersAvg =
+    cornersResult.available
+      ? cornersResult.value
+      : undefined;
+
   const rawShotsOnTarget =
     shotsOnTargetResult.available
       ? shotsOnTargetResult.value
@@ -366,17 +393,6 @@ export function sanitizeStats(
       goalsConcededPerMatch:
         goalsAgainstRate,
 
-      cornersAvg:
-        clamp(
-          safeNumber(
-            rawStats.cornersAvg ??
-            rawStats.cornersPerGame,
-            0
-          ),
-          0,
-          20
-        ),
-
       bigChancesPerMatch:
         clamp(
           safeNumber(
@@ -465,7 +481,10 @@ export function sanitizeStats(
           shotsResult.source,
 
         shotsOnTarget:
-          shotsOnTargetResult.source
+          shotsOnTargetResult.source,
+
+        cornersAvg:
+          cornersResult.source
       },
 
       inputQuality:
@@ -612,6 +631,19 @@ if (
 
     sanitized.shotsOnTargetPerMatch =
       shotsOnTarget;
+  }
+
+  /*
+   * Escanteios são opcionais, mesma razão dos
+   * chutes acima: 0 aqui significaria "jogo sem
+   * escanteios" para o contextEngine, quando na
+   * verdade é só ausência de dado.
+   */
+  if (
+    cornersAvg !== undefined
+  ) {
+    sanitized.cornersAvg =
+      cornersAvg;
   }
 
   return sanitized;

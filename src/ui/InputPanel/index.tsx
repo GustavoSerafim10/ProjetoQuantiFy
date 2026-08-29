@@ -612,6 +612,22 @@ export default function InputPanel({
           />
 
           <Row
+            label="Finalizações totais"
+            home="homeShots"
+            away="awayShots"
+            form={form}
+            handleChange={handleChange}
+          />
+
+          <Row
+            label="Escanteios"
+            home="homeCorners"
+            away="awayCorners"
+            form={form}
+            handleChange={handleChange}
+          />
+
+          <Row
             label="Grandes chances"
             home="homeBigChances"
             away="awayBigChances"

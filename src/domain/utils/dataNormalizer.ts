@@ -236,13 +236,23 @@ export function normalizeStats(
 
   /*
    * Finalizações.
+   *
+   * `suppliedAvgShots` distingue "não informado"
+   * de "informado como zero" — usado para decidir
+   * se `avgShots`/`shotsPerGame` entram no objeto
+   * de saída. `avgShots` (com fallback 0) continua
+   * existindo só para as razões internas abaixo
+   * (shotAccuracy, offensiveEfficiency).
    */
+  const suppliedAvgShots =
+    firstFiniteNumber([
+      stats.avgShots,
+      stats.shotsPerGame
+    ]);
+
   const avgShots =
     clamp(
-      firstFiniteNumber([
-        stats.avgShots,
-        stats.shotsPerGame
-      ]) ?? 0,
+      suppliedAvgShots ?? 0,
       0,
       40
     );
@@ -428,11 +438,21 @@ export function normalizeStats(
         avgGoalsAgainst
       ),
 
-    avgShots:
-      roundNumber(avgShots),
+    /*
+     * Ausência de finalizações totais não pode virar
+     * "zero finalizações" — isso alimentaria o ajuste
+     * de ritmo do contextEngine com um dado falso.
+     * Só incluímos o campo quando foi realmente informado.
+     */
+    ...(suppliedAvgShots !== null
+      ? {
+          avgShots:
+            roundNumber(avgShots),
 
-    shotsPerGame:
-      roundNumber(avgShots),
+          shotsPerGame:
+            roundNumber(avgShots)
+        }
+      : {}),
 
     avgShotsOnTarget:
       roundNumber(

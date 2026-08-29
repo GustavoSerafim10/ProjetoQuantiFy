@@ -57,6 +57,12 @@ export type ComparisonField =
   | "homeShotsOnTarget"
   | "awayShotsOnTarget"
 
+  | "homeShots"
+  | "awayShots"
+
+  | "homeCorners"
+  | "awayCorners"
+
   | "homeBigChances"
   | "awayBigChances"
 
@@ -222,6 +228,12 @@ const ALL_FIELDS:
 
     "homeShotsOnTarget",
     "awayShotsOnTarget",
+
+    "homeShots",
+    "awayShots",
+
+    "homeCorners",
+    "awayCorners",
 
     "homeBigChances",
     "awayBigChances",
@@ -643,6 +655,22 @@ export default function ComparisonPanel({
           label="Chutes no gol"
           home="homeShotsOnTarget"
           away="awayShotsOnTarget"
+          form={form}
+          onChange={handleChange}
+        />
+
+        <ComparisonRow
+          label="Finalizações totais"
+          home="homeShots"
+          away="awayShots"
+          form={form}
+          onChange={handleChange}
+        />
+
+        <ComparisonRow
+          label="Escanteios"
+          home="homeCorners"
+          away="awayCorners"
           form={form}
           onChange={handleChange}
         />

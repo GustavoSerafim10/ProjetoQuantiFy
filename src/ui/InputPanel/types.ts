@@ -28,6 +28,12 @@ export type FormField =
   | "homeShotsOnTarget"
   | "awayShotsOnTarget"
 
+  | "homeShots"
+  | "awayShots"
+
+  | "homeCorners"
+  | "awayCorners"
+
   | "homeBigChances"
   | "awayBigChances"
 
@@ -146,6 +152,12 @@ export interface TeamStatsPayload {
   avgShotsOnTarget?: number;
   shotsOnTarget?: number;
   shotsOnTargetPerGame?: number;
+
+  avgShots?: number;
+  shots?: number;
+  shotsPerGame?: number;
+
+  cornersAvg?: number;
 
   bigChances?: number;
   bigChancesMissed?: number;
