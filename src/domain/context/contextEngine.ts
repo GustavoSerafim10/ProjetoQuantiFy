@@ -27,6 +27,25 @@ function safe(n: unknown, fallback = 1) {
   return Number.isFinite(num) ? num : fallback;
 }
 
+/*
+ * Médias realistas de um time em uma partida de futebol profissional
+ * (não são médias de campeonato buscadas de fora — servem só de centro
+ * neutro para a fórmula abaixo). Usadas tanto como fallback de dado
+ * ausente quanto como denominador de tempo/pressão, para que a ausência
+ * total de dado sempre produza fator neutro (1.0), e para que os números
+ * que o usuário realmente digita por time façam o fator variar de verdade
+ * em vez de saturar sempre no mesmo extremo.
+ */
+const AVG_SHOTS_PER_TEAM = 12;
+const AVG_CORNERS_PER_TEAM = 5;
+const AVG_SHOTS_ON_TARGET_PER_TEAM = 4.3;
+
+const NEUTRAL_TEMPO_TOTAL =
+  2 * (AVG_SHOTS_PER_TEAM + AVG_CORNERS_PER_TEAM);
+
+const NEUTRAL_PRESSURE_TOTAL =
+  2 * (AVG_SHOTS_ON_TARGET_PER_TEAM + AVG_CORNERS_PER_TEAM);
+
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(n, max));
 }
@@ -58,29 +77,29 @@ export function contextEngine(data: ContextEngineInput) {
   const awayForm = recentGoalsFactor(awayStats?.last5GoalsFor ?? awayStats?.goalsFor);
 
   const homeTempo =
-    safe(homeStats?.shots, 8) +
-    safe(homeStats?.cornersAvg, 4);
+    safe(homeStats?.shots, AVG_SHOTS_PER_TEAM) +
+    safe(homeStats?.cornersAvg, AVG_CORNERS_PER_TEAM);
 
   const awayTempo =
-    safe(awayStats?.shots, 8) +
-    safe(awayStats?.cornersAvg, 4);
+    safe(awayStats?.shots, AVG_SHOTS_PER_TEAM) +
+    safe(awayStats?.cornersAvg, AVG_CORNERS_PER_TEAM);
 
   const rawTempoFactor =
-    ((homeTempo + awayTempo) / 24) *
+    ((homeTempo + awayTempo) / NEUTRAL_TEMPO_TOTAL) *
     safe(leagueData?.tempo, 1);
 
   const tempoFactor = clamp(rawTempoFactor, 0.94, 1.08);
 
   const homePressure =
-    safe(homeStats?.shotsOnTarget, 3) +
-    safe(homeStats?.cornersAvg, 4);
+    safe(homeStats?.shotsOnTarget, AVG_SHOTS_ON_TARGET_PER_TEAM) +
+    safe(homeStats?.cornersAvg, AVG_CORNERS_PER_TEAM);
 
   const awayPressure =
-    safe(awayStats?.shotsOnTarget, 3) +
-    safe(awayStats?.cornersAvg, 4);
+    safe(awayStats?.shotsOnTarget, AVG_SHOTS_ON_TARGET_PER_TEAM) +
+    safe(awayStats?.cornersAvg, AVG_CORNERS_PER_TEAM);
 
   const rawPressureFactor =
-    ((homePressure + awayPressure) / 14) *
+    ((homePressure + awayPressure) / NEUTRAL_PRESSURE_TOTAL) *
     safe(leagueData?.pressure, 1);
 
   const pressureFactor = clamp(rawPressureFactor, 0.94, 1.10);
