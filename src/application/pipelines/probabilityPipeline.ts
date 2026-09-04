@@ -815,7 +815,8 @@ function calibrateMarket(
 ): CalibrationExecution {
   const detailed =
     calibrateProbabilityDetailed(
-      probability
+      probability,
+      market
     );
 
   const calibrated =

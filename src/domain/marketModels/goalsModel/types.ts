@@ -105,10 +105,6 @@ export interface RhoDiagnostics {
   rawBaseRho: number;
   baseRho: number;
 
-  learningReady: boolean;
-  learningRhoShift: number;
-
-  combinedRho: number;
   rho: number;
 
   lowerBound: number;
@@ -194,7 +190,6 @@ export interface GoalsModelMeta {
   maxGoals: number;
 
   baseRho: number;
-  learningRhoShift: number;
   rho: number;
 
   independentMatrixMass: number;

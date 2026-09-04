@@ -314,10 +314,6 @@ export function goalsModel(
       baseRho:
         rhoDiagnostics.baseRho,
 
-      learningRhoShift:
-        rhoDiagnostics
-          .learningRhoShift,
-
       rho:
         rhoDiagnostics.rho,
 

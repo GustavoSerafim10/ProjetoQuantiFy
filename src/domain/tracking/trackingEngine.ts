@@ -78,6 +78,14 @@ function saveToStorage(data: Bet[]) {
   }
 }
 
+function removeFromStorage() {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch (e) {
+    console.warn("⚠️ Erro ao limpar storage:", e);
+  }
+}
+
 /* ===========================
    🧠 STATE
 =========================== */
@@ -251,7 +259,7 @@ export function getHistory(): Bet[] {
 
 export function resetHistory() {
   history = [];
-  localStorage.removeItem(STORAGE_KEY);
+  removeFromStorage();
 
   console.log("🧹 Histórico resetado");
 }
@@ -289,7 +297,7 @@ export function deleteBet(id: string) {
 
 export function clearAll() {
   history = [];
-  localStorage.removeItem(STORAGE_KEY);
+  removeFromStorage();
 
   console.log("💀 Tudo apagado");
 }

@@ -1,5 +1,4 @@
 import { calculateDynamicRhoAdvanced } from "../../model/rhoCalculator";
-import { autoLearningEngine } from "../../learning/autoLearningEngine";
 
 import { MIN_OPERATIONAL_RHO, MAX_OPERATIONAL_RHO, RHO_EPSILON } from "./constants";
 import { approximatelyEqual, clamp, roundNumber, safeNumber } from "./numericHelpers";
@@ -141,32 +140,6 @@ export function calculateRho(
       0
     );
 
-  let learning: ReturnType<typeof autoLearningEngine> | null = null;
-
-  try {
-    learning =
-      autoLearningEngine();
-  } catch {
-    learning = null;
-  }
-
-  const learningReady =
-    Boolean(
-      learning?.ready
-    );
-
-  const learningRhoShift =
-    learningReady
-      ? safeNumber(
-          learning?.rhoShift,
-          0
-        )
-      : 0;
-
-  const combinedRho =
-    rawBaseRho +
-    learningRhoShift;
-
   const bounds =
     calculateRhoBounds(
       lambdaHome,
@@ -175,7 +148,7 @@ export function calculateRho(
 
   const constrained =
     constrainRho(
-      combinedRho,
+      rawBaseRho,
       bounds
     );
 
@@ -191,18 +164,6 @@ export function calculateRho(
       baseRho:
         roundNumber(
           rawBaseRho
-        ),
-
-      learningReady,
-
-      learningRhoShift:
-        roundNumber(
-          learningRhoShift
-        ),
-
-      combinedRho:
-        roundNumber(
-          combinedRho
         ),
 
       rho:
