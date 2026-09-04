@@ -16,6 +16,9 @@ import {
 
 import type { AnalysisSnapshot } from "../domain/tracking/trackingEngine";
 
+import { buildCalibrationReport } from "../domain/tracking/calibrationReport";
+import CalibrationPanel from "./CalibrationPanel";
+
 import type { MarketCode } from "../shared/types/marketCode";
 
 /* ==========================================
@@ -518,6 +521,15 @@ export default function Dashboard({
       ]
     );
 
+  const calibrationReport =
+    useMemo(
+      () =>
+        buildCalibrationReport(fullHistory),
+      [
+        fullHistory
+      ]
+    );
+
 
 const dashboardData: DashboardData =
   data ?? {};
@@ -859,6 +871,10 @@ const markets: DashboardMarket[] =
         </Card>
 
       </div>
+
+      {/* CALIBRAÇÃO */}
+
+      <CalibrationPanel report={calibrationReport} />
 
       {/* RANKING */}
 
