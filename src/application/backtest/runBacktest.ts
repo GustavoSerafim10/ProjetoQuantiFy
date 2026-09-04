@@ -109,6 +109,18 @@ export interface RunBacktestOptions {
    * Sem isso, o backtest usa exatamente a política de produção.
    */
   marketPolicyOverrides?: MarketPolicyOverrides;
+
+  /*
+   * Seed do lote de partidas sintéticas + da simulação Monte
+   * Carlo interna. Sem isso (o caso normal — testes, sweeps de
+   * calibração), usa sempre a mesma seed fixa, então duas
+   * chamadas com o mesmo threshold comparam o EXATO mesmo lote
+   * — é isso que torna runBacktest() determinístico. Só passe
+   * um valor aqui quando quiser um lote genuinamente diferente
+   * (ex.: monteCarloBacktest.ts rodando N simulações
+   * independentes de verdade para medir variância real).
+   */
+  seed?: string;
 }
 
 export function runBacktest(
@@ -121,6 +133,7 @@ export function runBacktest(
   const evFloor = options.evFloor ?? 0;
   const stakeCap = options.stakeCap;
   const marketPolicyOverrides = options.marketPolicyOverrides;
+  const seed = options.seed;
   let bankroll = initialBankroll;
   let peakBankroll = initialBankroll;
   let maxDrawdown = 0;
@@ -145,7 +158,7 @@ export function runBacktest(
    * invalidando a comparacao. resetMatchGeneratorSeed() garante
    * que toda chamada comeca do mesmo ponto da sequencia.
    */
-  resetMatchGeneratorSeed();
+  resetMatchGeneratorSeed(seed);
 
   const matches =
     generateHistoricalMatches(simulations);
@@ -159,10 +172,17 @@ export function runBacktest(
    * podia gerar contagens de aposta e ROI diferentes a cada
    * execucao. Um gerador seedado, criado uma vez por chamada de
    * runBacktest() e reutilizado em sequencia por todas as
-   * partidas, torna o resultado inteiro deterministico.
+   * partidas, torna o resultado inteiro deterministico. Usa o
+   * mesmo `seed` opcional do lote de partidas (com um sufixo,
+   * para não gerar exatamente a mesma sequência de números) —
+   * assim as duas fontes de aleatoriedade variam juntas.
    */
   const monteCarloRandom =
-    seedrandom("quantify-backtest-montecarlo-v1");
+    seedrandom(
+      seed
+        ? `${seed}-montecarlo`
+        : "quantify-backtest-montecarlo-v1"
+    );
 
   for (const [matchIndex, match] of matches.entries()) {
     /* ===========================

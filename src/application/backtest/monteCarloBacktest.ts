@@ -106,6 +106,20 @@ export interface MonteCarloBacktestOptions {
   acceptableAverageDrawdown?: number;
   acceptableRuinRate?: number;
   highVarianceCoefficient?: number;
+
+  /*
+   * Prefixo da seed usada para gerar um lote de partidas
+   * sintéticas DIFERENTE em cada simulação interna (índice
+   * anexado a cada chamada de runBacktest()). Sem isso, as N
+   * "simulações independentes" seriam, na prática, N cópias
+   * idênticas da mesma rodada — runBacktest() é
+   * deterministicamente seedado por padrão (ver runBacktest.ts),
+   * então nenhuma variância real apareceria e o relatório
+   * mostraria estabilidade perfeita artificial (bug real,
+   * corrigido em 2026-09-03 — antes disso `runMonteCarloBacktest`
+   * sempre reportava roiStdDev = 0).
+   */
+  seedPrefix?: string;
 }
 
 export interface MonteCarloBacktestSummary {
@@ -168,6 +182,8 @@ const DEFAULT_MINIMUM_RELIABLE_TOTAL_BETS = 3000;
 const DEFAULT_ACCEPTABLE_AVERAGE_DRAWDOWN = 0.30;
 const DEFAULT_ACCEPTABLE_RUIN_RATE = 0.05;
 const DEFAULT_HIGH_VARIANCE_COEFFICIENT = 1.50;
+
+const DEFAULT_SEED_PREFIX = "quantify-montecarlo-sim";
 
 const NORMAL_95_Z_SCORE = 1.959963984540054;
 
@@ -759,7 +775,13 @@ function normalizeOptions(
           options.highVarianceCoefficient
         ) ??
         DEFAULT_HIGH_VARIANCE_COEFFICIENT
-      )
+      ),
+
+    seedPrefix:
+      typeof options.seedPrefix === "string" &&
+      options.seedPrefix.length > 0
+        ? options.seedPrefix
+        : DEFAULT_SEED_PREFIX
   };
 }
 
@@ -1226,7 +1248,8 @@ export function runMonteCarloBacktest(
     minimumReliableTotalBets,
     acceptableAverageDrawdown,
     acceptableRuinRate,
-    highVarianceCoefficient
+    highVarianceCoefficient,
+    seedPrefix
   } = normalizedOptions;
 
   const results:
@@ -1245,7 +1268,11 @@ export function runMonteCarloBacktest(
       const rawResult =
         runBacktest(
           resolvedMatchesPerSimulation,
-          initialBankroll
+          initialBankroll,
+          {
+            seed:
+              `${seedPrefix}-${index}`
+          }
         );
 
       const normalizedResult =

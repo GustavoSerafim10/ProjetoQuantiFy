@@ -8,16 +8,24 @@ const MATCH_GENERATOR_SEED = "quantify-v33";
 let rng = seedrandom(MATCH_GENERATOR_SEED);
 
 /*
- * Reinicia o gerador para o início da mesma sequência
+ * Reinicia o gerador para o início de uma sequência
  * determinística. Usado por experimentos de calibração que
  * precisam comparar configurações diferentes sobre o
  * exato mesmo lote de partidas sintéticas — sem isso, cada
  * chamada subsequente de generateHistoricalMatches() dentro
  * do mesmo processo avançaria o gerador e compararia
  * amostras diferentes.
+ *
+ * `seed` é opcional: sem ele, volta exatamente ao mesmo lote
+ * de sempre (MATCH_GENERATOR_SEED) — todo o código existente
+ * que depende de runBacktest() ser determinístico (testes,
+ * sweeps de calibração) continua vendo o comportamento
+ * idêntico de antes. Só quem passa um seed explícito (ex.:
+ * monteCarloBacktest.ts, para gerar várias amostras
+ * genuinamente independentes) muda de lote.
  */
-export function resetMatchGeneratorSeed(): void {
-  rng = seedrandom(MATCH_GENERATOR_SEED);
+export function resetMatchGeneratorSeed(seed?: string): void {
+  rng = seedrandom(seed ?? MATCH_GENERATOR_SEED);
 }
 
 import {
