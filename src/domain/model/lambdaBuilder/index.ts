@@ -2,6 +2,8 @@ import type {
   TeamStats
 } from "../../types/TeamStats";
 
+import { PIPELINE_DEBUG } from "../../../shared/debugFlag";
+
 import {
   getLeagueGoalAdjustment,
   resolveLeagueStrength,
@@ -747,6 +749,7 @@ export function buildLambda(
      LOG DE AUDITORIA
   ======================================== */
 
+  if (PIPELINE_DEBUG) {
   console.group(
     "⚽ LAMBDA BUILDER — AUDIT"
   );
@@ -861,6 +864,7 @@ console.log(
   );
 
   console.groupEnd();
+  }
 
   /* ========================================
      RESULTADO

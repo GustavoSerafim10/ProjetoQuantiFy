@@ -2,6 +2,8 @@ import {
   goalsModel
 } from "../../../domain/marketModels/goalsModel";
 
+import { PIPELINE_DEBUG } from "../../../shared/debugFlag";
+
 import {
   contextEngine
 } from "../../../domain/context/contextEngine";
@@ -130,6 +132,7 @@ export function modelPipeline(
       "AWAY"
     );
 
+  if (PIPELINE_DEBUG) {
   console.group(
     "🧠 MODEL PIPELINE — SANITIZATION AUDIT"
   );
@@ -155,6 +158,7 @@ export function modelPipeline(
   );
 
   console.groupEnd();
+  }
 
   /* ========================================
      SELEÇÃO DO JOGO
@@ -354,6 +358,7 @@ export function modelPipeline(
      LOG FINAL
   ======================================== */
 
+  if (PIPELINE_DEBUG) {
   console.group(
     "⚽ MODEL PIPELINE — FINAL AUDIT"
   );
@@ -393,6 +398,7 @@ export function modelPipeline(
   );
 
   console.groupEnd();
+  }
 
   /* ========================================
      RESULTADO
