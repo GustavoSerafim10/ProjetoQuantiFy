@@ -364,15 +364,23 @@ export const MARKET_POLICIES:
     },
 
     /*
-     * PLACEHOLDER NÃO CALIBRADO (2026-08-22).
-     *
-     * Mercado novo (Under 1.5) — thresholds de ev/risk/
-     * confidence copiados de OVER_1_5 (mesma dimensão de
-     * qualidade de sinal). minimumOdd/minimumProbability
-     * recalculados a partir da taxa-base invertida (Under 1.5
-     * costuma ter probabilidade bem mais baixa que Over 1.5 em
-     * ligas de gol normal, logo odd mais alta). Pendente de
-     * sweep de backtest como HOME/BTTS_NO/DOUBLE_CHANCE_1X.
+     * NÃO recalibrado — investigado via sweep de backtest
+     * (2026-09-03, 5000 partidas, backtest determinístico).
+     * Ao contrário de UNDER_2_5/DNB_HOME/DNB_AWAY, aqui o
+     * gate real (minimumConfidence) bloqueia por um bom
+     * motivo: abrindo minimumConfidence de 0.60 para 0.50
+     * (mantendo os outros campos), o mercado passa a gerar
+     * apostas (48/5000) mas com ROI -6,5%, winRate 37,5% vs.
+     * odd média 2,80 (breakeven ~35,7%) e erro de calibração
+     * real de 4,8pp (o modelo superestima a probabilidade
+     * frente ao resultado observado). Mesmo padrão já
+     * documentado para DRAW/OVER_1_5 em
+     * project-backtest-determinism-and-calibration-gaps: o
+     * modelo de viés de bookmaker do matchGenerator.ts não dá
+     * vantagem real a este mercado nesta base sintética — não
+     * é um bug de threshold nem de fórmula de confiança.
+     * Threshold mantido; revisitar apenas se o modelo de viés
+     * do gerador sintético for revisado, ou com dados reais.
      */
     UNDER_1_5: {
       minimumOdd: 2.00,
@@ -429,15 +437,19 @@ export const MARKET_POLICIES:
     },
 
     /*
-     * PLACEHOLDER NÃO CALIBRADO (2026-08-22).
-     *
-     * Mercado novo (Empate Anula Casa). Thresholds herdados de
-     * DOUBLE_CHANCE_1X: ambos são mercados "mais seguros" que
-     * removem risco de empate, mesma lógica direcional na
-     * confidenceEngine. minimumProbability aqui é a
-     * probabilidade condicional (dado que não empata) — o
-     * desconto pela anulação já acontece no EV (valuePipeline),
-     * não neste threshold. Pendente de sweep de backtest.
+     * bet.minimumProbability/minimumConfidence calibrados via
+     * sweep de backtest (2026-09-03, 2500 partidas,
+     * determinístico). O placeholder original (herdado de
+     * DOUBLE_CHANCE_1X) travava o mercado em zero apostas: nem
+     * abrir só probabilidade nem só confidence (mantendo o
+     * outro em produção) destravava nada — precisava dos dois
+     * juntos. Antes de baixar o threshold, corrigido um gap
+     * real na fórmula (addDnbStructure em confidenceEngine.ts
+     * não tinha o bônus de "jogo equilibrado" que
+     * DOUBLE_CHANCE_1X/X2 já tem). Com prob 0.50 + confidence
+     * 0.50: 21 apostas, ROI +12,9%, winRate 52,9%, erro de
+     * calibração 0,015 (baixíssimo — probabilidade do modelo
+     * bate com o resultado real).
      */
     DNB_HOME: {
       minimumOdd: 1.35,
@@ -450,10 +462,10 @@ export const MARKET_POLICIES:
       },
 
       bet: {
-        minimumProbability: 0.60,
+        minimumProbability: 0.50,
         minimumEv: 0.05,
         maximumRisk: 0.57,
-        minimumConfidence: 0.58
+        minimumConfidence: 0.50
       },
 
       elite: {
@@ -465,10 +477,14 @@ export const MARKET_POLICIES:
     },
 
     /*
-     * PLACEHOLDER NÃO CALIBRADO (2026-08-22).
-     * Mesma lógica do DNB_HOME acima; minimumProbability do
-     * tier bet um pouco menor, espelhando a assimetria já
-     * existente entre DOUBLE_CHANCE_1X (0.67) e X2 (0.55).
+     * bet.minimumConfidence calibrado via sweep de backtest
+     * (2026-09-03, 5000 partidas, determinístico) — mesmo
+     * gate/mesma causa raiz do DNB_HOME (ver comentário lá).
+     * minimumProbability manteve o valor original (0.50): o
+     * sweep de probabilidade sozinho nunca destravou nada, o
+     * gate real era só confidence. Com confidence 0.50: 18
+     * apostas, ROI +12,6%, winRate 55,6%, erro de calibração
+     * 0,013.
      */
     DNB_AWAY: {
       minimumOdd: 1.35,
@@ -484,7 +500,7 @@ export const MARKET_POLICIES:
         minimumProbability: 0.50,
         minimumEv: 0.05,
         maximumRisk: 0.57,
-        minimumConfidence: 0.58
+        minimumConfidence: 0.50
       },
 
       elite: {

@@ -1106,6 +1106,19 @@ function addDoubleChanceStructure({
  * addDoubleChanceStructure (DNB é estruturalmente idêntico
  * a Dupla Chance nesse eixo — só sem o componente do
  * empate, já que aqui o empate anula em vez de ganhar).
+ *
+ * Tinha ficado sem o bônus de "jogo equilibrado" que Dupla
+ * Chance já tem (STRUCTURE_DOUBLE_CHANCE_BALANCED_SUPPORT) —
+ * uma omissão sem justificativa registrada, não uma decisão
+ * deliberada. Faz ainda mais sentido aqui: DNB existe
+ * especificamente para remover o risco de empate, e é em
+ * jogos equilibrados (lambdas próximos) que esse risco é
+ * maior — logo é onde o mercado mais entrega valor, não onde
+ * a confiança deveria ficar mais pobre em componentes do que
+ * o mercado irmão. Medido empiricamente (2026-09-03): sem
+ * este bônus, DNB_HOME/DNB_AWAY nunca alcançavam o
+ * minimumConfidence de produção e ficavam com zero apostas no
+ * backtest sintético.
  */
 function addDnbStructure({
   components,
@@ -1150,6 +1163,18 @@ function addDnbStructure({
       components,
       "STRUCTURE_DNB_WEAK_SELECTED_SIDE",
       -0.050
+    );
+  }
+
+  if (
+    Math.abs(
+      selectedLambda - opponentLambda
+    ) <= 0.20
+  ) {
+    addComponent(
+      components,
+      "STRUCTURE_DNB_BALANCED_SUPPORT",
+      0.015
     );
   }
 }
