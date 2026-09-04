@@ -159,6 +159,25 @@ function getRankingScore(
   ]);
 }
 
+/*
+ * market.kelly é o criterio de Kelly cru (sem
+ * fracionamento, sem ajuste de risco/confiança/
+ * classificação, sem o teto de 3% da banca) --
+ * mostrar isso numa tabela de decisão de aposta
+ * é enganoso: pode passar a impressão de que o
+ * sistema está sugerindo apostar o Kelly cheio.
+ * market.stake é o valor que
+ * calculateDecisionStake() de fato calcula e é
+ * o que a tela deve mostrar.
+ */
+function getStake(
+  market: AnalysisMarket
+): number | null {
+  return toFiniteNumber(
+    market.stake
+  );
+}
+
 function getStatus(
   market: AnalysisMarket
 ): DecisionClassification {
@@ -581,7 +600,7 @@ export default function GameAnalysisPanel({
                 </th>
 
                 <th className="p-3">
-                  Kelly
+                  Stake sugerido
                 </th>
 
                 <th className="p-3">
@@ -624,6 +643,11 @@ export default function GameAnalysisPanel({
 
                   const rankingScore =
                     getRankingScore(
+                      market
+                    );
+
+                  const stake =
+                    getStake(
                       market
                     );
 
@@ -710,10 +734,12 @@ export default function GameAnalysisPanel({
                       </td>
 
                       <td className="p-3">
-                        {formatPercent(
-                          market.kelly,
-                          1
-                        )}
+                        {stake !== null && stake > 0
+                          ? formatPercent(
+                              stake,
+                              2
+                            )
+                          : "—"}
                       </td>
 
                       <td
