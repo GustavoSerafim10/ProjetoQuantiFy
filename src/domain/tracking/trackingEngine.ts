@@ -23,6 +23,46 @@ export type AnalysisSnapshot = {
 
   tempoFactor?: number;
   pressureFactor?: number;
+
+  /*
+   * FASE 8 do Decision Intelligence Layer (2026-09-04): snapshot
+   * dos sinais que as fases 2/3/4/5/6/7 calculam para o mercado
+   * especificamente registrado (não a partida como um todo).
+   * Nenhum desses sinais decide a aposta hoje (fases 4 e 6 foram
+   * testadas e revertidas por piorar ROI no backtest sintético —
+   * ver operationalPolicy.ts/correlationEngine.ts); o propósito
+   * aqui é acumular amostra real o suficiente para um dia testar
+   * se eles preveem resultado de verdade, contra apostas
+   * realmente liquidadas em vez do gerador sintético.
+   */
+  modelAgreementScore?: number | null;
+
+  effectiveProbability?: number | null;
+  uncertaintyPenalty?: number | null;
+  uncertaintyClassification?: string | null;
+
+  robustnessScore?: number | null;
+
+  correlationPenaltyDiagnostic?: number | null;
+  mostRedundantWith?: string | null;
+
+  decisionScore?: number | null;
+
+  /*
+   * 2026-09-05: §7/§9/§12/§15 do roteiro (ExtremeValueDetector,
+   * Market Family Consensus, decisionDrivers/decisionWarnings,
+   * REJECT/INVESTIGATE). Mesma lógica da nota acima — nenhum
+   * decide a aposta, só acumula amostra para validação futura.
+   */
+  extremeValueClassification?: string | null;
+
+  familyConsensusDirection?: string | null;
+  familyConsensusMarkets?: string[] | null;
+
+  decisionState?: string | null;
+
+  decisionDrivers?: string[] | null;
+  decisionWarnings?: string[] | null;
 };
 
 export type Bet = {

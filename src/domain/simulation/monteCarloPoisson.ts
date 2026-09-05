@@ -8,11 +8,14 @@ export interface MonteCarloSamplingError {
   awayWin: number;
   over15: number;
   over25: number;
+  under15: number;
   under25: number;
   bttsYes: number;
   bttsNo: number;
   doubleChance1X: number;
   doubleChanceX2: number;
+  dnbHome: number;
+  dnbAway: number;
 }
 
 export interface MonteCarloConfidenceInterval {
@@ -27,11 +30,14 @@ export interface MonteCarloConfidenceIntervals {
   awayWin: MonteCarloConfidenceInterval;
   over15: MonteCarloConfidenceInterval;
   over25: MonteCarloConfidenceInterval;
+  under15: MonteCarloConfidenceInterval;
   under25: MonteCarloConfidenceInterval;
   bttsYes: MonteCarloConfidenceInterval;
   bttsNo: MonteCarloConfidenceInterval;
   doubleChance1X: MonteCarloConfidenceInterval;
   doubleChanceX2: MonteCarloConfidenceInterval;
+  dnbHome: MonteCarloConfidenceInterval;
+  dnbAway: MonteCarloConfidenceInterval;
 }
 
 export interface MonteCarloProbabilitySnapshot {
@@ -40,11 +46,14 @@ export interface MonteCarloProbabilitySnapshot {
   awayWin: number;
   over15: number;
   over25: number;
+  under15: number;
   under25: number;
   bttsYes: number;
   bttsNo: number;
   doubleChance1X: number;
   doubleChanceX2: number;
+  dnbHome: number;
+  dnbAway: number;
 }
 
 export interface MonteCarloCheckpoint extends MonteCarloProbabilitySnapshot {
@@ -302,8 +311,31 @@ function probabilitiesFromCounts(
   const over25 = counts.over25 / denominator;
   const bttsYes = counts.bttsYes / denominator;
 
+  const under15 = 1 - over15;
   const under25 = 1 - over25;
   const bttsNo = 1 - bttsYes;
+
+  /*
+   * DNB (Empate Anula) é condicional a não empatar: a
+   * probabilidade do lado escolhido vencer, dado que a
+   * partida não termina empatada. Sem partidas sem empate
+   * na amostra (extremamente improvável, mas matematicamente
+   * possível com poucas iterações), cai para 0.5 neutro em
+   * vez de dividir por zero.
+   */
+  const noDrawCount =
+    counts.homeWin +
+    counts.awayWin;
+
+  const dnbHome =
+    noDrawCount > 0
+      ? counts.homeWin / noDrawCount
+      : 0.5;
+
+  const dnbAway =
+    noDrawCount > 0
+      ? counts.awayWin / noDrawCount
+      : 0.5;
 
   return {
     homeWin,
@@ -311,11 +343,14 @@ function probabilitiesFromCounts(
     awayWin,
     over15,
     over25,
+    under15,
     under25,
     bttsYes,
     bttsNo,
     doubleChance1X: homeWin + draw,
-    doubleChanceX2: draw + awayWin
+    doubleChanceX2: draw + awayWin,
+    dnbHome,
+    dnbAway
   };
 }
 
@@ -331,7 +366,8 @@ function standardError(probability: number, simulations: number): number {
 
 function buildSamplingError(
   probabilities: MonteCarloProbabilitySnapshot,
-  simulations: number
+  simulations: number,
+  dnbSampleSize: number
 ): MonteCarloSamplingError {
   return {
     homeWin: standardError(probabilities.homeWin, simulations),
@@ -339,6 +375,7 @@ function buildSamplingError(
     awayWin: standardError(probabilities.awayWin, simulations),
     over15: standardError(probabilities.over15, simulations),
     over25: standardError(probabilities.over25, simulations),
+    under15: standardError(probabilities.under15, simulations),
     under25: standardError(probabilities.under25, simulations),
     bttsYes: standardError(probabilities.bttsYes, simulations),
     bttsNo: standardError(probabilities.bttsNo, simulations),
@@ -349,7 +386,15 @@ function buildSamplingError(
     doubleChanceX2: standardError(
       probabilities.doubleChanceX2,
       simulations
-    )
+    ),
+
+    /*
+     * Amostra efetiva do DNB é só as partidas sem empate,
+     * não o total de iterações — usar o total subestimaria
+     * o erro padrão real desta probabilidade condicional.
+     */
+    dnbHome: standardError(probabilities.dnbHome, dnbSampleSize),
+    dnbAway: standardError(probabilities.dnbAway, dnbSampleSize)
   };
 }
 
@@ -376,6 +421,7 @@ function buildConfidenceIntervals(
     awayWin: confidenceInterval95(probabilities.awayWin, errors.awayWin),
     over15: confidenceInterval95(probabilities.over15, errors.over15),
     over25: confidenceInterval95(probabilities.over25, errors.over25),
+    under15: confidenceInterval95(probabilities.under15, errors.under15),
     under25: confidenceInterval95(probabilities.under25, errors.under25),
     bttsYes: confidenceInterval95(probabilities.bttsYes, errors.bttsYes),
     bttsNo: confidenceInterval95(probabilities.bttsNo, errors.bttsNo),
@@ -386,7 +432,9 @@ function buildConfidenceIntervals(
     doubleChanceX2: confidenceInterval95(
       probabilities.doubleChanceX2,
       errors.doubleChanceX2
-    )
+    ),
+    dnbHome: confidenceInterval95(probabilities.dnbHome, errors.dnbHome),
+    dnbAway: confidenceInterval95(probabilities.dnbAway, errors.dnbAway)
   };
 }
 
@@ -400,11 +448,14 @@ function maxProbabilityDelta(
     "awayWin",
     "over15",
     "over25",
+    "under15",
     "under25",
     "bttsYes",
     "bttsNo",
     "doubleChance1X",
-    "doubleChanceX2"
+    "doubleChanceX2",
+    "dnbHome",
+    "dnbAway"
   ];
 
   return Math.max(
@@ -616,7 +667,16 @@ export function monteCarloPoisson(
   }
 
   const probabilities = probabilitiesFromCounts(counts, iterations);
-  const samplingError = buildSamplingError(probabilities, iterations);
+
+  const dnbSampleSize =
+    counts.homeWin +
+    counts.awayWin;
+
+  const samplingError = buildSamplingError(
+    probabilities,
+    iterations,
+    dnbSampleSize
+  );
 
   const maxStandardError = Math.max(
     ...Object.values(samplingError)

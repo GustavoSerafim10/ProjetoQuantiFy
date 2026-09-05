@@ -1,5 +1,13 @@
 import type { MarketCode } from "../../../shared/types/marketCode";
 import type { PipelineRecord } from "../pipelineRecord";
+import type { DecisionExplanation } from "./explain";
+import type { UncertaintyAdjustmentResult } from "../../../domain/analysis/uncertaintyAdjustment";
+import type { RobustnessResult } from "../../../domain/analysis/robustness";
+import type { ExtremeValueClassification } from "../../../domain/analysis/extremeValueDetector";
+import type { FamilyConsensusResult } from "../../../domain/analysis/marketFamily";
+import type { DecisionState } from "./decisionState";
+
+export type { DecisionExplanation } from "./explain";
 
 /* ==========================================
    CONTRATOS
@@ -216,6 +224,27 @@ export interface DecisionMarketDebug {
     DecisionClassification;
 
   /*
+   * DIAGNÓSTICO (Fase 4 do Decision Intelligence Layer, testada e
+   * revertida em 2026-09-04 — ver operationalPolicy.ts):
+   * classificação que o mercado teria contra os mesmos thresholds
+   * de `policy`, mas usando effectiveProbability (probabilidade
+   * descontada pela incerteza) em vez de rawProbability. NÃO
+   * influencia `classification` — piorou o ROI agregado no
+   * backtest determinístico. Mantida visível só para acompanhar
+   * o quanto divergiria, caso volte a ser testada com dados reais.
+   */
+  uncertaintyClassification:
+    DecisionClassification;
+
+  /*
+   * true quando o diagnóstico acima teria reduzido a
+   * classificação — não significa que a classificação real foi
+   * reduzida por isso (ver comentário acima).
+   */
+  uncertaintyDowngraded:
+    boolean;
+
+  /*
    * Indica de forma direta se a política operacional
    * limitou uma classificação superior.
    *
@@ -237,6 +266,12 @@ export interface DecisionMarketDebug {
 
   stake:
     number;
+
+  explain:
+    DecisionExplanation;
+
+  uncertainty:
+    UncertaintyAdjustmentResult | null;
 }
 
 export interface DecisionPipelineDebug {
@@ -334,5 +369,39 @@ export interface EvaluatedDecisionMarket extends PipelineRecord {
     string | null;
 
   discardedReason:
+    string | null;
+
+  explain?:
+    DecisionExplanation;
+
+  uncertainty?:
+    UncertaintyAdjustmentResult | null;
+
+  robustness?:
+    RobustnessResult | null;
+
+  /*
+   * 2026-09-05 — §7/§9/§12/§15 do roteiro. Todos telemetria pura
+   * (ver evaluateMarket.ts/explain.ts); nenhum decide
+   * classification/risk/confidence.
+   */
+  decisionScore?:
+    number | null;
+
+  extremeValueClassification?:
+    ExtremeValueClassification | null;
+
+  familyConsensus?:
+    FamilyConsensusResult | null;
+
+  decisionState?:
+    DecisionState;
+
+  /*
+   * Só presente em mercados suprimidos por
+   * MarketDominanceEvaluator (dominance.ts) — nome do mercado
+   * melhor ranqueado que o tornou redundante.
+   */
+  dominatedBy?:
     string | null;
 }

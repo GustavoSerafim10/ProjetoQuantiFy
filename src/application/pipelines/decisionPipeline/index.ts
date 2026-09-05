@@ -17,6 +17,8 @@ import { safeBuildCombo } from "./combo";
 
 import { createNoBetResult } from "./noBet";
 
+import { evaluateMarketDominance } from "./dominance";
+
 import type { PipelineRecord } from "../pipelineRecord";
 
 export * from "./types";
@@ -208,6 +210,20 @@ const evaluatedMarkets:
         )
     );
 
+  /*
+   * MarketDominanceEvaluator: entre os mercados acionáveis do
+   * MESMO jogo, mantém só a expressão mais bem ranqueada de cada
+   * grupo redundante (ver dominance.ts). `best` nunca é afetado —
+   * é o índice 0 de actionableMarkets, e nada ranqueado abaixo
+   * dele pode dominá-lo. Só operationalBets/secondary (as listas
+   * que poderiam sugerir MAIS de uma entrada por jogo) usam o
+   * resultado deduplicado.
+   */
+  const dominance =
+    evaluateMarketDominance(
+      actionableMarkets
+    );
+
   const watchlist =
     sortedMarkets
       .filter(
@@ -254,14 +270,14 @@ const evaluatedMarkets:
     null;
 
   const operationalBets =
-    actionableMarkets.filter(
+    dominance.kept.filter(
       market =>
         market.classification ===
         "BET"
     );
 
   const secondary =
-    actionableMarkets[1] ??
+    dominance.kept[1] ??
     watchlist[0] ??
     null;
 
@@ -415,6 +431,15 @@ const evaluatedMarkets:
       sortedMarkets,
 
     actionableMarkets,
+
+    /*
+     * Mercados acionáveis suprimidos pelo MarketDominanceEvaluator
+     * por serem redundantes com um mercado melhor ranqueado do
+     * mesmo jogo (ver dominance.ts). Mantidos aqui só para
+     * auditoria — já não fazem parte de operationalBets/secondary.
+     */
+    dominatedMarkets:
+      dominance.dominated,
 
     discarded,
 

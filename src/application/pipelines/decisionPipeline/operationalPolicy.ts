@@ -310,6 +310,35 @@ if (
   }
 
   /*
+   * FASE 4 do Decision Intelligence Layer — TENTATIVA REVERTIDA
+   * (2026-09-04): a ideia original era substituir estes três
+   * gates binários por um desconto contínuo de effectiveProbability
+   * (calculateUncertaintyAdjustment em uncertaintyAdjustment.ts),
+   * reclassificando o mercado contra os mesmos thresholds de
+   * marketPolicies.ts. Implementado e testado via runBacktest
+   * (2500 e 5000 partidas, determinístico) comparando contra a
+   * política atual (só com estes três gates):
+   *
+   * ROI agregado piorou nas duas amostras (2500: -0,08% → -2,29%;
+   * 5000: -0,97% → -2,10%), com o mercado de maior volume (HOME)
+   * caindo de ROI positivo para negativo/nulo nas duas. Alguns
+   * mercados pequenos melhoraram (BTTS_YES, DOUBLE_CHANCE_X2), mas
+   * não o suficiente para compensar.
+   *
+   * Não sabemos se a causa é o conceito ser ruim ou se
+   * sampleReliability/leagueTrust no gerador sintético não carregam
+   * sinal real de qualidade (mesma limitação já documentada para
+   * DRAW/OVER_1_5 no viés de bookmaker do matchGenerator.ts) — mas
+   * como a regra deste projeto é não manter mudança sem validação
+   * positiva, os gates binários originais foram mantidos.
+   * effectiveProbability/uncertaintyClassification continuam
+   * calculados e visíveis (evaluateMarket.ts, `explain`) como
+   * diagnóstico auditável, só não influenciam mais `classification`.
+   * Revisitar com dados reais de sample reliability/league trust,
+   * não com o gerador sintético.
+   */
+
+  /*
    * Divergência relevante entre a expectativa
    * oficial e a contextual limita agressividade.
    */

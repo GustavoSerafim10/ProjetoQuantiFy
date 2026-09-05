@@ -88,6 +88,22 @@ export interface MarketConfidenceResult {
   globalConfidenceAdjustment: number;
   dataQualityAdjustment: number;
   totalAdjustment: number;
+
+  /*
+   * FASE 2 do Decision Intelligence Layer (2026-09-04): mesma
+   * divergência |monteCarloProb - poissonProb| que já produzia os
+   * componentes MODEL_* acima (e o cap de confiança em caso de
+   * forte divergência), só que exposta como um número contínuo
+   * 0–1 em vez de ficar implícita dentro do ajuste de confidence.
+   *
+   * Não substitui nem recalcula nada: quando os dois modelos não
+   * estão disponíveis o valor é null (nenhuma opinião), e quando
+   * estão, é só uma reformulação legível/auditável do mesmo sinal
+   * que já influenciava `confidence`. Não introduz nenhum novo
+   * ajuste numérico em `confidence` — é telemetria, não decisão.
+   */
+  modelAgreementScore: number | null;
+
   components: MarketConfidenceComponent[];
   warnings: string[];
 }
@@ -357,6 +373,12 @@ export function calculateMarketConfidence(
     CONFIDENCE_POLICY.maximum
   );
 
+  const modelAgreementScore =
+    calculateModelAgreementScore(
+      monteCarloProb,
+      poissonProb
+    );
+
   return {
     valid: true,
     confidence: roundNumber(confidence),
@@ -374,6 +396,7 @@ export function calculateMarketConfidence(
       roundNumber(dataQualityAdjustment),
     totalAdjustment:
       roundNumber(totalAdjustment),
+    modelAgreementScore,
     components:
       components.map(component => ({
         ...component,
@@ -1226,10 +1249,55 @@ function createInvalidResult(
     globalConfidenceAdjustment: 0,
     dataQualityAdjustment: 0,
     totalAdjustment: 0,
+    modelAgreementScore: null,
     components: [],
     warnings:
       normalizeWarnings(warnings)
   };
+}
+
+/* ==========================================
+   MODEL AGREEMENT SCORE — FASE 2
+========================================== */
+
+/*
+ * Transforma a mesma divergência absoluta já usada nos
+ * componentes MODEL_* e no cap de divergência forte (0.16) num
+ * score contínuo 0–1, alinhado aos mesmos pontos de corte:
+ *
+ * diff 0.00 → 1.00 (concordância total)
+ * diff 0.16 → 0.00 (a mesma referência do cap de divergência)
+ * diff > 0.16 → 0 (sem piso negativo; ausência de concordância)
+ *
+ * Sem os dois modelos, não existe opinião — null, não 0 (0
+ * significaria "os modelos discordam ao máximo", o que é uma
+ * afirmação diferente de "não sabemos").
+ */
+const MODEL_AGREEMENT_REFERENCE_DIFF = 0.16;
+
+function calculateModelAgreementScore(
+  monteCarloProb: number | null,
+  poissonProb: number | null
+): number | null {
+  if (
+    monteCarloProb === null ||
+    poissonProb === null
+  ) {
+    return null;
+  }
+
+  const diff =
+    Math.abs(
+      monteCarloProb - poissonProb
+    );
+
+  return roundNumber(
+    clamp(
+      1 - (diff / MODEL_AGREEMENT_REFERENCE_DIFF),
+      0,
+      1
+    )
+  );
 }
 
 function normalizeMarket(

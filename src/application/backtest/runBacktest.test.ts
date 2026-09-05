@@ -145,3 +145,64 @@ describe("runBacktest (integration)", () => {
     );
   }, INTEGRATION_TIMEOUT_MS);
 });
+
+/*
+ * Fase 9 do Decision Intelligence Layer (2026-09-04): durante as
+ * fases 1-8, cada mudança em evaluateMarket.ts/operationalPolicy.ts/
+ * correlationEngine.ts foi validada rodando runBacktest() manualmente
+ * antes/depois e comparando totalBets/roi por mercado (foi assim que
+ * as fases 4 e 6 foram pegas piorando ROI real e revertidas). Este
+ * teste formaliza esse mesmo hábito: trava os números de produção
+ * atuais (seed determinística de matchGenerator + Monte Carlo
+ * seedado) para que qualquer mudança futura que vaze das fases de
+ * telemetria pura (explain/uncertainty/robustness/decisionScore/
+ * correlationPenaltyDiagnostic) para a decisão real quebre a suíte
+ * imediatamente, em vez de depender de alguém lembrar de rodar o
+ * script manual de novo.
+ *
+ * Se um valor aqui precisar mudar de propósito (ex.: recalibração
+ * real de threshold com justificativa registrada em
+ * marketPolicies.ts), atualize o número — não delete o teste.
+ */
+describe("runBacktest — estabilidade de decisão (regression guard)", () => {
+  const REGRESSION_TIMEOUT_MS = 15000;
+
+  it("produção com 200 partidas/300 simulações permanece com os mesmos números conhecidos", () => {
+    /*
+     * Números atualizados em 2026-09-05: goalProfile.ts corrigiu a
+     * saturação do bilateralComponent (denominador 1.15 → 2.0, ver
+     * comentário lá + goalProfile.saturation.test.ts). Isso baixa
+     * goalExpectationScore na maioria das partidas, o que muda quantas
+     * vezes riskPipeline/fragility.ts aplica CONTEXT_GOAL_SCORE_*
+     * contra os thresholds fixos de riskPipeline/policy.ts
+     * (STRUCTURE_THRESHOLDS.lowGoalScore/moderateGoalScore/
+     * highGoalScore) — esses thresholds nunca foram calibrados de
+     * forma independente do goalExpectationScore que existia na época
+     * (o próprio arquivo já se declara "política provisória" a
+     * validar por Brier/ROI). Investigação confirmou o mecanismo:
+     * numa amostra de 2500 partidas sintéticas, a correção reduz
+     * contradições UNDER/BTTS_NO em ~193 partidas (2404→2211) mas
+     * aumenta contradições OVER/BTTS_YES em ~34 partidas (17→64) — e
+     * como OVER_2_5/BTTS_YES concentram o volume lucrativo neste
+     * backtest (UNDER/BTTS_NO já rodam perto de EV zero por viés do
+     * matchGenerator, ver runBacktest — comentário de calibração),
+     * o saldo líquido nesta amostra é menos apostas/stake menor. Não
+     * é regressão de lógica: é a mesma correção de saturação exposta
+     * também aqui, mais uma recalibração pendente de
+     * STRUCTURE_THRESHOLDS que fica registrada como próximo passo.
+     */
+    const result = runBacktest(200, 1000, {
+      monteCarloSimulations: 300
+    });
+
+    expect(result.totalBets).toBe(63);
+    expect(result.wins).toBe(30);
+    expect(result.losses).toBe(33);
+    expect(result.voids).toBe(0);
+
+    expect(result.roi).toBeCloseTo(-0.10531688511541676, 9);
+    expect(result.totalProfit).toBeCloseTo(-140.87274256790968, 6);
+    expect(result.totalStaked).toBeCloseTo(1337.6083276060365, 6);
+    expect(result.maxDrawdown).toBeCloseTo(0.2923523002124933, 9);
+  }, REGRESSION_TIMEOUT_MS);
+});

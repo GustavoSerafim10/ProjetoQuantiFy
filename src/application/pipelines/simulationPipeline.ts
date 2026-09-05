@@ -141,6 +141,7 @@ export interface SimulationPipelineResult {
 
     over15Prob: number;
     over25Prob: number;
+    under15Prob: number;
     under25Prob: number;
 
     bttsProb: number;
@@ -148,6 +149,9 @@ export interface SimulationPipelineResult {
 
     doubleChance1X: number;
     doubleChanceX2: number;
+
+    dnbHomeProb: number;
+    dnbAwayProb: number;
 
     samplingError: MonteCarloAdapterOutput["samplingError"];
     maxSamplingError: number;
@@ -347,6 +351,9 @@ export function simulationPipeline<TModel>(
       over25Prob:
         simulation.over25Prob,
 
+      under15Prob:
+        simulation.under15Prob,
+
       under25Prob:
         simulation.under25Prob,
 
@@ -361,6 +368,12 @@ export function simulationPipeline<TModel>(
 
       doubleChanceX2:
         simulation.doubleChanceX2Prob,
+
+      dnbHomeProb:
+        simulation.dnbHomeProb,
+
+      dnbAwayProb:
+        simulation.dnbAwayProb,
 
       samplingError:
         simulation.samplingError,
@@ -572,6 +585,7 @@ function buildInvalidResult<TModel>(
 
       over15Prob: 0,
       over25Prob: 0,
+      under15Prob: 0,
       under25Prob: 0,
 
       bttsProb: 0,
@@ -579,6 +593,9 @@ function buildInvalidResult<TModel>(
 
       doubleChance1X: 0,
       doubleChanceX2: 0,
+
+      dnbHomeProb: 0,
+      dnbAwayProb: 0,
 
       samplingError:
         simulation.samplingError,
@@ -1220,19 +1237,23 @@ function buildModelComparison(
     ),
 
     /*
-     * O monteCarloAdapter ainda não simula under15/dnbHome/
-     * dnbAway diretamente (só under25/doubleChance1X/X2
-     * hoje) — comparação Monte Carlo fica indisponível para
-     * esses 3 mercados (degrada para monteCarlo:0,
-     * samplingError:null dentro de compareProbability, sem
-     * quebrar nada; este pipeline é só diagnóstico, não
-     * autoritativo).
+     * UNDER_1_5 passou a ter comparação Monte Carlo real
+     * (2026-09-04, ver monteCarloPoisson.ts) — antes disso este
+     * mercado nunca recebia o bônus/penalidade de "concordância de
+     * modelo" em confidenceEngine.ts, mesmo sendo um dos três
+     * mercados mais recentes e menos validados (junto com
+     * DNB_HOME/DNB_AWAY logo abaixo). Validado por comparação
+     * antes/depois via runBacktest com seed fixa: nenhum mercado
+     * regrediu, e UNDER_1_5 (antes travado em zero apostas nos
+     * thresholds de produção) passou a admitir um pequeno número
+     * de entradas bem calibradas (erro de calibração ~0,001 em
+     * 5000 partidas) em vez de ficar completamente inacessível.
      */
     UNDER_1_5: compareProbability(
       analytical.under15,
-      undefined,
-      undefined,
-      undefined
+      probabilities.under15,
+      simulation.samplingError.under15,
+      simulation.confidenceInterval95.under15
     ),
 
     UNDER_2_5: compareProbability(
@@ -1293,16 +1314,16 @@ function buildModelComparison(
 
     DNB_HOME: compareProbability(
       analytical.dnbHome,
-      undefined,
-      undefined,
-      undefined
+      probabilities.dnbHome,
+      simulation.samplingError.dnbHome,
+      simulation.confidenceInterval95.dnbHome
     ),
 
     DNB_AWAY: compareProbability(
       analytical.dnbAway,
-      undefined,
-      undefined,
-      undefined
+      probabilities.dnbAway,
+      simulation.samplingError.dnbAway,
+      simulation.confidenceInterval95.dnbAway
     )
   };
 }

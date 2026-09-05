@@ -208,7 +208,16 @@ function App() {
           data.odds as Record<string, number>,
 
         match:
-          data.match
+          data.match,
+
+        /*
+         * Ativa o robustnessScore (Fase 5 do Decision
+         * Intelligence Layer — ver evaluateMarket.ts). É custoso
+         * demais para o backtest sintético (milhares de partidas),
+         * mas irrelevante para uma análise única ao vivo como esta.
+         */
+        computeRobustness:
+          true
       };
 
       /*

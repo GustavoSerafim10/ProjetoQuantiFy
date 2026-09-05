@@ -33,10 +33,29 @@ export function calculateGoalExpectationScore(
       1
     );
 
+  /*
+   * Achado real em 2026-09-05 (mesmo padrão já corrigido antes em
+   * contextEngine.ts/contextAdjustment.ts): o denominador original
+   * (1.15) satura este componente assim que o lambda do lado MAIS
+   * FRACO passa de 1.15 — um valor apenas um pouco acima da média
+   * de um time mediano, não de um ataque genuinamente forte. Medido
+   * com amostra realista (1000 jogos, lambdas 0.5-2.5): 37% batiam
+   * no teto (score final >= 0.999), média de 0.858 num score que
+   * deveria centralizar perto de 0.5 para uma amostra aleatória.
+   * Isso inflava artificialmente goalExpectationScore pra perto de
+   * 1.0 em jogos comuns, disparando GOAL_EXPECTATION_CONTEXT_DIVERGENCE
+   * (operationalPolicy.ts) contra contextualGoalExpectationScore —
+   * que usa uma curva logística bem mais suave — mesmo quando não
+   * havia divergência real nenhuma entre os dois modelos.
+   *
+   * 2.0 exige um ataque genuinamente forte (2 gols esperados) do
+   * lado mais fraco para saturar — ainda alcançável em jogos de
+   * fato abertos, mas não em qualquer confronto equilibrado comum.
+   */
   const bilateralComponent =
     clamp(
       weakerLambda /
-        1.15,
+        2.0,
       0,
       1
     );

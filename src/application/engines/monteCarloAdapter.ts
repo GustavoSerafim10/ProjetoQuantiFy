@@ -30,6 +30,7 @@ export interface MonteCarloAdapterProbabilities {
 
   over15: number;
   over25: number;
+  under15: number;
   under25: number;
 
   bttsYes: number;
@@ -37,6 +38,9 @@ export interface MonteCarloAdapterProbabilities {
 
   doubleChance1X: number;
   doubleChanceX2: number;
+
+  dnbHome: number;
+  dnbAway: number;
 }
 
 export interface MonteCarloAdapterOutput {
@@ -50,6 +54,7 @@ export interface MonteCarloAdapterOutput {
 
   over15Prob: number;
   over25Prob: number;
+  under15Prob: number;
   under25Prob: number;
 
   bttsProb: number;
@@ -57,6 +62,9 @@ export interface MonteCarloAdapterOutput {
 
   doubleChance1XProb: number;
   doubleChanceX2Prob: number;
+
+  dnbHomeProb: number;
+  dnbAwayProb: number;
 
   iterations: number;
 
@@ -104,11 +112,14 @@ const INVALID_PROBABILITIES: MonteCarloAdapterProbabilities = {
   awayWin: 0,
   over15: 0,
   over25: 0,
+  under15: 0,
   under25: 0,
   bttsYes: 0,
   bttsNo: 0,
   doubleChance1X: 0,
-  doubleChanceX2: 0
+  doubleChanceX2: 0,
+  dnbHome: 0,
+  dnbAway: 0
 };
 
 const EMPTY_SAMPLING_ERROR: MonteCarloMatchResult["samplingError"] = {
@@ -117,11 +128,14 @@ const EMPTY_SAMPLING_ERROR: MonteCarloMatchResult["samplingError"] = {
   awayWin: 0,
   over15: 0,
   over25: 0,
+  under15: 0,
   under25: 0,
   bttsYes: 0,
   bttsNo: 0,
   doubleChance1X: 0,
-  doubleChanceX2: 0
+  doubleChanceX2: 0,
+  dnbHome: 0,
+  dnbAway: 0
 };
 
 const EMPTY_CONFIDENCE_INTERVALS: MonteCarloConfidenceIntervals = {
@@ -130,11 +144,14 @@ const EMPTY_CONFIDENCE_INTERVALS: MonteCarloConfidenceIntervals = {
   awayWin: { ...ZERO_INTERVAL },
   over15: { ...ZERO_INTERVAL },
   over25: { ...ZERO_INTERVAL },
+  under15: { ...ZERO_INTERVAL },
   under25: { ...ZERO_INTERVAL },
   bttsYes: { ...ZERO_INTERVAL },
   bttsNo: { ...ZERO_INTERVAL },
   doubleChance1X: { ...ZERO_INTERVAL },
-  doubleChanceX2: { ...ZERO_INTERVAL }
+  doubleChanceX2: { ...ZERO_INTERVAL },
+  dnbHome: { ...ZERO_INTERVAL },
+  dnbAway: { ...ZERO_INTERVAL }
 };
 
 function isMissingNumericValue(value: unknown): boolean {
@@ -199,6 +216,7 @@ function createInvalidResult(
 
     over15Prob: 0,
     over25Prob: 0,
+    under15Prob: 0,
     under25Prob: 0,
 
     bttsProb: 0,
@@ -206,6 +224,9 @@ function createInvalidResult(
 
     doubleChance1XProb: 0,
     doubleChanceX2Prob: 0,
+
+    dnbHomeProb: 0,
+    dnbAwayProb: 0,
 
     iterations: 0,
 
@@ -295,11 +316,14 @@ function adaptResult(
     awayWin: result.awayWin,
     over15: result.over15,
     over25: result.over25,
+    under15: result.under15,
     under25: result.under25,
     bttsYes: result.bttsYes,
     bttsNo: result.bttsNo,
     doubleChance1X: result.doubleChance1X,
-    doubleChanceX2: result.doubleChanceX2
+    doubleChanceX2: result.doubleChanceX2,
+    dnbHome: result.dnbHome,
+    dnbAway: result.dnbAway
   };
 
   const valid =
@@ -317,6 +341,7 @@ function adaptResult(
 
     over15Prob: probabilities.over15,
     over25Prob: probabilities.over25,
+    under15Prob: probabilities.under15,
     under25Prob: probabilities.under25,
 
     bttsProb: probabilities.bttsYes,
@@ -324,6 +349,9 @@ function adaptResult(
 
     doubleChance1XProb: probabilities.doubleChance1X,
     doubleChanceX2Prob: probabilities.doubleChanceX2,
+
+    dnbHomeProb: probabilities.dnbHome,
+    dnbAwayProb: probabilities.dnbAway,
 
     iterations: result.iterations,
 

@@ -59,3 +59,80 @@ describe("calculateMarketConfidence — DNB balanced support", () => {
     expect(component?.adjustment).toBeGreaterThan(0);
   });
 });
+
+/*
+ * Fase 2 do Decision Intelligence Layer (2026-09-04):
+ * modelAgreementScore expõe de forma explícita a mesma
+ * divergência |monteCarloProb - poissonProb| que já influenciava
+ * `confidence` via os componentes MODEL_* e o cap de divergência
+ * forte — sem introduzir nenhum ajuste numérico novo em
+ * `confidence`.
+ */
+describe("calculateMarketConfidence — modelAgreementScore", () => {
+  it("é null quando um dos dois modelos está ausente", () => {
+    const result = calculateMarketConfidence({
+      probability: 0.6,
+      lambdaHome: 1.4,
+      lambdaAway: 1.1,
+      market: "HOME",
+      monteCarloProb: 0.55
+    });
+
+    expect(result.modelAgreementScore).toBeNull();
+  });
+
+  it("é 1 quando os dois modelos concordam perfeitamente", () => {
+    const result = calculateMarketConfidence({
+      probability: 0.6,
+      lambdaHome: 1.4,
+      lambdaAway: 1.1,
+      market: "HOME",
+      monteCarloProb: 0.55,
+      poissonProb: 0.55
+    });
+
+    expect(result.modelAgreementScore).toBe(1);
+  });
+
+  it("chega a 0 quando a divergência ultrapassa a mesma referência (0.16) que já ativa o cap de forte divergência", () => {
+    const result = calculateMarketConfidence({
+      probability: 0.6,
+      lambdaHome: 1.4,
+      lambdaAway: 1.1,
+      market: "HOME",
+      monteCarloProb: 0.75,
+      poissonProb: 0.54
+    });
+
+    expect(result.modelAgreementScore).toBe(0);
+    expect(result.warnings).toContain(
+      "CONFIDENCE_CAPPED_BY_MODEL_DIVERGENCE"
+    );
+  });
+
+  it("não altera confidence numericamente — é telemetria pura", () => {
+    const withoutModels = calculateMarketConfidence({
+      probability: 0.6,
+      lambdaHome: 1.4,
+      lambdaAway: 1.1,
+      market: "HOME"
+    });
+
+    const withModelsButNoDivergence = calculateMarketConfidence({
+      probability: 0.6,
+      lambdaHome: 1.4,
+      lambdaAway: 1.1,
+      market: "HOME",
+      monteCarloProb: 0.60,
+      poissonProb: 0.60
+    });
+
+    // MODEL_STRONG_AGREEMENT já era somado antes desta fase — o
+    // ponto aqui é que modelAgreementScore não cria um segundo
+    // efeito sobre confidence além do que já existia.
+    expect(withModelsButNoDivergence.modelAgreementScore).toBe(1);
+    expect(withModelsButNoDivergence.confidence).toBeGreaterThanOrEqual(
+      withoutModels.confidence
+    );
+  });
+});

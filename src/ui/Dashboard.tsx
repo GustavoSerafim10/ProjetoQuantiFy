@@ -416,6 +416,65 @@ function getHeat(
   return "border-zinc-700";
 }
 
+interface DashboardExplain {
+  summary: string;
+  positives: string[];
+  negatives: string[];
+}
+
+/*
+ * `market.explain` vem do decisionPipeline (Fase 1 do Decision
+ * Intelligence Layer — ver evaluateMarket.ts/explain.ts) já pronto
+ * para leitura humana. Aqui só validamos o formato antes de
+ * renderizar, sem recalcular nada.
+ */
+function getExplain(
+  market?: DashboardMarket | null
+): DashboardExplain | null {
+  const explain = market?.explain;
+
+  if (
+    !explain ||
+    typeof explain !== "object"
+  ) {
+    return null;
+  }
+
+  const record =
+    explain as Record<string, unknown>;
+
+  const summary =
+    typeof record.summary === "string"
+      ? record.summary
+      : "";
+
+  const positives =
+    Array.isArray(record.positives)
+      ? record.positives.filter(
+          (item): item is string =>
+            typeof item === "string"
+        )
+      : [];
+
+  const negatives =
+    Array.isArray(record.negatives)
+      ? record.negatives.filter(
+          (item): item is string =>
+            typeof item === "string"
+        )
+      : [];
+
+  if (
+    !summary &&
+    positives.length === 0 &&
+    negatives.length === 0
+  ) {
+    return null;
+  }
+
+  return { summary, positives, negatives };
+}
+
 function getClassificationColor(
   classification?: BetClassification
 ): string {
@@ -466,6 +525,26 @@ export default function Dashboard({
     historyVersion,
     setHistoryVersion
   ] = useState(0);
+
+  /*
+   * Qual mercado do card "Ranking de Valor" tem o "Por quê?"
+   * aberto. Só um por vez — não precisa persistir entre análises.
+   */
+  const [
+    expandedExplainKey,
+    setExpandedExplainKey
+  ] = useState<string | null>(null);
+
+  /*
+   * AUDITORIA (2026-09-05): o card principal "DECISÃO
+   * QUANTITATIVA" mostra `best` mas nunca teve o "Por quê?" —
+   * só o card menor "Ranking de Valor" tinha. Corrigido: mesmo
+   * dado (best.explain), estado de expansão independente.
+   */
+  const [
+    isBestExplainOpen,
+    setIsBestExplainOpen
+  ] = useState(false);
 
   const fullHistory =
     useMemo(
@@ -640,7 +719,8 @@ const markets: DashboardMarket[] =
 
       analysisSnapshot:
         buildAnalysisSnapshot(
-          dashboardData
+          dashboardData,
+          best
         )
     });
 
@@ -794,6 +874,70 @@ const markets: DashboardMarket[] =
                 best.probability
               }
             />
+
+            {(() => {
+              const bestExplain = getExplain(best);
+
+              if (!bestExplain) {
+                return null;
+              }
+
+              return (
+                <>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setIsBestExplainOpen(
+                        open => !open
+                      )
+                    }
+                    className="text-xs text-zinc-400 hover:text-zinc-200 mt-3 underline decoration-dotted"
+                  >
+                    {isBestExplainOpen
+                      ? "Ocultar por quê"
+                      : "Por quê?"}
+                  </button>
+
+                  {isBestExplainOpen && (
+                    <div className="mt-2 text-xs space-y-2 border-t border-zinc-800 pt-2">
+                      <div className="text-zinc-300">
+                        {bestExplain.summary}
+                      </div>
+
+                      {bestExplain.positives.length > 0 && (
+                        <ul className="space-y-1">
+                          {bestExplain.positives.map(
+                            (item, itemIndex) => (
+                              <li
+                                key={`best-positive-${itemIndex}`}
+                                className="text-green-400"
+                              >
+                                + {item}
+                              </li>
+                            )
+                          )}
+                        </ul>
+                      )}
+
+                      {bestExplain.negatives.length > 0 && (
+                        <ul className="space-y-1">
+                          {bestExplain.negatives.map(
+                            (item, itemIndex) => (
+                              <li
+                                key={`best-negative-${itemIndex}`}
+                                className="text-red-400"
+                              >
+                                - {item}
+                              </li>
+                            )
+                          )}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </>
         ) : (
           <div className="text-red-400 mt-2">
@@ -895,13 +1039,24 @@ const markets: DashboardMarket[] =
                 (
                   market,
                   index
-                ) => (
+                ) => {
+                  const explainKey =
+                    String(
+                      market.market ??
+                      index
+                    );
+
+                  const explain =
+                    getExplain(market);
+
+                  const isExplainOpen =
+                    expandedExplainKey ===
+                    explainKey;
+
+                  return (
                   <div
                     key={
-                      String(
-                        market.market ??
-                        index
-                      )
+                      explainKey
                     }
                     className={
                       `p-3 rounded-xl border ${
@@ -992,8 +1147,67 @@ const markets: DashboardMarket[] =
                         market.probability
                       }
                     />
+
+                    {explain && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedExplainKey(
+                              isExplainOpen
+                                ? null
+                                : explainKey
+                            )
+                          }
+                          className="text-xs text-zinc-400 hover:text-zinc-200 mt-2 underline decoration-dotted"
+                        >
+                          {isExplainOpen
+                            ? "Ocultar por quê"
+                            : "Por quê?"}
+                        </button>
+
+                        {isExplainOpen && (
+                          <div className="mt-2 text-xs space-y-2 border-t border-zinc-800 pt-2">
+                            <div className="text-zinc-300">
+                              {explain.summary}
+                            </div>
+
+                            {explain.positives.length > 0 && (
+                              <ul className="space-y-1">
+                                {explain.positives.map(
+                                  (item, itemIndex) => (
+                                    <li
+                                      key={`positive-${itemIndex}`}
+                                      className="text-green-400"
+                                    >
+                                      + {item}
+                                    </li>
+                                  )
+                                )}
+                              </ul>
+                            )}
+
+                            {explain.negatives.length > 0 && (
+                              <ul className="space-y-1">
+                                {explain.negatives.map(
+                                  (item, itemIndex) => (
+                                    <li
+                                      key={`negative-${itemIndex}`}
+                                      className="text-red-400"
+                                    >
+                                      - {item}
+                                    </li>
+                                  )
+                                )}
+                              </ul>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
-                )
+                  );
+                }
               )}
           </div>
         ) : (
@@ -1274,10 +1488,44 @@ function nonNegativeNumber(
  * geraram aquele número).
  */
 function buildAnalysisSnapshot(
-  dashboardData: DashboardData
+  dashboardData: DashboardData,
+  registeredMarket?:
+    DashboardMarket |
+    null
 ): AnalysisSnapshot {
   const debug =
     dashboardData.debug as
+      | Record<string, unknown>
+      | undefined;
+
+  const uncertainty =
+    registeredMarket?.uncertainty as
+      | Record<string, unknown>
+      | undefined;
+
+  const robustness =
+    registeredMarket?.robustness as
+      | Record<string, unknown>
+      | undefined;
+
+  const registeredMarketDebug =
+    registeredMarket?.debug as
+      | Record<string, unknown>
+      | undefined;
+
+  const correlationEngineDebug =
+    registeredMarketDebug
+      ?.correlationEngine as
+      | Record<string, unknown>
+      | undefined;
+
+  const familyConsensus =
+    registeredMarket?.familyConsensus as
+      | { direction?: unknown; confirmingMarkets?: unknown }
+      | undefined;
+
+  const explainRecord =
+    registeredMarket?.explain as
       | Record<string, unknown>
       | undefined;
 
@@ -1337,7 +1585,93 @@ function buildAnalysisSnapshot(
         dashboardData.pressureFactor ??
         contextAdjusted?.pressureFactor
       ) ??
-      undefined
+      undefined,
+
+    modelAgreementScore:
+      toFiniteNumber(
+        registeredMarket?.modelAgreementScore
+      ),
+
+    effectiveProbability:
+      toFiniteNumber(
+        uncertainty?.effectiveProbability
+      ),
+
+    uncertaintyPenalty:
+      toFiniteNumber(
+        uncertainty?.uncertaintyPenalty
+      ),
+
+    uncertaintyClassification:
+      typeof registeredMarket
+        ?.uncertaintyClassification ===
+        "string"
+        ? registeredMarket.uncertaintyClassification
+        : null,
+
+    robustnessScore:
+      toFiniteNumber(
+        robustness?.robustnessScore
+      ),
+
+    correlationPenaltyDiagnostic:
+      toFiniteNumber(
+        registeredMarket
+          ?.correlationPenaltyDiagnostic
+      ),
+
+    mostRedundantWith:
+      typeof correlationEngineDebug
+        ?.mostRedundantWith ===
+        "string"
+        ? correlationEngineDebug.mostRedundantWith
+        : null,
+
+    decisionScore:
+      toFiniteNumber(
+        registeredMarket?.decisionScore
+      ),
+
+    extremeValueClassification:
+      typeof registeredMarket
+        ?.extremeValueClassification ===
+        "string"
+        ? registeredMarket.extremeValueClassification
+        : null,
+
+    familyConsensusDirection:
+      typeof familyConsensus?.direction ===
+        "string"
+        ? familyConsensus.direction
+        : null,
+
+    familyConsensusMarkets:
+      Array.isArray(
+        familyConsensus?.confirmingMarkets
+      )
+        ? familyConsensus.confirmingMarkets
+        : null,
+
+    decisionState:
+      typeof registeredMarket
+        ?.decisionState ===
+        "string"
+        ? registeredMarket.decisionState
+        : null,
+
+    decisionDrivers:
+      Array.isArray(
+        explainRecord?.decisionDrivers
+      )
+        ? explainRecord.decisionDrivers
+        : null,
+
+    decisionWarnings:
+      Array.isArray(
+        explainRecord?.decisionWarnings
+      )
+        ? explainRecord.decisionWarnings
+        : null
   };
 }
 

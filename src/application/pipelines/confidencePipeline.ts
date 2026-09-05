@@ -69,6 +69,8 @@ export interface ConfidencePipelineMarketDebug {
   monteCarloProbability: number | null;
   poissonProbability: number | null;
 
+  modelAgreementScore: number | null;
+
   confidence: number;
 
   warnings: string[];
@@ -392,6 +394,9 @@ export function confidencePipeline(
               monteCarloProbability,
               poissonProbability,
 
+              modelAgreementScore:
+                null,
+
               confidence: 0,
 
               warnings,
@@ -545,6 +550,9 @@ export function confidencePipeline(
             monteCarloProbability,
             poissonProbability,
 
+            modelAgreementScore:
+              result.modelAgreementScore,
+
             confidence:
               result.confidence,
 
@@ -572,6 +580,9 @@ export function confidencePipeline(
 
           confidenceValid:
             result.valid,
+
+          modelAgreementScore:
+            result.modelAgreementScore,
 
           warnings,
 
@@ -826,6 +837,9 @@ function createInvalidPipelineResult({
                 null,
 
               poissonProbability:
+                null,
+
+              modelAgreementScore:
                 null,
 
               confidence: 0,
