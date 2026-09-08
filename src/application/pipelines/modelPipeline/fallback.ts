@@ -133,6 +133,23 @@ export function emptyResponse() {
     confidence:
       0,
 
+    /*
+     * Presente mesmo no fallback para manter o contrato de retorno
+     * de modelPipeline/marketModelPipeline consistente (achado real
+     * em 2026-09-08: sem isso, o tipo inferido de marketModelPipeline
+     * vira uma união onde `leagueReliability` só existe em um dos
+     * lados, e qualquer acesso direto — inclusive em teste — quebra
+     * `tsc -b`, que é o que o build de produção realmente roda).
+     */
+    leagueReliability: {
+      key: "UNKNOWN",
+      requestedKey: "",
+      found: false,
+      usedDefault: true,
+      resolution: "default" as const,
+      dataReliability: 0.5
+    },
+
     debug: {
       modelPipeline: {
         error:

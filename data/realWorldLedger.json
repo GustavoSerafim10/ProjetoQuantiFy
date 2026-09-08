@@ -1,0 +1,61 @@
+[
+  {
+    "id": "game-1788906028402",
+    "createdAt": 1788906028402,
+    "match": "Criciuma vs Juventude",
+    "league": "Serie B Brasileirao",
+    "input": {
+      "match": {
+        "home": "Criciuma",
+        "away": "Juventude",
+        "league": "Serie B Brasileirao"
+      },
+      "odds": {
+        "home": 2.5,
+        "draw": 2.7,
+        "away": 3.5,
+        "over15": 1.57,
+        "over25": 2.87,
+        "under15": 2.25,
+        "under25": 1.4,
+        "bttsYes": 2.2,
+        "bttsNo": 1.61,
+        "homeOrDraw": 1.28,
+        "awayOrDraw": 1.5,
+        "dnbHome": 1.72,
+        "dnbAway": 2
+      },
+      "marketOdds": {
+        "home": [
+          2.5
+        ],
+        "draw": [
+          2.7
+        ],
+        "away": [
+          3.5
+        ],
+        "over15": [
+          1.57
+        ],
+        "under15": [
+          2.25
+        ],
+        "over25": [
+          2.87
+        ],
+        "under25": [
+          1.4
+        ],
+        "bttsYes": [
+          2.2
+        ],
+        "bttsNo": [
+          1.61
+        ]
+      }
+    },
+    "recommendation": null,
+    "noBetReason": "NO_MARKET_PASSED_DECISION_POLICY"
+  }
+]
