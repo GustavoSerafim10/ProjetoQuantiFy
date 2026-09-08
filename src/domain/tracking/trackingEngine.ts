@@ -87,6 +87,15 @@ export type Bet = {
 
  type: "SCALPER" | "ELITE" | "BET" | "WATCHLIST";
 
+  /*
+   * Origem da entrada. Ausente = "QUANT" (todo o histórico
+   * anterior a este campo veio do eliteAnalyzer). "AI" marca uma
+   * entrada discricionária registrada pelo AiAnalystPanel, para
+   * que calibrationReport possa comparar as duas abordagens sobre
+   * a mesma régua (Brier score, ROI) em vez de só anedota.
+   */
+  source?: "QUANT" | "AI";
+
   analysisSnapshot?: AnalysisSnapshot;
 };
 

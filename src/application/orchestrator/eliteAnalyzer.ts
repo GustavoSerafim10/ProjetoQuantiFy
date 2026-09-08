@@ -7,6 +7,15 @@ import {
 } from "../pipelines/modelPipeline";
 
 import {
+  marketModelPipeline
+} from "../pipelines/marketModelPipeline";
+
+import {
+  hasUsableMultiBookOdds,
+  type MultiBookOddsPayload
+} from "../../domain/odds/multiBookOdds";
+
+import {
   simulationPipeline
 } from "../pipelines/simulationPipeline";
 
@@ -73,6 +82,14 @@ import {
 export interface EliteAnalyzerInput {
   odds?: Record<string, number>;
 
+  /*
+   * Odds de várias casas (bet365/Betano/Superbet) — quando
+   * presentes, o motor de consenso de-vig (`marketModelPipeline`)
+   * substitui o Poisson-de-stats (`modelPipeline`) como fonte de
+   * lambdaHome/lambdaAway. Ver marketModelPipeline.ts.
+   */
+  marketOdds?: MultiBookOddsPayload;
+
   match?:
     | string
     | {
@@ -101,11 +118,21 @@ export function eliteAnalyzer(
 
   /*
    * 2. Modelo analítico
+   *
+   * Com odds de múltiplas casas, usa o consenso de-vig
+   * (marketModelPipeline) em vez do Poisson-de-stats
+   * (modelPipeline) — ver comentário em EliteAnalyzerInput.
    */
   const model =
-    modelPipeline(
-      context
-    );
+    hasUsableMultiBookOdds(
+      input?.marketOdds
+    )
+      ? marketModelPipeline(
+          context
+        )
+      : modelPipeline(
+          context
+        );
 
   /*
    * 3. Simulação Monte Carlo e comparação

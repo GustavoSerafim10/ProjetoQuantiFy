@@ -8,7 +8,10 @@ import InputPanel, {
 
 import Dashboard from "./ui/Dashboard";
 import GameAnalysisPanel from "./ui/GameAnalysisPanel";
+import AiAnalystPanel from "./ui/AiAnalystPanel";
 import { ErrorBoundary } from "./ui/ErrorBoundary";
+
+import type { AnalystBriefQuantMarket } from "./domain/aiAnalyst/buildAnalystBrief";
 
 import {
   eliteAnalyzer
@@ -157,6 +160,27 @@ function App() {
     setIsAnalyzing
   ] = useState(false);
 
+  /*
+   * Guarda o payload da última análise (times, liga, odds) para
+   * que o AiAnalystPanel possa montar o prompt sem pedir de novo
+   * dados que o usuário já digitou no InputPanel.
+   */
+  const [
+    lastPayload,
+    setLastPayload
+  ] = useState<AnalysisPayload | null>(null);
+
+  /*
+   * Força o Dashboard a reler o histórico (via remount, trocando
+   * sua `key`) depois que o AiAnalystPanel registra uma entrada —
+   * o Dashboard controla sua própria releitura internamente
+   * (historyVersion) e não expõe um jeito de acioná-la de fora.
+   */
+  const [
+    historyRefreshKey,
+    setHistoryRefreshKey
+  ] = useState(0);
+
   /* ==========================================
      EXECUÇÃO DA ANÁLISE
   ========================================== */
@@ -178,47 +202,67 @@ function App() {
         data
       );
 
+      setLastPayload(
+        data
+      );
+
       /*
-       * O InputPanel produz:
+       * Dois formatos possíveis vindos do InputPanel (ver
+       * ui/InputPanel/types.ts):
        *
-       * data.stats.home
-       * data.stats.away
-       *
-       * Os pipelines internos utilizam:
-       *
-       * homeStats
-       * awayStats
-       *
-       * Portanto, fazemos apenas a adaptação
-       * estrutural antes do eliteAnalyzer.
+       * - mode "market": odds de consenso multi-casas (de-vig) —
+       *   achado real em 2026-09-08, é o modo padrão agora. Não tem
+       *   stats de time — o eliteAnalyzer detecta `marketOdds` e usa
+       *   marketModelPipeline em vez do Poisson-de-stats.
+       * - mode "stats": formulário legado (data.stats.home/away).
+       *   Os pipelines internos utilizam homeStats/awayStats — só
+       *   adaptação estrutural antes do eliteAnalyzer.
        */
-      const analyzerInput = {
-        ...data,
+      const analyzerInput =
+        data.mode === "market"
+          ? {
+              match:
+                data.match,
 
-        homeStats:
-          data.stats.home,
+              league:
+                data.match.league,
 
-        awayStats:
-          data.stats.away,
+              marketOdds:
+                data.marketOdds,
 
-        league:
-          data.match.league,
+              odds:
+                data.odds as Record<string, number>,
 
-        odds:
-          data.odds as Record<string, number>,
+              computeRobustness:
+                true
+            }
+          : {
+              ...data,
 
-        match:
-          data.match,
+              homeStats:
+                data.stats.home,
 
-        /*
-         * Ativa o robustnessScore (Fase 5 do Decision
-         * Intelligence Layer — ver evaluateMarket.ts). É custoso
-         * demais para o backtest sintético (milhares de partidas),
-         * mas irrelevante para uma análise única ao vivo como esta.
-         */
-        computeRobustness:
-          true
-      };
+              awayStats:
+                data.stats.away,
+
+              league:
+                data.match.league,
+
+              odds:
+                data.odds as Record<string, number>,
+
+              match:
+                data.match,
+
+              /*
+               * Ativa o robustnessScore (Fase 5 do Decision
+               * Intelligence Layer — ver evaluateMarket.ts). É custoso
+               * demais para o backtest sintético (milhares de partidas),
+               * mas irrelevante para uma análise única ao vivo como esta.
+               */
+              computeRobustness:
+                true
+            };
 
       /*
        * O eliteAnalyzer executa a cadeia completa:
@@ -352,6 +396,18 @@ function App() {
       ? result.markets
       : [];
 
+  const quantSummary:
+    AnalystBriefQuantMarket[] =
+    resultMarkets
+      .filter(market => typeof market.market === "string")
+      .map(market => ({
+        market: market.market as string,
+        probability: market.probability,
+        odd: market.odd,
+        ev: market.ev,
+        classification: market.classification
+      }));
+
   /* ==========================================
      INTERFACE
   ========================================== */
@@ -409,6 +465,7 @@ function App() {
 
 <ErrorBoundary>
   <Dashboard
+    key={historyRefreshKey}
     data={result}
   />
 </ErrorBoundary>
@@ -419,6 +476,23 @@ function App() {
   <ErrorBoundary>
     <GameAnalysisPanel
       markets={resultMarkets}
+    />
+  </ErrorBoundary>
+)}
+
+{/* ANALISTA IA — SOMENTE APÓS ANALISAR AO MENOS UMA VEZ */}
+
+{lastPayload && (
+  <ErrorBoundary>
+    <AiAnalystPanel
+      match={lastPayload.match}
+      odds={lastPayload.odds}
+      quantSummary={quantSummary}
+      onRegistered={() =>
+        setHistoryRefreshKey(
+          key => key + 1
+        )
+      }
     />
   </ErrorBoundary>
 )}

@@ -1302,6 +1302,9 @@ const markets: DashboardMarket[] =
                     <span className="text-[10px] text-blue-400">
                       {bet.type ||
                         "BET"}
+                      {bet.source ===
+                        "AI" &&
+                        " · 🧠 IA"}
                     </span>
 
                     <span className="text-zinc-500 text-[10px]">

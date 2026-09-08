@@ -50,6 +50,14 @@ export interface CalibrationReport {
   byMarket: Record<string, CalibrationBucket>;
   byClassification: Record<string, CalibrationBucket>;
 
+  /*
+   * QUANT (eliteAnalyzer) vs AI (recomendação discricionária do
+   * AiAnalystPanel) — a pergunta real por trás desse relatório:
+   * a leitura qualitativa da IA bate mais que o motor quantitativo,
+   * ou é só variância de amostra pequena? Ver sampleWarning.
+   */
+  bySource: Record<string, CalibrationBucket>;
+
   recentVsAllTime: RecentVsAllTime | null;
 
   /*
@@ -87,6 +95,9 @@ export function buildCalibrationReport(
   const byClassification =
     groupBy(settled, bet => bet.type);
 
+  const bySource =
+    groupBy(settled, bet => bet.source ?? "QUANT");
+
   const sortedByDate =
     [...settled].sort(
       (a, b) => a.createdAt - b.createdAt
@@ -120,6 +131,7 @@ export function buildCalibrationReport(
 
     byMarket,
     byClassification,
+    bySource,
 
     recentVsAllTime,
 

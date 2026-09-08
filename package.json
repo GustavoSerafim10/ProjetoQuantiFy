@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "preview": "vite preview",
-    "backtest:robustness": "tsx scripts/robustnessReport.ts"
+    "backtest:robustness": "tsx scripts/robustnessReport.ts",
+    "realworld": "tsx scripts/realWorld.ts"
   },
   "dependencies": {
     "framer-motion": "^12.38.0",

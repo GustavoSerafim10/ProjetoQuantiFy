@@ -1,3 +1,7 @@
+import type { MultiBookOddsPayload } from "../../domain/odds/multiBookOdds";
+
+export type { MultiBookOddsPayload };
+
 /* ==========================================
    FORMULÁRIO
 ========================================== */
@@ -202,7 +206,9 @@ export interface OddsPayload {
   dnbAway?: number;
 }
 
-export interface AnalysisPayload {
+export interface StatsAnalysisPayload {
+  mode: "stats";
+
   match: {
     home: string;
     away: string;
@@ -233,6 +239,33 @@ export interface AnalysisPayload {
       string[];
   };
 }
+
+/*
+ * Modo de consenso multi-casas (de-vig) — achado real em
+ * 2026-09-08, ver marketModelPipeline.ts. Não pede stats de time:
+ * a probabilidade vem das odds de várias casas, não de um modelo
+ * próprio. `odds` continua sendo o preço de UMA casa (a que
+ * realmente vai ser usada para apostar) para o cálculo de EV;
+ * `marketOdds` são as odds de várias casas usadas só para o
+ * consenso/de-vig.
+ */
+export interface MarketOddsAnalysisPayload {
+  mode: "market";
+
+  match: {
+    home: string;
+    away: string;
+    league: string;
+  };
+
+  marketOdds: MultiBookOddsPayload;
+
+  odds: OddsPayload;
+}
+
+export type AnalysisPayload =
+  | StatsAnalysisPayload
+  | MarketOddsAnalysisPayload;
 
 /* ==========================================
    PROPS

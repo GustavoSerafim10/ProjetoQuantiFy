@@ -95,6 +95,16 @@ export default function CalibrationPanel({
       (a, b) => b[1].bets - a[1].bets
     );
 
+  const sourceEntries =
+    Object.entries(report.bySource).sort(
+      (a, b) => b[1].bets - a[1].bets
+    );
+
+  const sourceLabels: Record<string, string> = {
+    QUANT: "🧮 Motor quantitativo",
+    AI: "🧠 IA discricionária"
+  };
+
   return (
     <Card>
       <h2 className="font-bold mb-1">
@@ -157,6 +167,21 @@ export default function CalibrationPanel({
               bucket={bucket}
             />
           ))}
+
+          {sourceEntries.length > 1 && (
+            <div className="mt-3 text-[10px] uppercase tracking-wide text-zinc-500">
+              Por origem (quant vs. IA)
+            </div>
+          )}
+
+          {sourceEntries.length > 1 &&
+            sourceEntries.map(([source, bucket]) => (
+              <BucketRow
+                key={source}
+                label={sourceLabels[source] ?? source}
+                bucket={bucket}
+              />
+            ))}
         </>
       ) : (
         <div className="text-zinc-500 text-sm">

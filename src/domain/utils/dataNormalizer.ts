@@ -33,9 +33,11 @@ type RawTeamStats = {
    */
   avgShots?: unknown;
   shotsPerGame?: unknown;
+  shots?: unknown;
 
   avgShotsOnTarget?: unknown;
   shotsOnTargetPerGame?: unknown;
+  shotsOnTarget?: unknown;
 
   /*
    * Forma recente.
@@ -237,17 +239,28 @@ export function normalizeStats(
   /*
    * Finalizações.
    *
-   * `suppliedAvgShots` distingue "não informado"
-   * de "informado como zero" — usado para decidir
-   * se `avgShots`/`shotsPerGame` entram no objeto
-   * de saída. `avgShots` (com fallback 0) continua
-   * existindo só para as razões internas abaixo
-   * (shotAccuracy, offensiveEfficiency).
+   * `suppliedAvgShots`/`suppliedAvgShotsOnTarget` distinguem
+   * "não informado" de "informado como zero" — usados para
+   * decidir se os campos entram no objeto de saída. Achado real
+   * em 2026-09-08: a lista de candidatos aqui só olhava os aliases
+   * (avgShots/shotsPerGame, avgShotsOnTarget/shotsOnTargetPerGame),
+   * nunca os campos canônicos (`shots`, `shotsOnTarget`) do
+   * contrato TeamStatsPayload. Um caller que manda só o campo
+   * canônico (qualquer coisa fora do InputPanel, que sempre
+   * duplica os aliases) via `suppliedAvgShotsOnTarget` ausente,
+   * fazia este arquivo emitir `avgShotsOnTarget`/
+   * `shotsOnTargetPerGame: 0` incondicionalmente — e como 0 é um
+   * número "válido", sanitizeStats.ts pegava esse zero falso antes
+   * de cair para o `shotsOnTarget` real, zerando o proxy de xG do
+   * time inteiro sem warning nenhum. `avgShots`/`shotsPerGame`
+   * (com fallback 0) continuam existindo só para as razões
+   * internas abaixo (shotAccuracy, offensiveEfficiency).
    */
   const suppliedAvgShots =
     firstFiniteNumber([
       stats.avgShots,
-      stats.shotsPerGame
+      stats.shotsPerGame,
+      stats.shots
     ]);
 
   const avgShots =
@@ -257,12 +270,16 @@ export function normalizeStats(
       40
     );
 
+  const suppliedAvgShotsOnTarget =
+    firstFiniteNumber([
+      stats.avgShotsOnTarget,
+      stats.shotsOnTargetPerGame,
+      stats.shotsOnTarget
+    ]);
+
   const rawShotsOnTarget =
     clamp(
-      firstFiniteNumber([
-        stats.avgShotsOnTarget,
-        stats.shotsOnTargetPerGame
-      ]) ?? 0,
+      suppliedAvgShotsOnTarget ?? 0,
       0,
       25
     );
@@ -454,15 +471,24 @@ export function normalizeStats(
         }
       : {}),
 
-    avgShotsOnTarget:
-      roundNumber(
-        avgShotsOnTarget
-      ),
+    /*
+     * Mesma razão do bloco de finalizações totais acima: ausência
+     * real de chutes no alvo não pode virar "zero chutes no alvo"
+     * no objeto de saída, pois sanitizeStats.ts trata 0 como valor
+     * válido e o usaria antes de cair para o campo canônico
+     * `shotsOnTarget` (bug real encontrado em 2026-09-08 — zerava
+     * o proxy de xG de times cujos dados só traziam o campo
+     * canônico, sem os aliases).
+     */
+    ...(suppliedAvgShotsOnTarget !== null
+      ? {
+          avgShotsOnTarget:
+            roundNumber(avgShotsOnTarget),
 
-    shotsOnTargetPerGame:
-      roundNumber(
-        avgShotsOnTarget
-      ),
+          shotsOnTargetPerGame:
+            roundNumber(avgShotsOnTarget)
+        }
+      : {}),
 
     last5Goals:
       roundNumber(last5Goals),

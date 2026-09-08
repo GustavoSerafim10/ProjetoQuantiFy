@@ -20,12 +20,16 @@ import { normalizeWarnings, createPayloadWarnings, formatWarning } from "./warni
 import { Row } from "./Row";
 import { OddInput } from "./OddInput";
 import { Card } from "./Card";
+import MarketOddsPanel from "./MarketOddsPanel";
 
 export type {
   ExternalInputData,
   TeamStatsPayload,
   OddsPayload,
-  AnalysisPayload
+  AnalysisPayload,
+  StatsAnalysisPayload,
+  MarketOddsAnalysisPayload,
+  MultiBookOddsPayload
 } from "./types";
 
 /* ==========================================
@@ -62,6 +66,17 @@ export default function InputPanel({
   onAnalyze,
   externalData
 }: InputPanelProps) {
+  /*
+   * Achado real em 2026-09-08: consenso de-vig multi-casas acertou
+   * 5 de 6 entradas reais, muito melhor que o formulário de stats —
+   * por isso é o modo padrão. O modo de stats fica disponível como
+   * legado (ver marketModelPipeline.ts / modelPipeline.ts).
+   */
+  const [
+    mode,
+    setMode
+  ] = useState<"market" | "stats">("market");
+
   const [
     form,
     setForm
@@ -374,6 +389,8 @@ export default function InputPanel({
 
     const data:
       AnalysisPayload = {
+        mode: "stats",
+
         match: {
           home:
             homeTeam,
@@ -478,6 +495,39 @@ export default function InputPanel({
   return (
     <div className="min-h-screen p-6 bg-[#0B0F1A] text-white">
 
+      {/* ALTERNADOR DE MODO */}
+
+      <div className="max-w-3xl mx-auto mb-6 flex gap-2 rounded-xl border border-zinc-800 p-1">
+        <button
+          type="button"
+          onClick={() => setMode("market")}
+          className={`flex-1 py-2 rounded-lg text-sm font-semibold transition ${
+            mode === "market"
+              ? "bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 text-white"
+              : "text-zinc-400 hover:text-white"
+          }`}
+        >
+          📊 Odds de mercado (recomendado)
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setMode("stats")}
+          className={`flex-1 py-2 rounded-lg text-sm font-semibold transition ${
+            mode === "stats"
+              ? "bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white"
+              : "text-zinc-400 hover:text-white"
+          }`}
+        >
+          📈 Estatísticas dos times (legado)
+        </button>
+      </div>
+
+      {mode === "market" && (
+        <MarketOddsPanel onAnalyze={onAnalyze} />
+      )}
+
+      {mode === "stats" && (
       <div className="max-w-3xl mx-auto space-y-8">
 
         {/* HEADER */}
@@ -912,6 +962,7 @@ export default function InputPanel({
         </button>
 
       </div>
+      )}
     </div>
   );
 }
