@@ -380,6 +380,16 @@ const leagueAliases:
       "brasileiraoserieb",
 
     campeonatobrasileiroserieb:
+      "brasileiraoserieb",
+
+    /*
+     * Achado real em 2026-09-08: "Série B - Brasileirão" (ordem
+     * invertida, como o usuário digitou de fato) normaliza para
+     * "seriebbrasileirao" — não batia com nenhum alias existente
+     * (todos tinham "brasileirao" primeiro), caindo no fallback de
+     * liga padrão sem aviso nenhum.
+     */
+    seriebbrasileirao:
       "brasileiraoserieb"
   };
 /* ==========================================
