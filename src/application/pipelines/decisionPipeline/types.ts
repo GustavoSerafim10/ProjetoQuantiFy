@@ -72,6 +72,7 @@ export interface DecisionContextMetrics {
   lambdaHome: number | null;
   lambdaAway: number | null;
   totalLambda: number | null;
+  rho: number | null;
 
   matchBalanceIndex: number | null;
 

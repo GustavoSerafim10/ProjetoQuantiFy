@@ -207,62 +207,48 @@ function App() {
       );
 
       /*
-       * Dois formatos possíveis vindos do InputPanel (ver
-       * ui/InputPanel/types.ts):
+       * O InputPanel manda estatísticas dos times E odds de mercado
+       * juntas (achado real em 2026-09-08 — o usuário quer ver os
+       * dois lado a lado, não como modos separados). O eliteAnalyzer
+       * decide sozinho qual motor usar (ver fusedModelPipeline.ts e
+       * lambdaFusion.ts, achado de 2026-09-09):
        *
-       * - mode "market": odds de consenso multi-casas (de-vig) —
-       *   achado real em 2026-09-08, é o modo padrão agora. Não tem
-       *   stats de time — o eliteAnalyzer detecta `marketOdds` e usa
-       *   marketModelPipeline em vez do Poisson-de-stats.
-       * - mode "stats": formulário legado (data.stats.home/away).
-       *   Os pipelines internos utilizam homeStats/awayStats — só
-       *   adaptação estrutural antes do eliteAnalyzer.
+       * - odds de mercado + stats dos dois times → funde os dois
+       *   lambdas (mercado como base, stats como ajuste limitado);
+       * - só odds de mercado → consenso de-vig puro
+       *   (marketModelPipeline);
+       * - só stats → Poisson-de-stats legado (modelPipeline).
        */
-      const analyzerInput =
-        data.mode === "market"
-          ? {
-              match:
-                data.match,
+      const analyzerInput = {
+        ...data,
 
-              league:
-                data.match.league,
+        homeStats:
+          data.stats.home,
 
-              marketOdds:
-                data.marketOdds,
+        awayStats:
+          data.stats.away,
 
-              odds:
-                data.odds as Record<string, number>,
+        league:
+          data.match.league,
 
-              computeRobustness:
-                true
-            }
-          : {
-              ...data,
+        marketOdds:
+          data.marketOdds,
 
-              homeStats:
-                data.stats.home,
+        odds:
+          data.odds as Record<string, number>,
 
-              awayStats:
-                data.stats.away,
+        match:
+          data.match,
 
-              league:
-                data.match.league,
-
-              odds:
-                data.odds as Record<string, number>,
-
-              match:
-                data.match,
-
-              /*
-               * Ativa o robustnessScore (Fase 5 do Decision
-               * Intelligence Layer — ver evaluateMarket.ts). É custoso
-               * demais para o backtest sintético (milhares de partidas),
-               * mas irrelevante para uma análise única ao vivo como esta.
-               */
-              computeRobustness:
-                true
-            };
+        /*
+         * Ativa o robustnessScore (Fase 5 do Decision
+         * Intelligence Layer — ver evaluateMarket.ts). É custoso
+         * demais para o backtest sintético (milhares de partidas),
+         * mas irrelevante para uma análise única ao vivo como esta.
+         */
+        computeRobustness:
+          true
+      };
 
       /*
        * O eliteAnalyzer executa a cadeia completa:

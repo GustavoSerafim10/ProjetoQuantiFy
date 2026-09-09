@@ -11,6 +11,11 @@ import {
 } from "../pipelines/marketModelPipeline";
 
 import {
+  fusedModelPipeline,
+  shouldUseFusedModel
+} from "../pipelines/fusedModelPipeline";
+
+import {
   hasUsableMultiBookOdds,
   type MultiBookOddsPayload
 } from "../../domain/odds/multiBookOdds";
@@ -83,10 +88,11 @@ export interface EliteAnalyzerInput {
   odds?: Record<string, number>;
 
   /*
-   * Odds de várias casas (bet365/Betano/Superbet) — quando
-   * presentes, o motor de consenso de-vig (`marketModelPipeline`)
-   * substitui o Poisson-de-stats (`modelPipeline`) como fonte de
-   * lambdaHome/lambdaAway. Ver marketModelPipeline.ts.
+   * Odds de várias casas (bet365/Betano/Superbet). Com stats dos
+   * dois times também presentes, funde-se com o Poisson-de-stats
+   * (`fusedModelPipeline`, mercado como base, stats como ajuste
+   * limitado — ver lambdaFusion.ts). Sem stats, usa o consenso
+   * de-vig puro (`marketModelPipeline`). Ver eliteAnalyzer() abaixo.
    */
   marketOdds?: MultiBookOddsPayload;
 
@@ -119,20 +125,31 @@ export function eliteAnalyzer(
   /*
    * 2. Modelo analítico
    *
-   * Com odds de múltiplas casas, usa o consenso de-vig
-   * (marketModelPipeline) em vez do Poisson-de-stats
-   * (modelPipeline) — ver comentário em EliteAnalyzerInput.
+   * Achado real em 2026-09-09: com odds de múltiplas casas E
+   * estatísticas dos dois times, funde os dois lambdas
+   * (fusedModelPipeline — ver lambdaFusion.ts) em vez de escolher
+   * um e descartar o outro. Sem stats de um dos times, cai pro
+   * consenso de-vig puro (marketModelPipeline). Sem odds de
+   * múltiplas casas, cai pro Poisson-de-stats puro (modelPipeline).
    */
   const model =
-    hasUsableMultiBookOdds(
-      input?.marketOdds
-    )
-      ? marketModelPipeline(
+    shouldUseFusedModel({
+      marketOdds: input?.marketOdds,
+      homeStats: input?.homeStats,
+      awayStats: input?.awayStats
+    })
+      ? fusedModelPipeline(
           context
         )
-      : modelPipeline(
-          context
-        );
+      : hasUsableMultiBookOdds(
+          input?.marketOdds
+        )
+        ? marketModelPipeline(
+            context
+          )
+        : modelPipeline(
+            context
+          );
 
   /*
    * 3. Simulação Monte Carlo e comparação

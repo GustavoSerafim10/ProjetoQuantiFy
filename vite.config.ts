@@ -9,5 +9,13 @@ export default defineConfig(({ command }) => ({
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts'],
+    // Padrão do vitest (5s) é curto demais para os testes que rodam
+    // a busca em grade determinística de fitMarketImpliedLambda
+    // (marketLambda/marketModelPipeline/fusedModelPipeline) quando a
+    // suite inteira roda em paralelo e disputa CPU — timeouts
+    // observados eram falsos positivos (< 1s cada um rodando sozinho),
+    // não regressão de lógica. Timeout global maior evita ter que
+    // marcar teste por teste.
+    testTimeout: 20000,
   },
 }))

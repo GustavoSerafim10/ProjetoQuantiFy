@@ -5,12 +5,8 @@ import {
 } from "../../domain/confidence/globalConfidenceEngine";
 
 import {
-  fitMarketImpliedLambda
-} from "../../domain/model/marketImpliedLambda";
-
-import {
-  devigConsensus
-} from "../../domain/odds/devig";
+  computeMarketLambda
+} from "./marketLambda";
 
 import {
   hasUsableMultiBookOdds,
@@ -64,9 +60,13 @@ import { safeNumber } from "./modelPipeline/numericHelpers";
  *   pede stats de time, então não faz sentido tratá-las como
  *   ausência.
  *
- * O motor antigo (`modelPipeline`) continua existindo e sendo usado
- * quando não há odds de múltiplas casas — ver o branch em
- * `eliteAnalyzer.ts`.
+ * Este caminho (consenso de-vig puro, sem stats) só é usado quando
+ * NÃO há estatísticas utilizáveis dos dois times — ver o branch em
+ * `eliteAnalyzer.ts`. Quando as duas coisas existem, quem decide é
+ * `fusedModelPipeline.ts` (achado real em 2026-09-09), que reusa
+ * `computeMarketLambda` daqui e funde com o lambda de stats. O
+ * motor antigo (`modelPipeline`) continua existindo para quando não
+ * há odds de múltiplas casas.
  */
 
 interface MarketModelPipelineContext {
@@ -91,7 +91,9 @@ export function marketModelPipeline(
   const marketOdds =
     safeContext.marketOdds;
 
-  if (!hasUsableMultiBookOdds(marketOdds)) {
+  const marketLambda = computeMarketLambda(marketOdds);
+
+  if (!marketLambda) {
     console.warn(
       "⚠️ marketModelPipeline chamado sem odds de múltiplas casas utilizáveis"
     );
@@ -99,80 +101,16 @@ export function marketModelPipeline(
     return emptyResponse();
   }
 
-  /* ========================================
-     DE-VIG POR GRUPO DE MERCADO
-  ======================================== */
+  const {
+    lambdaHome,
+    lambdaAway,
+    totalLambda,
+    bookmakerCount,
+    devig,
+    fit
+  } = marketLambda;
 
-  const oneXToConsensus =
-    marketOdds!.home && marketOdds!.draw && marketOdds!.away
-      ? devigConsensus([
-          marketOdds!.home,
-          marketOdds!.draw,
-          marketOdds!.away
-        ])
-      : null;
-
-  const overUnder15Consensus =
-    marketOdds!.over15 && marketOdds!.under15
-      ? devigConsensus([
-          marketOdds!.over15,
-          marketOdds!.under15
-        ])
-      : null;
-
-  const overUnder25Consensus =
-    marketOdds!.over25 && marketOdds!.under25
-      ? devigConsensus([
-          marketOdds!.over25,
-          marketOdds!.under25
-        ])
-      : null;
-
-  const bttsConsensus =
-    marketOdds!.bttsYes && marketOdds!.bttsNo
-      ? devigConsensus([
-          marketOdds!.bttsYes,
-          marketOdds!.bttsNo
-        ])
-      : null;
-
-  const oneXTwo = oneXToConsensus?.probabilities ?? null;
-  const overUnder15 = overUnder15Consensus?.probabilities ?? null;
-  const overUnder25 = overUnder25Consensus?.probabilities ?? null;
-  const btts = bttsConsensus?.probabilities ?? null;
-
-  const bookmakerCount =
-    Math.max(
-      1,
-      oneXToConsensus?.bookmakerCount ?? 0,
-      overUnder15Consensus?.bookmakerCount ?? 0,
-      overUnder25Consensus?.bookmakerCount ?? 0,
-      bttsConsensus?.bookmakerCount ?? 0
-    );
-
-  /* ========================================
-     AJUSTE DE LAMBDA PARA O CONSENSO
-  ======================================== */
-
-  const fit =
-    fitMarketImpliedLambda({
-      home: oneXTwo?.[0],
-      draw: oneXTwo?.[1],
-      away: oneXTwo?.[2],
-
-      over15: overUnder15?.[0],
-      under15: overUnder15?.[1],
-
-      over25: overUnder25?.[0],
-      under25: overUnder25?.[1],
-
-      bttsYes: btts?.[0],
-      bttsNo: btts?.[1]
-    });
-
-  const lambdaHome = fit.lambdaHome;
-  const lambdaAway = fit.lambdaAway;
-  const totalLambda = lambdaHome + lambdaAway;
+  const { oneXTwo, overUnder15, overUnder25, btts } = devig;
 
   /* ========================================
      GOALS MODEL (mesma matriz Poisson/Dixon-Coles)

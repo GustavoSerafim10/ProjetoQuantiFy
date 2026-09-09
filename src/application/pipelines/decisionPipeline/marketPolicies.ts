@@ -532,11 +532,27 @@ export const GLOBAL_POLICY = {
   hardMinimumEv:
     0,
 
+  /*
+   * Calibrados via robustnessReport.ts (2026-09-09, 100 simulações
+   * independentes de 1500 partidas cada, após o fix de 2026-09-09
+   * que passou a alimentar o backtest com o stake REAL de produção
+   * — ver runBacktest.ts). Valores originais (kellyFraction 0.25,
+   * maximumStake 0.03): ROI médio 2,7%, drawdown médio 30,1%,
+   * qualidade MODERATE (65/100) com avisos HIGH_ROI_VARIANCE e
+   * AVERAGE_DRAWDOWN_ABOVE_LIMIT. Com estes valores (0.15/0.02):
+   * ROI médio SOBE para 3,2%, drawdown médio CAI para 19,5%,
+   * probabilidade de lucro sobe de 76% para 79%, Sharpe de 0,585
+   * para 0,687, qualidade HIGH (70/100) sem avisos — melhora em
+   * TODOS os eixos, não é troca de ROI por estabilidade. Consistente
+   * com a literatura de Kelly fracionado: apostar Kelly cheio (ou
+   * frações grandes dele) amplifica muito a variância por erro de
+   * estimativa do edge, com pouco ganho real de crescimento.
+   */
   maximumStake:
-    0.03,
+    0.02,
 
   kellyFraction:
-    0.25,
+    0.15,
 
   maximumWatchlist:
     5,

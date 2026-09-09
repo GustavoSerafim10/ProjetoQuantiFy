@@ -1,6 +1,6 @@
-import type { FormState, TeamStatsPayload, OddsPayload } from "./types";
+import type { FormState, TeamStatsPayload } from "./types";
 import { readNumber } from "./parsers";
-import { removeInvalidTeamStats, removeInvalidOdds } from "./objectHelpers";
+import { removeInvalidTeamStats } from "./objectHelpers";
 
 /* ==========================================
    TEAM STATS PAYLOAD
@@ -230,91 +230,3 @@ export function buildTeamStats(
   });
 }
 
-/* ==========================================
-   ODDS PAYLOAD
-========================================== */
-
-export function buildOddsPayload(
-  form:
-    FormState
-): OddsPayload {
-  return removeInvalidOdds({
-    home:
-      readNumber(
-        form,
-        "oddHome"
-      ),
-
-    draw:
-      readNumber(
-        form,
-        "oddDraw"
-      ),
-
-    away:
-      readNumber(
-        form,
-        "oddAway"
-      ),
-
-    over15:
-      readNumber(
-        form,
-        "oddOver15"
-      ),
-
-    over25:
-      readNumber(
-        form,
-        "oddOver25"
-      ),
-
-    under15:
-      readNumber(
-        form,
-        "oddUnder15"
-      ),
-
-    under25:
-      readNumber(
-        form,
-        "oddUnder25"
-      ),
-
-    bttsYes:
-      readNumber(
-        form,
-        "oddBTTSYes"
-      ),
-
-    bttsNo:
-      readNumber(
-        form,
-        "oddBTTSNo"
-      ),
-
-    homeOrDraw:
-      readNumber(
-        form,
-        "odd1X"
-      ),
-
-    awayOrDraw:
-      readNumber(
-        form,
-        "oddX2"
-      ),
-
-    dnbHome:
-      readNumber(
-        form,
-        "oddDnbHome"
-      ),
-
-    dnbAway:
-      readNumber(
-        form,
-        "oddDnbAway"
-      )
-  });
-}

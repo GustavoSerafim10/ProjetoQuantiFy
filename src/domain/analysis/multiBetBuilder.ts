@@ -40,6 +40,16 @@ interface ComboMarketCandidate {
 export interface ComboMatchContext {
   lambdaHome?: number | null;
   lambdaAway?: number | null;
+
+  /*
+   * Achado real em 2026-09-09: sem isso, a matriz conjunta usada
+   * para o combo caía sempre no rho estático padrão de
+   * goalMatrix.ts (-0.12), divergindo do rho dinâmico por partida
+   * que já produziu a probabilidade oficial de cada mercado
+   * individual (goalsModel/rhoCalculator.ts) — mesmo bug de
+   * correlationEngine.ts, mesma correção.
+   */
+  rho?: number | null;
 }
 
 export interface ComboResult {
@@ -153,6 +163,7 @@ function buildMatrixIfAvailable(
 ): ScoreProbability[] | null {
   const lambdaHome = matchContext?.lambdaHome;
   const lambdaAway = matchContext?.lambdaAway;
+  const rho = matchContext?.rho;
 
   if (
     !isPositiveFiniteNumber(lambdaHome) ||
@@ -161,7 +172,11 @@ function buildMatrixIfAvailable(
     return null;
   }
 
-  return goalMatrix(lambdaHome, lambdaAway);
+  return goalMatrix(
+    lambdaHome,
+    lambdaAway,
+    Number.isFinite(rho) ? { rho: rho as number } : undefined
+  );
 }
 
 function jointWinProbability(

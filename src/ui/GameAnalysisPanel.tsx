@@ -178,33 +178,29 @@ function getStake(
   );
 }
 
+/*
+ * Achado real em 2026-09-09: quando `market.classification` vem
+ * ausente, esta função inventava ELITE/BET/WATCHLIST só a partir do
+ * EV bruto — sem checar `decisionValid`. Isso é o mesmo tipo de
+ * problema já corrigido no Dashboard.tsx (`isApprovedEntry`, achado
+ * de 2026-08-22): um selo verde pode acabar mostrado numa entrada
+ * que o decisionPipeline nunca aprovou. Hoje `evaluateMarket.ts`
+ * sempre preenche `classification`, então este fallback é
+ * inalcançável na prática — mas por segurança (e por honestidade
+ * visual, já que isto é uma tela de decisão com dinheiro real) ele
+ * nunca deve fabricar uma classificação aprovada a partir só do EV.
+ */
 function getStatus(
   market: AnalysisMarket
 ): DecisionClassification {
   if (
-    market.classification
+    market.classification &&
+    market.decisionValid !== false
   ) {
     return market.classification;
   }
 
-  const ev =
-    getEv(
-      market
-    );
-
-  if (ev === null || ev <= 0) {
-    return "NO BET";
-  }
-
-  if (ev >= 0.12) {
-    return "ELITE";
-  }
-
-  if (ev >= 0.07) {
-    return "BET";
-  }
-
-  return "WATCHLIST";
+  return "NO BET";
 }
 
 function statusColor(

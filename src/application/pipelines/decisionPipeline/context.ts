@@ -55,6 +55,20 @@ export function buildDecisionContextMetrics(
       data?.context?.lambdaAway
     ]);
 
+  /*
+   * Achado real em 2026-09-09: o combo (buildCombo/multiBetBuilder)
+   * monta sua própria matriz conjunta de placares a partir de
+   * lambdaHome/lambdaAway — sem repassar o rho dinâmico desta
+   * partida (o mesmo que já gerou a probabilidade oficial de cada
+   * mercado via goalsModel), ele caía no padrão estático de
+   * goalMatrix.ts (-0.12), divergindo do rho real do jogo.
+   */
+  const rho =
+    firstFiniteNumber([
+      data?.dixonColes?.rho,
+      data?.model?.dixonColes?.rho
+    ]);
+
   const totalLambdaFromData =
     firstFiniteNumber([
       data?.totalLambda,
@@ -217,6 +231,7 @@ export function buildDecisionContextMetrics(
     lambdaHome,
     lambdaAway,
     totalLambda,
+    rho,
 
     matchBalanceIndex,
 

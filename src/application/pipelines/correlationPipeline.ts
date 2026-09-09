@@ -38,6 +38,7 @@ export interface CorrelationContext {
   lambdaHome: number | null;
   lambdaAway: number | null;
   goalExpectationScore: number | null;
+  rho: number | null;
 }
 
 export interface CorrelationPipelineDebug {
@@ -90,6 +91,19 @@ export function correlationPipeline(
       goalExpectationScore:
         parseFiniteNumber(
           data?.goalExpectationScore
+        ),
+
+      /*
+       * Achado real em 2026-09-09: o rho dinâmico por partida que já
+       * produziu a probabilidade oficial de cada mercado (ver
+       * modelPipeline/marketModelPipeline/fusedModelPipeline, campo
+       * `dixonColes.rho`) precisa chegar aqui — sem isso,
+       * correlationEngine usava sempre o rho estático padrão de
+       * goalMatrix.ts, divergindo do rho real desta partida.
+       */
+      rho:
+        parseFiniteNumber(
+          data?.dixonColes?.rho
         )
     };
 
@@ -166,7 +180,10 @@ export function correlationPipeline(
             context.lambdaAway,
 
           goalExpectationScore:
-            context.goalExpectationScore
+            context.goalExpectationScore,
+
+          rho:
+            context.rho
         }
       );
 

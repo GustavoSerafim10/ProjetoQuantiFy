@@ -60,3 +60,86 @@ describe("contextEngine — tempo/pressure com dados ausentes", () => {
     expect(result.tempoFactor).toBeGreaterThan(0.94);
   });
 });
+
+describe("contextEngine — recentGoalsFactor (regressao 2026-09-09)", () => {
+  it("premia sequencia artilheira (last5GoalsFor alto) em vez de penalizar", () => {
+    // Antes da correcao, a heuristica "raw > 5 ? raw/5 : raw" tratava
+    // 5.4 (uma media por jogo real e valida, teto 6 em sanitize.ts)
+    // como se fosse um total de 5 jogos, dividindo por 5 -> 1.08 ->
+    // formFactor abaixo do neutro (penalidade) para o time mais
+    // artilheiro do jogo.
+    const hotStreak = contextEngine({
+      homeStats: {
+        last5GoalsFor: 5.4,
+        shots: 12,
+        cornersAvg: 5,
+        shotsOnTarget: 4.3
+      },
+      awayStats: {
+        last5GoalsFor: 1.2,
+        shots: 12,
+        cornersAvg: 5,
+        shotsOnTarget: 4.3
+      },
+      baseLambdaHome: 1.2,
+      baseLambdaAway: 1.2
+    });
+
+    const neutral = contextEngine({
+      homeStats: {
+        last5GoalsFor: 1.2,
+        shots: 12,
+        cornersAvg: 5,
+        shotsOnTarget: 4.3
+      },
+      awayStats: {
+        last5GoalsFor: 1.2,
+        shots: 12,
+        cornersAvg: 5,
+        shotsOnTarget: 4.3
+      },
+      baseLambdaHome: 1.2,
+      baseLambdaAway: 1.2
+    });
+
+    expect(hotStreak.lambdaHome).toBeGreaterThan(neutral.lambdaHome);
+  });
+
+  it("usa goalsPerGame como fallback (nunca o total goalsFor da temporada) quando last5GoalsFor esta ausente", () => {
+    const withFallback = contextEngine({
+      homeStats: {
+        goalsPerGame: 2.0,
+        shots: 12,
+        cornersAvg: 5,
+        shotsOnTarget: 4.3
+      },
+      awayStats: {
+        last5GoalsFor: 1.2,
+        shots: 12,
+        cornersAvg: 5,
+        shotsOnTarget: 4.3
+      },
+      baseLambdaHome: 1.2,
+      baseLambdaAway: 1.2
+    });
+
+    const neutral = contextEngine({
+      homeStats: {
+        last5GoalsFor: 1.2,
+        shots: 12,
+        cornersAvg: 5,
+        shotsOnTarget: 4.3
+      },
+      awayStats: {
+        last5GoalsFor: 1.2,
+        shots: 12,
+        cornersAvg: 5,
+        shotsOnTarget: 4.3
+      },
+      baseLambdaHome: 1.2,
+      baseLambdaAway: 1.2
+    });
+
+    expect(withFallback.lambdaHome).toBeGreaterThan(neutral.lambdaHome);
+  });
+});

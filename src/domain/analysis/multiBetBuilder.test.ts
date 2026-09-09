@@ -103,3 +103,48 @@ describe("buildCombo — without a score matrix (lambdas unavailable)", () => {
     expect(result).toBeNull();
   });
 });
+
+/*
+ * Regressao real de 2026-09-09: buildMatrixIfAvailable ignorava
+ * matchContext.rho e caia sempre no rho estatico padrao de
+ * goalMatrix.ts (-0.12), divergindo do rho dinamico por partida que
+ * ja produziu a probabilidade oficial de cada mercado individual.
+ */
+describe("buildCombo — rho real da partida (regressao 2026-09-09)", () => {
+  const legs = [
+    { market: "BTTS_YES", probability: 0.55, odd: 1.8 },
+    { market: "OVER_1_5", probability: 0.75, odd: 1.3 }
+  ];
+
+  it("um rho diferente do padrao estatico muda a probabilidade conjunta (mesmos lambdas)", () => {
+    const withDefaultRho = buildCombo(legs, {
+      lambdaHome: 1.6,
+      lambdaAway: 1.3
+    });
+
+    const withStrongNegativeRho = buildCombo(legs, {
+      lambdaHome: 1.6,
+      lambdaAway: 1.3,
+      rho: -0.25
+    });
+
+    expect(withDefaultRho?.correlationModel).toBe("JOINT_MATRIX");
+    expect(withStrongNegativeRho?.correlationModel).toBe("JOINT_MATRIX");
+
+    expect(withStrongNegativeRho?.prob).not.toBeCloseTo(
+      withDefaultRho?.prob as number,
+      6
+    );
+  });
+
+  it("rho ausente (contexto antigo) mantem o comportamento anterior, sem lancar excecao", () => {
+    const result = buildCombo(legs, {
+      lambdaHome: 1.6,
+      lambdaAway: 1.3,
+      rho: null
+    });
+
+    expect(result?.correlationModel).toBe("JOINT_MATRIX");
+    expect(result?.prob).toBeGreaterThan(0);
+  });
+});

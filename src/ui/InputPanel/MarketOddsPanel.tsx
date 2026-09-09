@@ -1,33 +1,43 @@
-import { useState } from "react";
-
-import type { MarketOddsAnalysisPayload, OddsPayload } from "./types";
+import type { OddsPayload } from "./types";
 import type { MultiBookOddsPayload } from "../../domain/odds/multiBookOdds";
 
 /* ==========================================
-   MARKET ODDS PANEL — CONSENSO DE-VIG
+   MARKET ODDS GRID — CONSENSO DE-VIG
 ========================================== */
 
 /*
  * Achado real em 2026-09-08: odds médias de várias casas
  * (bet365/Betano/Superbet) com a margem removida (de-vig) acertaram
- * 5 de 6 entradas reais na Champions League — muito melhor que o
- * formulário de estatísticas de time (modo legado, ao lado deste).
- * Este painel não pede nenhuma stat de time: só o preço de cada
- * casa por mercado. A primeira coluna preenchida em cada linha é o
- * preço realmente usado para calcular EV (a casa onde a aposta
- * seria feita); todas as colunas preenchidas entram no consenso.
+ * 5 de 6 entradas reais na Champions League. Este componente é só a
+ * grade de odds por mercado — controlado de fora (InputPanel), lado
+ * a lado com a comparação de estatísticas na mesma tela e na mesma
+ * análise (o usuário pediu explicitamente pra ver os dois juntos).
+ * Desde 2026-09-09 essas odds e as estatísticas da tela também
+ * entram juntas na mesma conta de probabilidade quando ambas estão
+ * preenchidas — ver fusedModelPipeline.ts/lambdaFusion.ts.
  */
 
-const BOOKMAKER_LABELS = ["Bet365", "Betano", "Superbet"] as const;
+/*
+ * Genérico de propósito (achado real em 2026-09-09): nomes fixos de
+ * casa (Bet365/Betano/Superbet) davam a impressão de que era preciso
+ * abrir várias casas toda vez. Só a primeira coluna é necessária —
+ * a sua casa de sempre, qualquer que seja. As outras duas são um
+ * bônus de precisão totalmente opcional.
+ */
+const BOOKMAKER_LABELS = [
+  "Sua casa",
+  "Casa 2 (opcional)",
+  "Casa 3 (opcional)"
+] as const;
 
-type MarketKey = keyof MultiBookOddsPayload;
+export type MarketKey = keyof MultiBookOddsPayload;
 
 interface MarketRowConfig {
   key: MarketKey;
   label: string;
 }
 
-const MARKET_GROUPS: Array<{
+export const MARKET_GROUPS: Array<{
   title: string;
   rows: MarketRowConfig[];
 }> = [
@@ -76,11 +86,11 @@ const MARKET_GROUPS: Array<{
   }
 ];
 
-type MarketOddsForm = Partial<
+export type MarketOddsForm = Partial<
   Record<MarketKey, [string, string, string]>
 >;
 
-function emptyRow(): [string, string, string] {
+export function emptyMarketOddsRow(): [string, string, string] {
   return ["", "", ""];
 }
 
@@ -89,138 +99,81 @@ function parseOdd(value: string): number | null {
   return Number.isFinite(parsed) && parsed > 1 ? parsed : null;
 }
 
-export default function MarketOddsPanel({
-  onAnalyze
-}: {
-  onAnalyze: (data: MarketOddsAnalysisPayload) => void | Promise<void>;
-}) {
-  const [homeTeam, setHomeTeam] = useState("");
-  const [awayTeam, setAwayTeam] = useState("");
-  const [league, setLeague] = useState("");
+/*
+ * Converte o form controlado em `{marketOdds, odds}` — a primeira
+ * coluna preenchida em cada linha vira o preço usado para EV
+ * (`odds`); todas as colunas preenchidas entram no consenso
+ * (`marketOdds`).
+ */
+export function buildMarketOddsPayload(
+  form: MarketOddsForm
+): { marketOdds: MultiBookOddsPayload; odds: OddsPayload } {
+  const marketOdds: MultiBookOddsPayload = {};
+  const odds: OddsPayload = {};
 
-  const [form, setForm] = useState<MarketOddsForm>({});
+  for (const group of MARKET_GROUPS) {
+    for (const row of group.rows) {
+      const rawRow = form[row.key] ?? emptyMarketOddsRow();
+      const parsedValues = rawRow
+        .map(parseOdd)
+        .filter((value): value is number => value !== null);
 
-  const [validationError, setValidationError] = useState<string | null>(
-    null
+      if (parsedValues.length === 0) {
+        continue;
+      }
+
+      marketOdds[row.key] = parsedValues;
+
+      const firstValid = rawRow.map(parseOdd).find(value => value !== null);
+
+      if (firstValid !== undefined) {
+        (odds as Record<string, number>)[row.key] = firstValid;
+      }
+    }
+  }
+
+  return { marketOdds, odds };
+}
+
+export function hasAnyMarketOdds(form: MarketOddsForm): boolean {
+  return Object.values(form).some(
+    row =>
+      Array.isArray(row) &&
+      row.some(value => parseOdd(value) !== null)
   );
+}
 
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
+export default function MarketOddsPanel({
+  form,
+  onChange
+}: {
+  form: MarketOddsForm;
+  onChange: (next: MarketOddsForm) => void;
+}) {
   function handleOddChange(
     market: MarketKey,
     columnIndex: number,
     value: string
   ) {
-    setValidationError(null);
+    const row = form[market] ?? emptyMarketOddsRow();
+    const nextRow = [...row] as [string, string, string];
+    nextRow[columnIndex] = value;
 
-    setForm(previous => {
-      const row = previous[market] ?? emptyRow();
-      const nextRow = [...row] as [string, string, string];
-      nextRow[columnIndex] = value;
-
-      return {
-        ...previous,
-        [market]: nextRow
-      };
+    onChange({
+      ...form,
+      [market]: nextRow
     });
   }
 
-  async function handleSubmit() {
-    const home = homeTeam.trim();
-    const away = awayTeam.trim();
-
-    if (!home || !away) {
-      setValidationError(
-        "Informe os nomes do time mandante e do visitante."
-      );
-      return;
-    }
-
-    const marketOdds: MultiBookOddsPayload = {};
-    const odds: OddsPayload = {};
-
-    for (const group of MARKET_GROUPS) {
-      for (const row of group.rows) {
-        const rawRow = form[row.key] ?? emptyRow();
-        const parsedValues = rawRow
-          .map(parseOdd)
-          .filter((value): value is number => value !== null);
-
-        if (parsedValues.length === 0) {
-          continue;
-        }
-
-        marketOdds[row.key] = parsedValues;
-
-        const firstValid = rawRow
-          .map(parseOdd)
-          .find(value => value !== null);
-
-        if (firstValid !== undefined) {
-          (odds as Record<string, number>)[row.key] = firstValid;
-        }
-      }
-    }
-
-    if (Object.keys(marketOdds).length === 0) {
-      setValidationError(
-        "Informe pelo menos uma odd de pelo menos uma casa para algum mercado."
-      );
-      return;
-    }
-
-    setIsSubmitting(true);
-
-    try {
-      await Promise.resolve(
-        onAnalyze({
-          mode: "market",
-          match: { home, away, league },
-          marketOdds,
-          odds
-        })
-      );
-    } catch (error) {
-      setValidationError(
-        error instanceof Error
-          ? error.message
-          : "Não foi possível executar a análise."
-      );
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
   return (
-    <div className="max-w-3xl mx-auto space-y-8">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <input
-          value={homeTeam}
-          onChange={e => setHomeTeam(e.target.value)}
-          placeholder="🏠 Casa"
-          className="inputElite"
-        />
-
-        <input
-          value={league}
-          onChange={e => setLeague(e.target.value)}
-          placeholder="🏆 Liga"
-          className="inputElite"
-        />
-
-        <input
-          value={awayTeam}
-          onChange={e => setAwayTeam(e.target.value)}
-          placeholder="🚀 Fora"
-          className="inputElite"
-        />
-      </div>
-
+    <div className="space-y-4">
       <div className="text-xs text-zinc-400">
-        A primeira coluna preenchida em cada linha é o preço usado para
-        calcular o valor esperado (EV) — a casa onde você realmente
-        apostaria. Todas as colunas preenchidas entram no cálculo do
-        consenso (de-vig). Pode deixar casas em branco.
+        Preencher só a sua casa de sempre já é suficiente — a primeira
+        coluna preenchida em cada linha é o preço usado para calcular o
+        valor esperado (EV). As outras duas colunas são opcionais: se
+        você tiver tempo de conferir mais 1 ou 2 casas, elas entram no
+        cálculo do consenso (de-vig) e deixam o número um pouco mais
+        preciso, mas não são obrigatórias.
       </div>
 
       {MARKET_GROUPS.map(group => (
@@ -267,29 +220,6 @@ export default function MarketOddsPanel({
           ))}
         </section>
       ))}
-
-      {validationError && (
-        <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-400">
-          ⚠️ {validationError}
-        </div>
-      )}
-
-      <button
-        type="button"
-        onClick={handleSubmit}
-        disabled={isSubmitting}
-        className={
-          `w-full py-4 rounded-xl font-bold text-white
-           bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500
-           transition shadow-lg ${
-             isSubmitting
-               ? "opacity-60 cursor-wait"
-               : "hover:scale-[1.02]"
-           }`
-        }
-      >
-        {isSubmitting ? "⏳ ANALISANDO..." : "📊 ANALISAR PELO CONSENSO DE MERCADO"}
-      </button>
     </div>
   );
 }

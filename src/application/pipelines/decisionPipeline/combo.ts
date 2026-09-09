@@ -13,6 +13,7 @@ export function safeBuildCombo(
   matchContext?: {
     lambdaHome?: number | null;
     lambdaAway?: number | null;
+    rho?: number | null;
   }
 ) {
   if (

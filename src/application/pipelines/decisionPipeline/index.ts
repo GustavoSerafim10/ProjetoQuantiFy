@@ -301,7 +301,10 @@ const evaluatedMarkets:
           decisionContext.lambdaHome,
 
         lambdaAway:
-          decisionContext.lambdaAway
+          decisionContext.lambdaAway,
+
+        rho:
+          decisionContext.rho
       }
     );
 

@@ -14,21 +14,22 @@ import {
   clearPreviousStatisticalFields
 } from "./externalData";
 import { isFormField } from "./fieldGuard";
-import { buildTeamStats, buildOddsPayload } from "./payloadBuilders";
+import { buildTeamStats } from "./payloadBuilders";
 import { validateRequiredTeamFields, validateTeamConsistency } from "./validation";
 import { normalizeWarnings, createPayloadWarnings, formatWarning } from "./warnings";
 import { Row } from "./Row";
-import { OddInput } from "./OddInput";
 import { Card } from "./Card";
-import MarketOddsPanel from "./MarketOddsPanel";
+import MarketOddsPanel, {
+  buildMarketOddsPayload,
+  hasAnyMarketOdds,
+  type MarketOddsForm
+} from "./MarketOddsPanel";
 
 export type {
   ExternalInputData,
   TeamStatsPayload,
   OddsPayload,
   AnalysisPayload,
-  StatsAnalysisPayload,
-  MarketOddsAnalysisPayload,
   MultiBookOddsPayload
 } from "./types";
 
@@ -40,7 +41,8 @@ export type {
  * Responsabilidade:
  *
  * - receber os dados manuais da partida;
- * - incorporar dados do ComparisonPanel;
+ * - incorporar dados externos (via prop `externalData`, quando houver
+ *   um produtor conectado);
  * - manter os campos editáveis;
  * - converter números apenas no envio;
  * - montar o payload oficial da análise;
@@ -66,21 +68,26 @@ export default function InputPanel({
   onAnalyze,
   externalData
 }: InputPanelProps) {
-  /*
-   * Achado real em 2026-09-08: consenso de-vig multi-casas acertou
-   * 5 de 6 entradas reais, muito melhor que o formulário de stats —
-   * por isso é o modo padrão. O modo de stats fica disponível como
-   * legado (ver marketModelPipeline.ts / modelPipeline.ts).
-   */
-  const [
-    mode,
-    setMode
-  ] = useState<"market" | "stats">("market");
-
   const [
     form,
     setForm
   ] = useState<FormState>({});
+
+  /*
+   * Achado real em 2026-09-08: o usuário quer ver estatísticas dos
+   * times e odds de mercado juntas, na mesma tela — não como dois
+   * modos separados, um botão só ("ANALISAR JOGO"). Desde
+   * 2026-09-09 (ver fusedModelPipeline.ts/lambdaFusion.ts) as duas
+   * coisas também pesam juntas no cálculo: com odds E stats dos
+   * dois times, o eliteAnalyzer funde os dois lambdas (mercado como
+   * base, stats como ajuste limitado). Sem odds, cai pro motor
+   * antigo baseado só nas stats; sem stats de algum time, cai pro
+   * consenso de-vig puro.
+   */
+  const [
+    marketOddsForm,
+    setMarketOddsForm
+  ] = useState<MarketOddsForm>({});
 
   const [
     validationError,
@@ -315,24 +322,43 @@ export default function InputPanel({
         "away"
       );
 
-    const requiredFieldErrors =
-      validateRequiredTeamFields({
-        homeStats,
-        awayStats,
-        homeTeam,
-        awayTeam
-      });
-
-    if (
-      requiredFieldErrors.length > 0
-    ) {
-      setValidationError(
-        requiredFieldErrors.join(
-          " "
-        )
+    const hasMarketOdds =
+      hasAnyMarketOdds(
+        marketOddsForm
       );
 
-      return;
+    /*
+     * Achado real em 2026-09-09: antes desta correção, o formulário
+     * unificado exigia SEMPRE estatísticas completas E pelo menos uma
+     * odd — mesmo que o usuário só quisesse usar o consenso de-vig
+     * (marketModelPipeline/fusedModelPipeline em eliteAnalyzer.ts já
+     * suportam análise só com odds). Isso tornava o caminho "só
+     * odds" documentado nos comentários (types.ts/App.tsx)
+     * inacessível pela UI. Agora as estatísticas só são obrigatórias
+     * quando NÃO há nenhuma odd de mercado utilizável — com odds
+     * presentes, estatísticas incompletas apenas pesam menos na
+     * fusão (ver lambdaFusion.ts), em vez de bloquear o envio.
+     */
+    if (!hasMarketOdds) {
+      const requiredFieldErrors =
+        validateRequiredTeamFields({
+          homeStats,
+          awayStats,
+          homeTeam,
+          awayTeam
+        });
+
+      if (
+        requiredFieldErrors.length > 0
+      ) {
+        setValidationError(
+          requiredFieldErrors.join(
+            " "
+          )
+        );
+
+        return;
+      }
     }
 
     const consistencyErrors = [
@@ -359,22 +385,10 @@ export default function InputPanel({
       return;
     }
 
-    const odds =
-      buildOddsPayload(
-        form
+    const { marketOdds, odds } =
+      buildMarketOddsPayload(
+        marketOddsForm
       );
-
-    if (
-      Object.keys(
-        odds
-      ).length === 0
-    ) {
-      setValidationError(
-        "Informe pelo menos uma odd válida para realizar a análise."
-      );
-
-      return;
-    }
 
     const diagnosticWarnings =
       normalizeWarnings([
@@ -389,8 +403,6 @@ export default function InputPanel({
 
     const data:
       AnalysisPayload = {
-        mode: "stats",
-
         match: {
           home:
             homeTeam,
@@ -408,6 +420,8 @@ export default function InputPanel({
           away:
             awayStats
         },
+
+        marketOdds,
 
         odds,
 
@@ -495,39 +509,6 @@ export default function InputPanel({
   return (
     <div className="min-h-screen p-6 bg-[#0B0F1A] text-white">
 
-      {/* ALTERNADOR DE MODO */}
-
-      <div className="max-w-3xl mx-auto mb-6 flex gap-2 rounded-xl border border-zinc-800 p-1">
-        <button
-          type="button"
-          onClick={() => setMode("market")}
-          className={`flex-1 py-2 rounded-lg text-sm font-semibold transition ${
-            mode === "market"
-              ? "bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 text-white"
-              : "text-zinc-400 hover:text-white"
-          }`}
-        >
-          📊 Odds de mercado (recomendado)
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setMode("stats")}
-          className={`flex-1 py-2 rounded-lg text-sm font-semibold transition ${
-            mode === "stats"
-              ? "bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white"
-              : "text-zinc-400 hover:text-white"
-          }`}
-        >
-          📈 Estatísticas dos times (legado)
-        </button>
-      </div>
-
-      {mode === "market" && (
-        <MarketOddsPanel onAnalyze={onAnalyze} />
-      )}
-
-      {mode === "stats" && (
       <div className="max-w-3xl mx-auto space-y-8">
 
         {/* HEADER */}
@@ -819,114 +800,21 @@ export default function InputPanel({
           />
         </Card>
 
-        {/* ODDS */}
+        {/* ODDS DE MERCADO (2-3 casas, alimenta o de-vig) */}
 
-        <Card title="💰 Odds">
+        <div>
+          <h2 className="text-sm text-emerald-400 mb-3 font-semibold tracking-wide text-center">
+            💰 Odds de mercado
+          </h2>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <OddInput
-              name="oddHome"
-              placeholder="Casa"
-              form={form}
-              onChange={handleChange}
-            />
-
-            <OddInput
-              name="oddDraw"
-              placeholder="Empate"
-              form={form}
-              onChange={handleChange}
-            />
-
-            <OddInput
-              name="oddAway"
-              placeholder="Fora"
-              form={form}
-              onChange={handleChange}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
-            <OddInput
-              name="oddOver15"
-              placeholder="Over 1.5"
-              form={form}
-              onChange={handleChange}
-            />
-
-            <OddInput
-              name="oddOver25"
-              placeholder="Over 2.5"
-              form={form}
-              onChange={handleChange}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
-            <OddInput
-              name="oddUnder15"
-              placeholder="Under 1.5"
-              form={form}
-              onChange={handleChange}
-            />
-
-            <OddInput
-              name="oddUnder25"
-              placeholder="Under 2.5"
-              form={form}
-              onChange={handleChange}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
-            <OddInput
-              name="oddBTTSYes"
-              placeholder="BTTS Sim"
-              form={form}
-              onChange={handleChange}
-            />
-
-            <OddInput
-              name="oddBTTSNo"
-              placeholder="BTTS Não"
-              form={form}
-              onChange={handleChange}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
-            <OddInput
-              name="odd1X"
-              placeholder="1X (Casa/Empate)"
-              form={form}
-              onChange={handleChange}
-            />
-
-            <OddInput
-              name="oddX2"
-              placeholder="X2 (Fora/Empate)"
-              form={form}
-              onChange={handleChange}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
-            <OddInput
-              name="oddDnbHome"
-              placeholder="Empate Anula (Casa)"
-              form={form}
-              onChange={handleChange}
-            />
-
-            <OddInput
-              name="oddDnbAway"
-              placeholder="Empate Anula (Fora)"
-              form={form}
-              onChange={handleChange}
-            />
-          </div>
-
-        </Card>
+          <MarketOddsPanel
+            form={marketOddsForm}
+            onChange={next => {
+              setValidationError(null);
+              setMarketOddsForm(next);
+            }}
+          />
+        </div>
 
         {/* ERRO */}
 
@@ -962,7 +850,6 @@ export default function InputPanel({
         </button>
 
       </div>
-      )}
     </div>
   );
 }

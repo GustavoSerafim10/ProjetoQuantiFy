@@ -1,6 +1,7 @@
 
 interface ContextEngineStats {
   last5GoalsFor?: unknown;
+  goalsPerGame?: unknown;
   goalsFor?: unknown;
   shots?: unknown;
   cornersAvg?: unknown;
@@ -50,15 +51,20 @@ function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(n, max));
 }
 
+/*
+ * Achado real em 2026-09-09: a heurística antiga (`raw > 5 ? raw/5
+ * : raw`) tentava adivinhar se o valor recebido já era uma média
+ * por jogo ou um total de 5 jogos — mas `last5GoalsFor`
+ * (sanitize.ts) já é SEMPRE uma média por jogo, com teto 6. Um time
+ * em sequência realmente artilheira (ex: 5.4 gols/jogo nos últimos
+ * 5) caía no ramo ">5" e era dividido por 5 → 1.08, quase neutro —
+ * ou seja, o sinal de sequência quente virava o oposto do
+ * pretendido. `value` já chega pronto (`last5GoalsFor` ou, na
+ * ausência, `goalsPerGame` — os dois já são médias por jogo, nunca
+ * totais de temporada), então não há nada para adivinhar aqui.
+ */
 function recentGoalsFactor(value: unknown) {
-  const raw = safe(value, 1);
-
-  const avg =
-    raw > 5
-      ? raw / 5
-      : raw;
-
-  return avg;
+  return safe(value, 1);
 }
 
 export function contextEngine(data: ContextEngineInput) {
@@ -73,8 +79,8 @@ export function contextEngine(data: ContextEngineInput) {
   const safeBaseHome = clamp(safe(baseLambdaHome, 1.2), 0.35, 2.25);
   const safeBaseAway = clamp(safe(baseLambdaAway, 1.0), 0.35, 2.25);
 
-  const homeForm = recentGoalsFactor(homeStats?.last5GoalsFor ?? homeStats?.goalsFor);
-  const awayForm = recentGoalsFactor(awayStats?.last5GoalsFor ?? awayStats?.goalsFor);
+  const homeForm = recentGoalsFactor(homeStats?.last5GoalsFor ?? homeStats?.goalsPerGame);
+  const awayForm = recentGoalsFactor(awayStats?.last5GoalsFor ?? awayStats?.goalsPerGame);
 
   const homeTempo =
     safe(homeStats?.shots, AVG_SHOTS_PER_TEAM) +

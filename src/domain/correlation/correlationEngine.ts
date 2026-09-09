@@ -53,6 +53,21 @@ export interface CorrelationEngineContext {
   lambdaHome?: number | null;
   lambdaAway?: number | null;
   goalExpectationScore?: number | null;
+
+  /*
+   * Achado real em 2026-09-09: sem isso, a matriz conjunta usada
+   * aqui caía sempre no rho ESTÁTICO padrão de goalMatrix.ts
+   * (-0.12), enquanto a probabilidade oficial de cada mercado
+   * individual (mostrada ao usuário) vem de goalsModel, que ajusta
+   * um rho DINÂMICO por partida (rhoCalculator.ts). Isso quebrava a
+   * consistência que o comentário abaixo (`jointMatrix`) afirma
+   * garantir — P(A), P(B) e P(A∩B) podiam vir de formatos de jogo
+   * ligeiramente diferentes para a MESMA partida. Repassando o rho
+   * real (context.rho, lido de `dixonColes.rho` pelo
+   * correlationPipeline), a matriz conjunta usa a mesma crença
+   * sobre o jogo que já gerou os números oficiais.
+   */
+  rho?: number | null;
 }
 
 export interface CorrelationStructuralContext {
@@ -66,6 +81,8 @@ export interface CorrelationStructuralContext {
   minimumLambda: number | null;
 
   goalExpectationScore: number | null;
+
+  rho: number | null;
 }
 
 export interface CorrelationDiagnostic {
@@ -166,7 +183,21 @@ export function applyCorrelationAdjustments(
     structuralContext.valid
       ? goalMatrix(
           structuralContext.lambdaHome as number,
-          structuralContext.lambdaAway as number
+          structuralContext.lambdaAway as number,
+
+          /*
+           * Repassa o rho REAL desta partida (ver comentário em
+           * CorrelationEngineContext.rho) — sem isso, goalMatrix()
+           * caía sempre no seu próprio padrão estático (-0.12),
+           * divergindo do rho dinâmico que goalsModel já usou para
+           * produzir a probabilidade oficial de cada mercado. Sem
+           * `rho` disponível (contexto antigo/incompleto), passar
+           * `undefined` mantém o comportamento anterior (fallback
+           * estático de goalMatrix), então isto nunca piora nada.
+           */
+          structuralContext.rho !== null
+            ? { rho: structuralContext.rho }
+            : undefined
         )
       : null;
 
@@ -636,6 +667,11 @@ function buildStructuralContext(
       context?.goalExpectationScore
     );
 
+  const rho =
+    parseFiniteNumber(
+      context?.rho
+    );
+
   if (
     lambdaHome === null ||
     lambdaAway === null
@@ -656,7 +692,9 @@ function buildStructuralContext(
       minimumLambda:
         null,
 
-      goalExpectationScore
+      goalExpectationScore,
+
+      rho
     };
   }
 
@@ -689,7 +727,9 @@ function buildStructuralContext(
         )
       ),
 
-    goalExpectationScore
+    goalExpectationScore,
+
+    rho
   };
 }
 

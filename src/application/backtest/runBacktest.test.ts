@@ -195,14 +195,30 @@ describe("runBacktest — estabilidade de decisão (regression guard)", () => {
       monteCarloSimulations: 300
     });
 
-    expect(result.totalBets).toBe(63);
-    expect(result.wins).toBe(30);
-    expect(result.losses).toBe(33);
+    /*
+     * Atualizado em 2026-09-09 (2a vez, mesmo dia): primeiro
+     * runBacktest passou a usar `best.stake` real de produção em vez
+     * da fórmula paralela `calculateStakePro` (Kelly cheio, removida
+     * de kelly.ts) — totalBets/wins/losses/voids ficaram idênticos
+     * (63/30/33/0) nessa primeira mudança, só a monetização mudou.
+     * Depois, `GLOBAL_POLICY.kellyFraction`/`maximumStake` foram
+     * recalibrados de 0.25/0.03 para 0.15/0.02 via robustnessReport.ts
+     * (ver justificativa completa em marketPolicies.ts) — isso reduz
+     * o stake de algumas apostas de edge fino abaixo do piso mínimo
+     * viável (0.0025 em calculateDecisionStake), então elas deixam de
+     * ser colocadas (totalBets 63 -> 61). Efeito esperado e correto:
+     * a mesma recalibração, medida em 100 simulações independentes,
+     * reduz o drawdown médio de 30,1% para 19,5% e AUMENTA o ROI
+     * médio de 2,7% para 3,2% — melhora em todos os eixos, não troca.
+     */
+    expect(result.totalBets).toBe(61);
+    expect(result.wins).toBe(29);
+    expect(result.losses).toBe(32);
     expect(result.voids).toBe(0);
 
-    expect(result.roi).toBeCloseTo(-0.10531688511541676, 9);
-    expect(result.totalProfit).toBeCloseTo(-140.87274256790968, 6);
-    expect(result.totalStaked).toBeCloseTo(1337.6083276060365, 6);
-    expect(result.maxDrawdown).toBeCloseTo(0.2923523002124933, 9);
+    expect(result.roi).toBeCloseTo(-0.05086026415229425, 9);
+    expect(result.totalProfit).toBeCloseTo(-26.44521337311233, 6);
+    expect(result.totalStaked).toBeCloseTo(519.958238791794, 6);
+    expect(result.maxDrawdown).toBeCloseTo(0.11080258420568066, 9);
   }, REGRESSION_TIMEOUT_MS);
 });

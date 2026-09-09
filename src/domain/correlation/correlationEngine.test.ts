@@ -155,3 +155,57 @@ describe("applyCorrelationAdjustments — redundância via phi (diagnóstico)", 
     }
   });
 });
+
+/*
+ * Achado real em 2026-09-09: até esta correção, a matriz conjunta
+ * usada aqui ignorava `context.rho` e caía sempre no padrão
+ * estático de goalMatrix.ts (-0.12), divergindo do rho dinâmico por
+ * partida que goalsModel já usou para produzir a probabilidade
+ * oficial de cada mercado individual. Estes testes travam que o rho
+ * repassado é o que realmente entra na matriz.
+ */
+describe("applyCorrelationAdjustments — rho real da partida (regressao 2026-09-09)", () => {
+  it("um rho diferente do padrão estático muda a redundância medida (mesmos lambdas)", () => {
+    const candidates = [
+      { market: "HOME", ev: 0.10 },
+      { market: "DOUBLE_CHANCE_1X", ev: 0.08 }
+    ];
+
+    const withDefaultRho = applyCorrelationAdjustments(candidates, {
+      lambdaHome: 1.8,
+      lambdaAway: 0.9
+    });
+
+    const withStrongNegativeRho = applyCorrelationAdjustments(candidates, {
+      lambdaHome: 1.8,
+      lambdaAway: 0.9,
+      rho: -0.25
+    });
+
+    const withoutRho =
+      withDefaultRho.find(m => m.market === "HOME")
+        ?.correlationPenaltyDiagnostic;
+
+    const withRho =
+      withStrongNegativeRho.find(m => m.market === "HOME")
+        ?.correlationPenaltyDiagnostic;
+
+    expect(withoutRho).toBeGreaterThan(0);
+    expect(withRho).toBeGreaterThan(0);
+    expect(withRho).not.toBeCloseTo(withoutRho as number, 6);
+  });
+
+  it("rho ausente (contexto antigo) mantem o comportamento anterior, sem lançar exceção", () => {
+    const result = applyCorrelationAdjustments(
+      [
+        { market: "HOME", ev: 0.10 },
+        { market: "DOUBLE_CHANCE_1X", ev: 0.08 }
+      ],
+      { lambdaHome: 1.8, lambdaAway: 0.9, rho: null }
+    );
+
+    const home = result.find(m => m.market === "HOME");
+
+    expect(home?.correlationPenaltyDiagnostic).toBeGreaterThan(0);
+  });
+});

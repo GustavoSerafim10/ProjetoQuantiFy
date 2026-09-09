@@ -1,50 +1,16 @@
-import {
-  goalsModel
-} from "../../../domain/marketModels/goalsModel";
-
 import { PIPELINE_DEBUG } from "../../../shared/debugFlag";
-
-import {
-  contextEngine
-} from "../../../domain/context/contextEngine";
-
-import {
-  calculateGlobalConfidence
-} from "../../../domain/confidence/globalConfidenceEngine";
-
-import {
-  buildLambda
-} from "../../../domain/model/lambdaBuilder";
-
-import {
-  gameSelector
-} from "../../engines/gameSelector";
 
 import {
   type RawTeamStats
 } from "./types";
 
 import {
-  clamp,
+  computeStatsLambda
+} from "./statsLambda";
+
+import {
   safeNumber
 } from "./numericHelpers";
-
-import {
-  sanitizeStats
-} from "./sanitize";
-
-import {
-  applyBoundedContextAdjustment
-} from "./contextAdjustment";
-
-import {
-  extractMatrixMarkets
-} from "./matrixExtraction";
-
-import {
-  calculateGoalExpectationScore,
-  classifyGoalProfile
-} from "./goalProfile";
 
 import {
   getObjectValue,
@@ -120,17 +86,44 @@ export function modelPipeline(
       ""
     );
 
-  const home =
-    sanitizeStats(
+  const stats =
+    computeStatsLambda(
       rawHomeStats,
-      "HOME"
+      rawAwayStats,
+      league
     );
 
-  const away =
-    sanitizeStats(
-      rawAwayStats,
-      "AWAY"
-    );
+  const {
+    home,
+    away,
+    gameCheck,
+    gameBlocked,
+    lambdaBuild,
+    baseLambdaHome,
+    baseLambdaAway,
+    contextAdjusted,
+    lambdaHome,
+    lambdaAway,
+    totalLambda,
+    goals,
+    markets,
+    result,
+    btts,
+    doubleChance,
+    goalMarkets,
+    goalExpectationScore,
+    goalProfile,
+    isLowGoalGame,
+    missingDataCount,
+    missingDataPenalty,
+    baseConfidence,
+    confidence
+  } = stats;
+
+  const contextualLambdas = {
+    minContextFactor: stats.minContextFactor,
+    maxContextFactor: stats.maxContextFactor
+  };
 
   if (PIPELINE_DEBUG) {
   console.group(
@@ -159,200 +152,6 @@ export function modelPipeline(
 
   console.groupEnd();
   }
-
-  /* ========================================
-     SELEÇÃO DO JOGO
-  ======================================== */
-
-  const gameCheck =
-    gameSelector({
-      homeStats:
-        home,
-
-      awayStats:
-        away
-    });
-
-  const gameBlocked =
-    !gameCheck.allowed;
-
-  /* ========================================
-     LAMBDA BUILDER OFICIAL
-  ======================================== */
-
-  const lambdaBuild =
-    buildLambda(
-      home as never,
-      away as never,
-      league
-    );
-
-  const baseLambdaHome =
-    safeNumber(
-      lambdaBuild.lambdaHome,
-      1.32
-    );
-
-  const baseLambdaAway =
-    safeNumber(
-      lambdaBuild.lambdaAway,
-      1.23
-    );
-
-  /* ========================================
-     AJUSTE CONTEXTUAL CONTROLADO
-  ======================================== */
-
-  const contextAdjusted =
-    contextEngine({
-      homeStats:
-        home,
-
-      awayStats:
-        away,
-
-      baseLambdaHome,
-      baseLambdaAway,
-
-      leagueData: {
-        leagueKey:
-          league
-      }
-    });
-
-  const contextualLambdas =
-    applyBoundedContextAdjustment(
-      baseLambdaHome,
-      baseLambdaAway,
-      contextAdjusted
-    );
-
-  const lambdaHome =
-    contextualLambdas.lambdaHome;
-
-  const lambdaAway =
-    contextualLambdas.lambdaAway;
-
-  const totalLambda =
-    lambdaHome +
-    lambdaAway;
-
-  /* ========================================
-     GOALS MODEL
-  ======================================== */
-
-  const goals =
-    goalsModel(
-      lambdaHome,
-      lambdaAway,
-      home,
-      away
-    );
-
-  /* ========================================
-     MERCADOS OFICIAIS
-  ======================================== */
-
-  const markets =
-    extractMatrixMarkets(
-      goals.matrix
-    );
-
-  const result = {
-    home:
-      markets.home,
-
-    draw:
-      markets.draw,
-
-    away:
-      markets.away
-  };
-
-  const btts = {
-    yes:
-      markets.bttsYes,
-
-    no:
-      markets.bttsNo
-  };
-
-  const doubleChance = {
-    oneX:
-      markets.doubleChance1X,
-
-    xTwo:
-      markets.doubleChanceX2
-  };
-
-  const goalMarkets = {
-    over15:
-      markets.over15,
-
-    over25:
-      markets.over25
-  };
-
-  /* ========================================
-     PERFIL E SCORE
-  ======================================== */
-
-  const goalExpectationScore =
-    calculateGoalExpectationScore(
-      lambdaHome,
-      lambdaAway
-    );
-
-  const goalProfile =
-    classifyGoalProfile(
-      lambdaHome,
-      lambdaAway
-    );
-
-  const isLowGoalGame =
-    goalProfile ===
-    "LOW_GOAL";
-
-  /* ========================================
-     CONFIANÇA
-  ======================================== */
-
-  const missingDataCount =
-    home.missingFields.length +
-    away.missingFields.length;
-
-  const baseConfidence =
-    safeNumber(
-      calculateGlobalConfidence({
-        goals,
-        btts,
-        result,
-        lambdaHome,
-        lambdaAway
-      }),
-      0.5
-    );
-
-  /*
-   * Penalidade por ausência factual.
-   *
-   * Warnings de coerência são registrados,
-   * mas não alteram probabilidades neste módulo.
-   */
-  const missingDataPenalty =
-    Math.min(
-      missingDataCount *
-        0.025,
-      0.20
-    );
-
-  const confidence =
-    clamp(
-      baseConfidence -
-        missingDataPenalty,
-      0,
-      1
-    );
 
   /* ========================================
      LOG FINAL

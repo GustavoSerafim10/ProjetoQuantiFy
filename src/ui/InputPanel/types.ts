@@ -113,8 +113,10 @@ export type FormState =
 ========================================== */
 
 /*
- * O ComparisonPanel pode enviar números,
- * strings numéricas ou valores ausentes.
+ * Quem produzir dados externos (nenhum componente está conectado
+ * hoje — ver histórico do ComparisonPanel, removido em 2026-09-09
+ * por estar desconectado da árvore) pode enviar números, strings
+ * numéricas ou valores ausentes.
  *
  * Não restringimos tudo a number porque isso
  * esconderia problemas reais vindos da origem.
@@ -206,9 +208,21 @@ export interface OddsPayload {
   dnbAway?: number;
 }
 
-export interface StatsAnalysisPayload {
-  mode: "stats";
-
+/*
+ * Achado real em 2026-09-08: o usuário quer ver estatísticas dos
+ * times E odds de mercado juntas, na mesma tela e na mesma análise
+ * — não como dois modos separados. Desde 2026-09-09, `stats` também
+ * entra de fato na conta quando `marketOdds` está preenchido: o
+ * eliteAnalyzer funde o lambda de stats com o lambda de mercado
+ * (mercado como base, stats como ajuste limitado — ver
+ * fusedModelPipeline.ts/lambdaFusion.ts). `marketOdds` (odds de
+ * várias casas) é quem alimenta o de-vig. `odds` é o preço de UMA
+ * casa (a que será realmente usada para apostar) para o EV. Sem
+ * `marketOdds`, cai para o motor antigo baseado só em `stats`; sem
+ * stats de algum time, cai para o consenso de-vig puro (ver
+ * eliteAnalyzer.ts).
+ */
+export interface AnalysisPayload {
   match: {
     home: string;
     away: string;
@@ -219,6 +233,8 @@ export interface StatsAnalysisPayload {
     home: TeamStatsPayload;
     away: TeamStatsPayload;
   };
+
+  marketOdds: MultiBookOddsPayload;
 
   odds: OddsPayload;
 
@@ -239,33 +255,6 @@ export interface StatsAnalysisPayload {
       string[];
   };
 }
-
-/*
- * Modo de consenso multi-casas (de-vig) — achado real em
- * 2026-09-08, ver marketModelPipeline.ts. Não pede stats de time:
- * a probabilidade vem das odds de várias casas, não de um modelo
- * próprio. `odds` continua sendo o preço de UMA casa (a que
- * realmente vai ser usada para apostar) para o cálculo de EV;
- * `marketOdds` são as odds de várias casas usadas só para o
- * consenso/de-vig.
- */
-export interface MarketOddsAnalysisPayload {
-  mode: "market";
-
-  match: {
-    home: string;
-    away: string;
-    league: string;
-  };
-
-  marketOdds: MultiBookOddsPayload;
-
-  odds: OddsPayload;
-}
-
-export type AnalysisPayload =
-  | StatsAnalysisPayload
-  | MarketOddsAnalysisPayload;
 
 /* ==========================================
    PROPS

@@ -18,7 +18,6 @@ import { decisionPipeline } from "../pipelines/decisionPipeline";
 import { generateStatReport, type BetRecord } from "./statReport";
 
 import { classifyMarket } from "../../domain/utils/marketClassifier";
-import { calculateStakePro } from "../../domain/risk/kelly";
 
 import type { MarketCode } from "../../shared/types/marketCode";
 import type { MarketPolicyOverrides } from "../pipelines/decisionPipeline";
@@ -100,7 +99,14 @@ export interface RunBacktestOptions {
   /* Somado ao EV mínimo dinâmico (getDynamicMinimumEv) por mercado. */
   evFloor?: number;
 
-  /* Teto de stake (fração da banca) repassado ao calculateStakePro. */
+  /*
+   * Teto OPCIONAL de stake (fração da banca), aplicado por cima do
+   * stake real (`best.stake`, calculado pelo mesmo
+   * calculateDecisionStake da produção). Sem isso, usa o stake real
+   * como veio (já limitado por GLOBAL_POLICY.maximumStake) — este
+   * campo serve só para experimentos de calibração que queiram
+   * testar um teto mais conservador que o de produção.
+   */
   stakeCap?: number;
 
   /*
@@ -275,9 +281,36 @@ export function runBacktest(
     /* ===========================
        STAKE
     ============================ */
+
+    /*
+     * Achado real em 2026-09-09: até esta correção, o backtest
+     * descartava `best.stake` (o valor que o decisionPipeline REAL
+     * — o mesmo da produção — já calculou via calculateDecisionStake,
+     * Kelly fracionado + fatores de risco/confiança/classificação) e
+     * recalculava com `calculateStakePro`, uma fórmula paralela com
+     * Kelly cheio e multiplicadores completamente diferentes, sem
+     * nem considerar `classification`. Isso não afetava quais apostas
+     * eram escolhidas (isso já vinha do decisionPipeline real), só o
+     * TAMANHO de cada uma — ou seja, a curva de banca/drawdown/ROI do
+     * backtest não correspondia ao dimensionamento que o sistema
+     * realmente usaria. `stakeCap` continua funcionando como um teto
+     * OPCIONAL adicional para experimentos de calibração — sem ele,
+     * usa exatamente o stake real (já limitado por
+     * GLOBAL_POLICY.maximumStake dentro de calculateDecisionStake).
+     */
+    const realStakeFraction =
+      Number.isFinite(best.stake)
+        ? Math.max(0, best.stake as number)
+        : 0;
+
+    const stakeFraction =
+      Number.isFinite(stakeCap) && (stakeCap as number) > 0
+        ? Math.min(realStakeFraction, stakeCap as number)
+        : realStakeFraction;
+
     const stake =
       bankroll *
-      calculateStakePro(best, { stakeCap });
+      stakeFraction;
 
     if (stake <= 0) {
       bankrollHistory.push(bankroll);
