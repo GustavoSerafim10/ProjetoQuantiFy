@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import type { OddsPayload } from "./types";
 import type { MultiBookOddsPayload } from "../../domain/odds/multiBookOdds";
 
@@ -150,6 +152,25 @@ export default function MarketOddsPanel({
   form: MarketOddsForm;
   onChange: (next: MarketOddsForm) => void;
 }) {
+  /*
+   * Achado real em 2026-09-09 (2a vez, mesmo dia): mesmo com as
+   * colunas 2/3 já marcadas como opcionais, ver 3 campos de odd por
+   * linha toda vez ainda pareceu cansativo. Por padrão mostra só 1
+   * campo por mercado (o fluxo antigo, "uma casa só") — quem quiser
+   * o ganho de precisão do consenso de-vig com mais casas expande
+   * manualmente. Nada do motor mudou: `marketOddsForm`/
+   * `buildMarketOddsPayload`/`fuseLambdas` continuam aceitando 1 a 3
+   * odds por mercado exatamente como antes.
+   */
+  const [showExtraBooks, setShowExtraBooks] = useState(false);
+
+  const visibleLabels = showExtraBooks
+    ? BOOKMAKER_LABELS
+    : BOOKMAKER_LABELS.slice(0, 1);
+
+  const gridColsClass =
+    visibleLabels.length === 1 ? "grid-cols-2" : "grid-cols-4";
+
   function handleOddChange(
     market: MarketKey,
     columnIndex: number,
@@ -167,14 +188,30 @@ export default function MarketOddsPanel({
 
   return (
     <div className="space-y-4">
-      <div className="text-xs text-zinc-400">
-        Preencher só a sua casa de sempre já é suficiente — a primeira
-        coluna preenchida em cada linha é o preço usado para calcular o
-        valor esperado (EV). As outras duas colunas são opcionais: se
-        você tiver tempo de conferir mais 1 ou 2 casas, elas entram no
-        cálculo do consenso (de-vig) e deixam o número um pouco mais
-        preciso, mas não são obrigatórias.
+      <div className="flex items-center justify-between gap-3 text-xs text-zinc-400">
+        <div>
+          Preencha a odd da sua casa de sempre — já é suficiente para
+          calcular o valor esperado (EV).
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setShowExtraBooks(current => !current)}
+          className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1.5 text-[11px] font-semibold text-emerald-400 hover:bg-zinc-800 transition"
+        >
+          {showExtraBooks
+            ? "− Ocultar casas extras"
+            : "+ Mais casas (opcional, mais preciso)"}
+        </button>
       </div>
+
+      {showExtraBooks && (
+        <div className="text-xs text-zinc-400">
+          Colunas extras são opcionais: se você conferir mais 1 ou 2
+          casas, elas entram no cálculo do consenso (de-vig) e deixam o
+          número um pouco mais preciso — mas não são obrigatórias.
+        </div>
+      )}
 
       {MARKET_GROUPS.map(group => (
         <section
@@ -185,9 +222,11 @@ export default function MarketOddsPanel({
             {group.title}
           </h3>
 
-          <div className="grid grid-cols-4 gap-2 text-[10px] uppercase tracking-wide text-zinc-500 mb-2">
+          <div
+            className={`grid ${gridColsClass} gap-2 text-[10px] uppercase tracking-wide text-zinc-500 mb-2`}
+          >
             <div>Mercado</div>
-            {BOOKMAKER_LABELS.map(label => (
+            {visibleLabels.map(label => (
               <div key={label} className="text-center">
                 {label}
               </div>
@@ -197,11 +236,11 @@ export default function MarketOddsPanel({
           {group.rows.map(row => (
             <div
               key={row.key}
-              className="grid grid-cols-4 gap-2 items-center py-1.5"
+              className={`grid ${gridColsClass} gap-2 items-center py-1.5`}
             >
               <div className="text-xs text-zinc-300">{row.label}</div>
 
-              {BOOKMAKER_LABELS.map((label, columnIndex) => (
+              {visibleLabels.map((label, columnIndex) => (
                 <input
                   key={label}
                   type="number"
