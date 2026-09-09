@@ -1,5 +1,5 @@
 /*
- * Fonte única dos 9 códigos de mercado que atravessam a cadeia de
+ * Fonte única dos 13 códigos de mercado que atravessam a cadeia de
  * decisão ao vivo (probabilityPipeline → valuePipeline →
  * decisionPipeline). Antes desses três arquivos redeclararem, cada
  * um, o mesmo union de forma independente.
