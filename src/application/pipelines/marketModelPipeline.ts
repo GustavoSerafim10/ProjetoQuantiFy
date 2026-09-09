@@ -9,7 +9,6 @@ import {
 } from "./marketLambda";
 
 import {
-  hasUsableMultiBookOdds,
   type MultiBookOddsPayload
 } from "../../domain/odds/multiBookOdds";
 

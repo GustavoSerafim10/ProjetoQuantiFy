@@ -89,8 +89,16 @@ describe("fusedModelPipeline", () => {
 
     expect(fused.blocked).toBe(false);
 
-    const marketLambdaHome = marketOnly.debug.fusedModelPipeline.marketLambda.home;
-    const marketLambdaAway = marketOnly.debug.fusedModelPipeline.marketLambda.away;
+    const marketOnlyDebug = (marketOnly as {
+      debug: {
+        fusedModelPipeline: {
+          marketLambda: { home: number; away: number };
+        };
+      };
+    }).debug;
+
+    const marketLambdaHome = marketOnlyDebug.fusedModelPipeline.marketLambda.home;
+    const marketLambdaAway = marketOnlyDebug.fusedModelPipeline.marketLambda.away;
 
     expect(fused.lambdaHome).toBeLessThanOrEqual(marketLambdaHome * 1.15 + 1e-6);
     expect(fused.lambdaAway).toBeGreaterThanOrEqual(marketLambdaAway * 0.85 - 1e-6);

@@ -175,8 +175,7 @@ export function fusedModelPipeline(
       goals: marketOnlyGoals,
 
       btts: {
-        yes: marketOnlyMarkets.bttsYes,
-        no: marketOnlyMarkets.bttsNo
+        yes: marketOnlyMarkets.bttsYes
       },
 
       result: {
