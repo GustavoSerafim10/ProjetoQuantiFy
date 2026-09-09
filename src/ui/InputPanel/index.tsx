@@ -576,9 +576,9 @@ export default function InputPanel({
           </div>
         )}
 
-        {/* GERAL */}
+        {/* FICHA TÉCNICA */}
 
-        <Card title="📊 Geral">
+        <Card title="📋 Ficha Técnica">
           <Row
             label="Nota"
             home="homeRating"
@@ -595,7 +595,11 @@ export default function InputPanel({
             handleChange={handleChange}
             integer
           />
+        </Card>
 
+        {/* ATAQUE */}
+
+        <Card title="⚔️ Ataque">
           <Row
             label="Gols"
             home="homeGoals"
@@ -606,30 +610,17 @@ export default function InputPanel({
           />
 
           <Row
-            label="Sofridos"
-            home="homeConceded"
-            away="awayConceded"
+            label="Gols/jogo"
+            home="homeGoalsPG"
+            away="awayGoalsPG"
             form={form}
             handleChange={handleChange}
-            integer
           />
 
           <Row
             label="Assistências"
             home="homeAssists"
             away="awayAssists"
-            form={form}
-            handleChange={handleChange}
-          />
-        </Card>
-
-        {/* ATAQUE */}
-
-        <Card title="⚔️ Ataque">
-          <Row
-            label="Gols/jogo"
-            home="homeGoalsPG"
-            away="awayGoalsPG"
             form={form}
             handleChange={handleChange}
           />
@@ -675,9 +666,9 @@ export default function InputPanel({
           />
         </Card>
 
-        {/* PASSE */}
+        {/* CRIAÇÃO */}
 
-        <Card title="🎯 Passe">
+        <Card title="🎯 Criação">
           <Row
             label="Posse %"
             home="homePossession"
@@ -706,19 +697,28 @@ export default function InputPanel({
 
         {/* DEFESA */}
 
-        <Card title="🛡 Defesa">
+        <Card title="🛡️ Defesa">
           <Row
-            label="Clean Sheets"
-            home="homeCleanSheets"
-            away="awayCleanSheets"
+            label="Sofridos"
+            home="homeConceded"
+            away="awayConceded"
             form={form}
             handleChange={handleChange}
+            integer
           />
 
           <Row
             label="Gols sofridos/jogo"
             home="homeConcededPG"
             away="awayConcededPG"
+            form={form}
+            handleChange={handleChange}
+          />
+
+          <Row
+            label="Clean Sheets"
+            home="homeCleanSheets"
+            away="awayCleanSheets"
             form={form}
             handleChange={handleChange}
           />
@@ -756,9 +756,9 @@ export default function InputPanel({
           />
         </Card>
 
-        {/* OUTROS */}
+        {/* DISCIPLINA & JOGO */}
 
-        <Card title="📦 Outros">
+        <Card title="🟨 Disciplina & Jogo">
           <Row
             label="Faltas"
             home="homeFouls"
