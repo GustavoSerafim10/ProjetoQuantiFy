@@ -47,6 +47,27 @@ const NEUTRAL_TEMPO_TOTAL =
 const NEUTRAL_PRESSURE_TOTAL =
   2 * (AVG_SHOTS_ON_TARGET_PER_TEAM + AVG_CORNERS_PER_TEAM);
 
+/*
+ * Achado real em 2026-09-09: com dados reais de jogos da Série B
+ * analisados no mesmo dia, tempoFactor e/ou pressureFactor bateram
+ * exatamente no limite do clamp (±0.94/1.08/1.10) em praticamente
+ * TODO jogo testado (proporções brutas observadas: 1.068, 1.156,
+ * 1.179, 1.191 para tempo; 0.935, 1.102, 1.156 para pressão — a
+ * maioria já fora da faixa antiga). Isso não é mais um risco
+ * teórico: times com volume de finalização/escanteio só um pouco
+ * acima da média já saturam. Faixa alargada para bater com o ±18%
+ * que `applyBoundedContextAdjustment` (modelPipeline/
+ * contextAdjustment.ts) já usa como o limite de segurança real do
+ * contexto combinado — em vez de inventar um terceiro número
+ * arbitrário, este componente individual usa o mesmo limite já
+ * validado, e para de ser um gargalo mais apertado que ele.
+ */
+export const MIN_TEMPO_FACTOR = 0.82;
+export const MAX_TEMPO_FACTOR = 1.18;
+
+export const MIN_PRESSURE_FACTOR = 0.82;
+export const MAX_PRESSURE_FACTOR = 1.18;
+
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(n, max));
 }
@@ -94,7 +115,7 @@ export function contextEngine(data: ContextEngineInput) {
     ((homeTempo + awayTempo) / NEUTRAL_TEMPO_TOTAL) *
     safe(leagueData?.tempo, 1);
 
-  const tempoFactor = clamp(rawTempoFactor, 0.94, 1.08);
+  const tempoFactor = clamp(rawTempoFactor, MIN_TEMPO_FACTOR, MAX_TEMPO_FACTOR);
 
   const homePressure =
     safe(homeStats?.shotsOnTarget, AVG_SHOTS_ON_TARGET_PER_TEAM) +
@@ -108,7 +129,7 @@ export function contextEngine(data: ContextEngineInput) {
     ((homePressure + awayPressure) / NEUTRAL_PRESSURE_TOTAL) *
     safe(leagueData?.pressure, 1);
 
-  const pressureFactor = clamp(rawPressureFactor, 0.94, 1.10);
+  const pressureFactor = clamp(rawPressureFactor, MIN_PRESSURE_FACTOR, MAX_PRESSURE_FACTOR);
 
   const homeAdvantage = safe(leagueData?.homeAdvantage, 1.05);
 

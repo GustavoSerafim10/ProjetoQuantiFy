@@ -119,12 +119,26 @@ export function calculateShotQualityFactor({
             shotsOnTarget
           : null;
 
+  /*
+   * Achado real em 2026-09-09: os três componentes eram
+   * clamp(x, 0, 1.6) — mas o centro neutro é 1.0 (time na média),
+   * então o teto (1.6) fica só +0.6 acima do centro enquanto o piso
+   * (0) fica -1.0 abaixo. Depois de comprimido por
+   * SHOT_QUALITY_MAX_ADJUSTMENT (0.14), isso fazia o ajuste final
+   * alcançar o piso do próprio clamp (0.86 = 1 - 0.14) para um time
+   * de qualidade péssima, mas nunca o teto (1.14 = 1 + 0.14) para um
+   * time de qualidade excelente — o melhor ataque possível parava em
+   * 1.084, um teto assimétrico e não-intencional. Teto alargado para
+   * 2.0 (mesma distância do centro que o piso, +1.0/-1.0) para que a
+   * compressão consiga alcançar os dois lados do clamp final por
+   * igual.
+   */
   const sotQuality =
     shotsOnTarget !== null
       ? clamp(
           shotsOnTarget / 5,
           0,
-          1.6
+          2.0
         )
       : null;
 
@@ -133,7 +147,7 @@ export function calculateShotQualityFactor({
       ? clamp(
           bigChances / 2,
           0,
-          1.6
+          2.0
         )
       : null;
 
@@ -142,7 +156,7 @@ export function calculateShotQualityFactor({
       ? clamp(
           conversionRate / 0.12,
           0,
-          1.6
+          2.0
         )
       : null;
 

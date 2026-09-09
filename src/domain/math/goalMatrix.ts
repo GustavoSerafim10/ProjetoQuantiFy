@@ -154,12 +154,26 @@ const DEFAULT_HOME_LAMBDA = 1.32;
 const DEFAULT_AWAY_LAMBDA = 1.23;
 
 const DEFAULT_MAX_GOALS = 10;
-const MIN_MAX_GOALS = 6;
+
+/*
+ * Achado real em 2026-09-09: MIN_MAX_GOALS/MIN_RHO/MAX_RHO
+ * divergiam dos equivalentes em goalsModel/constants.ts
+ * (MIN_MAX_GOALS=10, MIN/MAX_OPERATIONAL_RHO=-0.15/0.10) — duas
+ * constantes diferentes pra representar o mesmo limite físico.
+ * Nenhum caller real de goalMatrix() nunca passou `maxGoals`
+ * (grep confirmado), então MIN_MAX_GOALS nunca foi exercido na
+ * prática, mas ainda assim ficava divergente. Unificado com
+ * goalsModel/constants.ts. DEFAULT_RHO mantido — é o valor usado só
+ * quando NENHUM rho real é passado (ex.: matchGenerator.ts, que
+ * gera resultados sintéticos de propósito independentes do rho
+ * dinâmico do modelo preditivo), e já cai dentro da faixa unificada.
+ */
+const MIN_MAX_GOALS = 10;
 const MAX_MAX_GOALS = 20;
 
 const DEFAULT_RHO = -0.12;
-const MIN_RHO = -0.25;
-const MAX_RHO = 0.05;
+const MIN_RHO = -0.15;
+const MAX_RHO = 0.10;
 
 const NORMALIZATION_TOLERANCE =
   1e-10;

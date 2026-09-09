@@ -247,6 +247,26 @@ export function calculateGlobalConfidence(
 
   /*
    * Coerência entre Over 2.5 e total lambda.
+   *
+   * Revisado em 2026-09-09 (auditoria completa): este check e
+   * `STRUCTURE_OVER_2_5_TOTAL_LAMBDA` (confidenceEngine.ts,
+   * addOverStructure) parecem à primeira vista a mesma verificação
+   * duplicada — mas não são. Este aqui é um sinal GLOBAL, aplicado
+   * igual a TODOS os mercados do jogo (via globalConfidenceAdjustment
+   * em confidenceEngine.ts): "a própria saída do modelo se
+   * contradiz" (probabilidade alta de Over 2.5 convivendo com um
+   * lambda total baixo demais pra sustentar isso) é motivo pra
+   * desconfiar do jogo inteiro, não só do mercado Over 2.5. Já
+   * `STRUCTURE_OVER_2_5_TOTAL_LAMBDA` é uma pontuação contínua,
+   * só aplicada ao avaliar Over 2.5 especificamente, sem gate binário
+   * — mede se o lambda sustenta ESSE mercado, não se o modelo se
+   * contradisse. Os dois pesam pouco individualmente (este entra com
+   * peso 0.20 dentro do global, que por sua vez pesa só 0.22 na
+   * confiança final de mercado) e servem propósitos diferentes.
+   * Mantido como está — mudar isso sem um sweep de backtest antes/
+   * depois (como já se faz pra qualquer ajuste de risco/confiança
+   * neste projeto) seria mudar uma fórmula de dinheiro real baseado
+   * só em intuição.
    */
   if (
     goalsOver25 >= 0.70 &&

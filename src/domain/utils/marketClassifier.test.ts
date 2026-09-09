@@ -45,4 +45,16 @@ describe("classifyMarket", () => {
     expect(classifyMarket("HOME WIN")).toBe("MATCH_RESULT");
     expect(classifyMarket("AWAY WIN")).toBe("MATCH_RESULT");
   });
+
+  /*
+   * Regressao real de 2026-09-09: HOME_OVER/AWAY_OVER contem a
+   * substring "OVER", entao o branch TOTAL_GOALS (checado antes)
+   * sempre vencia primeiro e o branch TEAM_TOTAL nunca era
+   * alcancado. Nenhum mercado real usa esses nomes hoje, mas o dia
+   * em que um for adicionado, precisa cair em TEAM_TOTAL.
+   */
+  it("classifies team-total codes (HOME_OVER/AWAY_OVER) as TEAM_TOTAL, not TOTAL_GOALS", () => {
+    expect(classifyMarket("HOME_OVER_1_5")).toBe("TEAM_TOTAL");
+    expect(classifyMarket("AWAY_OVER_1_5")).toBe("TEAM_TOTAL");
+  });
 });

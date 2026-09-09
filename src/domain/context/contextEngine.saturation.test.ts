@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import seedrandom from "seedrandom";
 
-import { contextEngine } from "./contextEngine";
+import {
+  contextEngine,
+  MIN_TEMPO_FACTOR,
+  MAX_TEMPO_FACTOR,
+  MIN_PRESSURE_FACTOR,
+  MAX_PRESSURE_FACTOR
+} from "./contextEngine";
 
 /*
  * Alarme de saturação.
@@ -81,10 +87,10 @@ describe("contextEngine — alarme de saturação de tempo/pressao", () => {
         baseLambdaAway: 1.0
       });
 
-      if (isAtBound(result.tempoFactor, 0.94)) tempoAtFloor++;
-      if (isAtBound(result.tempoFactor, 1.08)) tempoAtCeiling++;
-      if (isAtBound(result.pressureFactor, 0.94)) pressureAtFloor++;
-      if (isAtBound(result.pressureFactor, 1.10)) pressureAtCeiling++;
+      if (isAtBound(result.tempoFactor, MIN_TEMPO_FACTOR)) tempoAtFloor++;
+      if (isAtBound(result.tempoFactor, MAX_TEMPO_FACTOR)) tempoAtCeiling++;
+      if (isAtBound(result.pressureFactor, MIN_PRESSURE_FACTOR)) pressureAtFloor++;
+      if (isAtBound(result.pressureFactor, MAX_PRESSURE_FACTOR)) pressureAtCeiling++;
     }
 
     const rate = (n: number) => n / SAMPLE_SIZE;

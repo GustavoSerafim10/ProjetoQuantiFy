@@ -211,14 +211,35 @@ describe("runBacktest — estabilidade de decisão (regression guard)", () => {
      * reduz o drawdown médio de 30,1% para 19,5% e AUMENTA o ROI
      * médio de 2,7% para 3,2% — melhora em todos os eixos, não troca.
      */
-    expect(result.totalBets).toBe(61);
-    expect(result.wins).toBe(29);
-    expect(result.losses).toBe(32);
-    expect(result.voids).toBe(0);
+    /*
+     * Atualizado em 2026-09-09 (3a vez, mesmo dia): correção de 4
+     * achados da auditoria completa (faixa de tempo/pressureFactor
+     * alargada de ±6-10% para ±18% em contextEngine.ts; teto
+     * assimétrico do fator de qualidade de chute corrigido em
+     * lambdaBuilder/contextualFactors.ts; constantes de rho
+     * unificadas entre goalMatrix.ts e goalsModel/constants.ts;
+     * branch morto corrigido em marketClassifier.ts) muda os lambdas
+     * o suficiente pra alterar quais apostas passam nos thresholds
+     * (61 -> 64 bets, 2 delas agora DNB com void). O ROI desta amostra
+     * única e determinística piorou (-5,1% -> -11,8%) — mas isso NÃO
+     * é evidência de que a correção é ruim: já vimos nesta mesma
+     * sessão (sweep de kellyFraction/maximumStake) que o sinal de UMA
+     * amostra fixa pode ser puro azar de sorteio. O que importa aqui é
+     * que os 4 achados eram bugs de cálculo comprovados (assimetria
+     * aritmética, saturação, constantes divergentes, branch
+     * inalcançável), não uma escolha de calibração — corrigidos
+     * independente do efeito numa amostra só. Ver
+     * project_full_audit_stake_rho_fixes_and_kelly_recalibration.md
+     * (memória) para o histórico completo desta auditoria.
+     */
+    expect(result.totalBets).toBe(64);
+    expect(result.wins).toBe(27);
+    expect(result.losses).toBe(35);
+    expect(result.voids).toBe(2);
 
-    expect(result.roi).toBeCloseTo(-0.05086026415229425, 9);
-    expect(result.totalProfit).toBeCloseTo(-26.44521337311233, 6);
-    expect(result.totalStaked).toBeCloseTo(519.958238791794, 6);
-    expect(result.maxDrawdown).toBeCloseTo(0.11080258420568066, 9);
+    expect(result.roi).toBeCloseTo(-0.11811431927283171, 9);
+    expect(result.totalProfit).toBeCloseTo(-71.36433708968497, 6);
+    expect(result.totalStaked).toBeCloseTo(604.1971670246079, 6);
+    expect(result.maxDrawdown).toBeCloseTo(0.1099380076559272, 9);
   }, REGRESSION_TIMEOUT_MS);
 });

@@ -690,6 +690,14 @@ function addOverStructure({
   }
 
   if (market === "OVER_2_5") {
+    /*
+     * Ver comentário espelhado em globalConfidenceEngine.ts (checagem
+     * "Over 2.5 vs total lambda"): parecem duplicados, mas este aqui é
+     * uma pontuação contínua específica de mercado (quanto o lambda
+     * sustenta Over 2.5), sem gate binário; o do globalConfidenceEngine
+     * é um sinal de contradição do modelo, aplicado a TODOS os
+     * mercados igualmente. Revisado em 2026-09-09, mantido intencional.
+     */
     addComponent(
       components,
       "STRUCTURE_OVER_2_5_TOTAL_LAMBDA",
