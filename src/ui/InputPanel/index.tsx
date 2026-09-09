@@ -580,7 +580,7 @@ export default function InputPanel({
 
         <Card title="📋 Ficha Técnica">
           <Row
-            label="Nota"
+            label="Nota Sofascore"
             home="homeRating"
             away="awayRating"
             form={form}
@@ -601,7 +601,7 @@ export default function InputPanel({
 
         <Card title="⚔️ Ataque">
           <Row
-            label="Gols"
+            label="Gols marcados"
             home="homeGoals"
             away="awayGoals"
             form={form}
@@ -610,7 +610,7 @@ export default function InputPanel({
           />
 
           <Row
-            label="Gols/jogo"
+            label="Gols por partida"
             home="homeGoalsPG"
             away="awayGoalsPG"
             form={form}
@@ -626,13 +626,15 @@ export default function InputPanel({
           />
 
           <Row
-            label="Chutes no gol"
+            label="Chutes certos por jogo"
             home="homeShotsOnTarget"
             away="awayShotsOnTarget"
             form={form}
             handleChange={handleChange}
           />
 
+          {/* Finalizações totais e escanteios vêm de outra plataforma
+              (não Sofascore) — rótulo mantido como está de propósito. */}
           <Row
             label="Finalizações totais"
             home="homeShots"
@@ -650,7 +652,7 @@ export default function InputPanel({
           />
 
           <Row
-            label="Grandes chances"
+            label="Grandes chances de gol por jogo"
             home="homeBigChances"
             away="awayBigChances"
             form={form}
@@ -658,7 +660,7 @@ export default function InputPanel({
           />
 
           <Row
-            label="Perdidas"
+            label="Grandes chances perdidas por jogo"
             home="homeBigChancesMissed"
             away="awayBigChancesMissed"
             form={form}
@@ -670,7 +672,7 @@ export default function InputPanel({
 
         <Card title="🎯 Criação">
           <Row
-            label="Posse %"
+            label="Posse de bola"
             home="homePossession"
             away="awayPossession"
             form={form}
@@ -679,7 +681,7 @@ export default function InputPanel({
           />
 
           <Row
-            label="Passes"
+            label="Passes certos por partida"
             home="homePasses"
             away="awayPasses"
             form={form}
@@ -687,7 +689,7 @@ export default function InputPanel({
           />
 
           <Row
-            label="Bolas longas"
+            label="Bolas longas certas por jogo"
             home="homeLongBalls"
             away="awayLongBalls"
             form={form}
@@ -699,7 +701,7 @@ export default function InputPanel({
 
         <Card title="🛡️ Defesa">
           <Row
-            label="Sofridos"
+            label="Gols sofridos"
             home="homeConceded"
             away="awayConceded"
             form={form}
@@ -708,7 +710,7 @@ export default function InputPanel({
           />
 
           <Row
-            label="Gols sofridos/jogo"
+            label="Gols sofridos por jogo"
             home="homeConcededPG"
             away="awayConcededPG"
             form={form}
@@ -716,7 +718,7 @@ export default function InputPanel({
           />
 
           <Row
-            label="Clean Sheets"
+            label="Jogos sem sofrer gols"
             home="homeCleanSheets"
             away="awayCleanSheets"
             form={form}
@@ -724,7 +726,7 @@ export default function InputPanel({
           />
 
           <Row
-            label="Interceptações"
+            label="Interceptações por jogo"
             home="homeInterceptions"
             away="awayInterceptions"
             form={form}
@@ -732,7 +734,7 @@ export default function InputPanel({
           />
 
           <Row
-            label="Desarmes"
+            label="Desarmes por jogo"
             home="homeTackles"
             away="awayTackles"
             form={form}
@@ -740,7 +742,7 @@ export default function InputPanel({
           />
 
           <Row
-            label="Cortes"
+            label="Cortes por jogo"
             home="homeClearances"
             away="awayClearances"
             form={form}
@@ -748,7 +750,7 @@ export default function InputPanel({
           />
 
           <Row
-            label="Defesas"
+            label="Defesas por jogo"
             home="homeSaves"
             away="awaySaves"
             form={form}
@@ -760,7 +762,7 @@ export default function InputPanel({
 
         <Card title="🟨 Disciplina & Jogo">
           <Row
-            label="Faltas"
+            label="Faltas por jogo"
             home="homeFouls"
             away="awayFouls"
             form={form}
@@ -768,7 +770,7 @@ export default function InputPanel({
           />
 
           <Row
-            label="Impedimentos"
+            label="Impedimentos por jogo"
             home="homeOffsides"
             away="awayOffsides"
             form={form}
@@ -776,7 +778,7 @@ export default function InputPanel({
           />
 
           <Row
-            label="Laterais"
+            label="Laterais por jogo"
             home="homeThrowIns"
             away="awayThrowIns"
             form={form}
@@ -784,7 +786,7 @@ export default function InputPanel({
           />
 
           <Row
-            label="Amarelos"
+            label="Cartões amarelos por partida"
             home="homeYellow"
             away="awayYellow"
             form={form}
@@ -792,7 +794,7 @@ export default function InputPanel({
           />
 
           <Row
-            label="Vermelhos"
+            label="Cartões vermelhos"
             home="homeRed"
             away="awayRed"
             form={form}

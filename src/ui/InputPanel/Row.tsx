@@ -150,8 +150,8 @@ export function Row({
         </div>
       </div>
 
-      <div className="text-center">
-        <div className="text-xs text-zinc-400">
+      <div className="text-center px-1">
+        <div className="text-[13px] leading-snug text-zinc-300 font-medium">
           {label}
         </div>
 
