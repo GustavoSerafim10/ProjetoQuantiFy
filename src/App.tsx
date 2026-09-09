@@ -399,7 +399,7 @@ function App() {
   ========================================== */
 
   return (
-    <div className="min-h-screen bg-[#050816]">
+    <div className="min-h-screen bg-quantify-bg">
 
       {/* RESET */}
 

@@ -507,7 +507,7 @@ export default function InputPanel({
   }
 
   return (
-    <div className="min-h-screen p-6 bg-[#0B0F1A] text-white">
+    <div className="min-h-screen p-6 bg-quantify-bg text-quantify-ice">
 
       <div className="max-w-3xl mx-auto space-y-8">
 
@@ -803,7 +803,7 @@ export default function InputPanel({
         {/* ODDS DE MERCADO (2-3 casas, alimenta o de-vig) */}
 
         <div>
-          <h2 className="text-sm text-emerald-400 mb-3 font-semibold tracking-wide text-center">
+          <h2 className="text-sm text-quantify-green mb-3 font-semibold tracking-wide text-center">
             💰 Odds de mercado
           </h2>
 
@@ -835,8 +835,8 @@ export default function InputPanel({
             isSubmitting
           }
           className={
-            `w-full py-4 rounded-xl font-bold text-white
-             bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500
+            `w-full py-4 rounded-xl font-bold text-quantify-bg
+             bg-gradient-to-r from-quantify-green to-quantify-cyan
              transition shadow-lg ${
                isSubmitting
                  ? "opacity-60 cursor-wait"

@@ -175,9 +175,9 @@ export default function AiAnalystPanel({
   }
 
   return (
-    <div className="mx-6 mb-6 rounded-2xl border border-purple-500/30 bg-purple-500/5 p-5 space-y-5">
+    <div className="mx-6 mb-6 rounded-2xl border border-quantify-cyan/30 bg-quantify-cyan/5 p-5 space-y-5">
       <div>
-        <h2 className="font-bold text-purple-300">
+        <h2 className="font-bold text-quantify-cyan">
           🧠 Analista IA (discricionário)
         </h2>
 
@@ -242,7 +242,7 @@ export default function AiAnalystPanel({
       <button
         type="button"
         onClick={handleGeneratePrompt}
-        className="px-4 py-2 rounded-lg bg-purple-500/20 border border-purple-500/40 text-purple-200 text-sm font-semibold hover:bg-purple-500/30 transition"
+        className="px-4 py-2 rounded-lg bg-quantify-cyan/20 border border-quantify-cyan/40 text-quantify-cyan text-sm font-semibold hover:bg-quantify-cyan/30 transition"
       >
         ✍️ Gerar prompt de análise
       </button>
@@ -271,8 +271,8 @@ export default function AiAnalystPanel({
         </div>
       )}
 
-      <div className="border-t border-purple-500/20 pt-4 space-y-3">
-        <h3 className="text-sm font-semibold text-purple-200">
+      <div className="border-t border-quantify-cyan/20 pt-4 space-y-3">
+        <h3 className="text-sm font-semibold text-quantify-cyan">
           Colar recomendação da IA
         </h3>
 
@@ -324,7 +324,7 @@ export default function AiAnalystPanel({
         <button
           type="button"
           onClick={handleRegisterAiPick}
-          className="w-full py-3 rounded-xl font-bold text-white bg-gradient-to-r from-purple-500 to-fuchsia-600 hover:scale-[1.01] transition"
+          className="w-full py-3 rounded-xl font-bold text-quantify-bg bg-gradient-to-r from-quantify-cyan to-quantify-green hover:scale-[1.01] transition"
         >
           💾 Registrar entrada da IA
         </button>

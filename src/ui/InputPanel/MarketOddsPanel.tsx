@@ -197,7 +197,7 @@ export default function MarketOddsPanel({
         <button
           type="button"
           onClick={() => setShowExtraBooks(current => !current)}
-          className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1.5 text-[11px] font-semibold text-emerald-400 hover:bg-zinc-800 transition"
+          className="shrink-0 rounded-lg border border-zinc-700 px-3 py-1.5 text-[11px] font-semibold text-quantify-green hover:bg-zinc-800 transition"
         >
           {showExtraBooks
             ? "− Ocultar casas extras"
@@ -216,7 +216,7 @@ export default function MarketOddsPanel({
       {MARKET_GROUPS.map(group => (
         <section
           key={group.title}
-          className="bg-gradient-to-br from-[#121826] to-[#0f172a] p-6 rounded-2xl border border-zinc-800 shadow-xl"
+          className="bg-gradient-to-br from-quantify-card to-quantify-bg p-6 rounded-2xl border border-zinc-800 shadow-xl"
         >
           <h3 className="text-sm text-zinc-400 mb-4 text-center font-semibold tracking-wide">
             {group.title}

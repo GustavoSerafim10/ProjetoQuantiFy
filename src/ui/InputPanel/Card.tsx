@@ -14,9 +14,9 @@ export function Card({
   children
 }: CardProps) {
   return (
-    <section className="bg-gradient-to-br from-[#121826] to-[#0f172a] p-6 rounded-2xl border border-zinc-800 shadow-xl backdrop-blur">
+    <section className="bg-gradient-to-br from-quantify-card to-quantify-bg p-6 rounded-2xl border border-zinc-800 shadow-xl backdrop-blur">
       <h2 className="text-sm text-zinc-400 mb-4 text-center font-semibold tracking-wide relative">
-        <span className="px-3 bg-[#121826] relative z-10">
+        <span className="px-3 bg-quantify-card relative z-10">
           {title}
         </span>
 
