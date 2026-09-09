@@ -595,11 +595,7 @@ export default function InputPanel({
             handleChange={handleChange}
             integer
           />
-        </Card>
 
-        {/* ATAQUE */}
-
-        <Card title="⚔️ Ataque">
           <Row
             label="Gols marcados"
             home="homeGoals"
@@ -610,17 +606,30 @@ export default function InputPanel({
           />
 
           <Row
-            label="Gols por partida"
-            home="homeGoalsPG"
-            away="awayGoalsPG"
+            label="Gols sofridos"
+            home="homeConceded"
+            away="awayConceded"
             form={form}
             handleChange={handleChange}
+            integer
           />
 
           <Row
             label="Assistências"
             home="homeAssists"
             away="awayAssists"
+            form={form}
+            handleChange={handleChange}
+          />
+        </Card>
+
+        {/* ATAQUE */}
+
+        <Card title="⚔️ Ataque">
+          <Row
+            label="Gols por partida"
+            home="homeGoalsPG"
+            away="awayGoalsPG"
             form={form}
             handleChange={handleChange}
           />
@@ -700,15 +709,6 @@ export default function InputPanel({
         {/* DEFESA */}
 
         <Card title="🛡️ Defesa">
-          <Row
-            label="Gols sofridos"
-            home="homeConceded"
-            away="awayConceded"
-            form={form}
-            handleChange={handleChange}
-            integer
-          />
-
           <Row
             label="Gols sofridos por jogo"
             home="homeConcededPG"
