@@ -199,163 +199,25 @@ function getMarketLabel(
 ========================================== */
 
 /*
- * Auditoria 2026-08-22: esta tag era calculada só a partir
- * do EV, sem olhar se a política de decisão (marketPolicies.ts)
- * realmente aprovou a entrada. Isso deixava mercados com "SEM
- * APOSTA"/"WATCHLIST" exibindo um selo grande e verde de
- * "VALUE BET" no topo do ranking — visualmente indistinguível
- * de uma entrada de verdade aprovada, mesmo quando o próprio
- * sistema rejeitou. A tag agora reflete a classificação real:
- * só SCALPER/ELITE/BET (com decisionValid) recebem os selos
- * positivos; o resto mostra o EV cru sem fingir que é uma
- * recomendação.
+ * Auditoria 2026-08-22 + Fase 3 do redesign (2026-09-09): mesma
+ * honestidade de sempre — nunca mostra uma classificação aprovada
+ * quando o decisionPipeline marcou `decisionValid: false`, mesmo que
+ * `classification` ainda carregue um valor de um estágio anterior.
+ * A coluna "Status" do Market Lab usa isto em vez do campo cru.
  */
-function isApprovedEntry(
+function getHonestClassification(
   market?: DashboardMarket | null
-): boolean {
-  const decisionValid =
-    market?.decisionValid;
-
-  if (decisionValid === false) {
-    return false;
+): BetClassification {
+  if (market?.decisionValid === false) {
+    return "NO BET";
   }
 
   return (
-    market?.classification ===
-      "SCALPER" ||
-    market?.classification ===
-      "ELITE" ||
-    market?.classification ===
-      "BET"
+    (market?.classification as
+      BetClassification | undefined) ??
+    "NO BET"
   );
 }
-
-function getValueTag(
-  market?: DashboardMarket | null
-): string {
-  const ev =
-    toFiniteNumber(
-      market?.ev
-    );
-
-  if (ev === null) {
-    return "⚪ SEM DADOS";
-  }
-
-  if (!isApprovedEntry(market)) {
-    return ev > 0
-      ? "🔍 EV positivo — não aprovado"
-      : "❌ SEM VALUE";
-  }
-
-  if (ev >= 0.12) {
-    return "💎 VALUE BET";
-  }
-
-  if (ev >= 0.05) {
-    return "🔥 BOA";
-  }
-
-  if (ev >= 0.02) {
-    return "⚠️ MARGINAL";
-  }
-
-  return "🟠 VALUE BAIXO";
-}
-
-function getValueColor(
-  market?: DashboardMarket | null
-): string {
-  const ev =
-    toFiniteNumber(
-      market?.ev
-    );
-
-  if (ev === null) {
-    return "text-zinc-400";
-  }
-
-  if (!isApprovedEntry(market)) {
-    return ev > 0
-      ? "text-zinc-400"
-      : "text-red-400";
-  }
-
-  if (ev >= 0.12) {
-    return "text-green-400";
-  }
-
-  if (ev >= 0.05) {
-    return "text-emerald-400";
-  }
-
-  if (ev >= 0.02) {
-    return "text-yellow-400";
-  }
-
-  return "text-orange-400";
-}
-
-const Glow = ({
-  value
-}: {
-  value?: number | null;
-}) => {
-  const safeValue =
-    toFiniteNumber(
-      value
-    );
-
-  if (safeValue === null) {
-    return (
-      <span className="text-zinc-500">
-        —
-      </span>
-    );
-  }
-
-  if (safeValue >= 0.15) {
-    return (
-      <span className="text-green-400 font-bold">
-        {formatDecimal(
-          safeValue,
-          2
-        )}
-      </span>
-    );
-  }
-
-  if (safeValue >= 0.08) {
-    return (
-      <span className="text-yellow-400">
-        {formatDecimal(
-          safeValue,
-          2
-        )}
-      </span>
-    );
-  }
-
-  if (safeValue > 0) {
-    return (
-      <span className="text-orange-400">
-        {formatDecimal(
-          safeValue,
-          2
-        )}
-      </span>
-    );
-  }
-
-  return (
-    <span className="text-red-400">
-      {formatDecimal(
-        safeValue,
-        2
-      )}
-    </span>
-  );
-};
 
 function getRankingScore(
   market?: DashboardMarket | null
@@ -496,6 +358,79 @@ function getClassificationColor(
 
     default:
       return "text-zinc-400";
+  }
+}
+
+/*
+ * `fairOdd` já vem pronto do valuePipeline na maioria dos casos;
+ * quando ausente (fonte de dado mais antiga), 1/probabilidade é
+ * matematicamente a mesma coisa (odd justa = inverso da
+ * probabilidade), então não é um número novo, só o mesmo cálculo
+ * feito aqui em vez de lá.
+ */
+function getFairOdd(
+  market?: DashboardMarket | null
+): number | null {
+  const fairOdd =
+    toFiniteNumber(market?.fairOdd);
+
+  if (fairOdd !== null) {
+    return fairOdd;
+  }
+
+  const probability =
+    toFiniteNumber(market?.probability);
+
+  return probability !== null && probability > 0
+    ? 1 / probability
+    : null;
+}
+
+/*
+ * Fase 3 do redesign visual (2026-09-09) — "Quantify Verdict".
+ * `best` só existe quando o decisionPipeline já aprovou de verdade
+ * (actionableMarkets filtra por decisionValid === true antes de
+ * escolher `best` — ver decisionPipeline/index.ts), então não precisa
+ * de checagem extra aqui como a tabela Market Lab precisa.
+ */
+function getVerdictBadge(
+  classification?: BetClassification
+): { label: string; className: string } {
+  switch (classification) {
+    case "SCALPER":
+      return {
+        label: "🔵 SCALPER",
+        className:
+          "text-quantify-cyan border-quantify-cyan/40 bg-quantify-cyan/10"
+      };
+
+    case "ELITE":
+      return {
+        label: "🟢 ELITE",
+        className:
+          "text-quantify-green border-quantify-green/40 bg-quantify-green/10"
+      };
+
+    case "BET":
+      return {
+        label: "🟢 BET",
+        className:
+          "text-quantify-green border-quantify-green/40 bg-quantify-green/10"
+      };
+
+    case "WATCHLIST":
+      return {
+        label: "🟡 WATCHLIST",
+        className:
+          "text-quantify-yellow border-quantify-yellow/40 bg-quantify-yellow/10"
+      };
+
+    default:
+      return {
+        label: "🔴 NO BET",
+        className:
+          "text-quantify-red border-quantify-red/40 bg-quantify-red/10"
+      };
   }
 }
 
@@ -761,34 +696,25 @@ const markets: DashboardMarket[] =
           "Aguardando análise..."}
       </h1>
 
-      {/* DECISÃO PRINCIPAL */}
+      {/* QUANTIFY VERDICT */}
 
       <Card>
-        <h2 className="text-xs text-zinc-400">
-          🎯 DECISÃO QUANTITATIVA
+        <h2 className="text-xs text-zinc-400 tracking-wide">
+          ⚽ QUANTIFY VERDICT
         </h2>
 
         {best ? (
           <>
-            <div className="flex justify-between items-start gap-3">
-              <div>
-                <div className="text-2xl font-bold mt-2 text-green-400">
-                  {getMarketLabel(best.market)}
-                </div>
-
-                <div
-                  className={
-                    `text-xs mt-1 font-semibold ${
-                      getClassificationColor(
-                        best.classification
-                      )
-                    }`
-                  }
-                >
-                  {best.classification ??
-                    "BET"}
-                </div>
-              </div>
+            <div className="flex justify-between items-center gap-3 mt-3">
+              <span
+                className={
+                  `text-sm font-bold px-3 py-1 rounded-full border ${
+                    getVerdictBadge(best.classification).className
+                  }`
+                }
+              >
+                {getVerdictBadge(best.classification).label}
+              </span>
 
               {best.rank !==
                 undefined && (
@@ -799,33 +725,33 @@ const markets: DashboardMarket[] =
               )}
             </div>
 
-            <div
-              className={
-                `text-sm mt-2 font-bold ${
-                  getValueColor(
-                    best
-                  )
-                }`
-              }
-            >
-              {getValueTag(
-                best
-              )}
+            <div className="text-2xl font-bold mt-3 text-quantify-ice">
+              {getMarketLabel(best.market)}
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs mt-4 text-zinc-400">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs mt-4 text-zinc-400">
               <Metric
-                label="EV"
+                label="Probabilidade do modelo"
                 value={
-                  formatDecimal(
-                    best.ev,
-                    4
+                  formatPercent(
+                    best.probability,
+                    1
                   )
                 }
               />
 
               <Metric
-                label="Odd"
+                label="Odd justa"
+                value={
+                  formatDecimal(
+                    getFairOdd(best),
+                    2
+                  )
+                }
+              />
+
+              <Metric
+                label="Odd de mercado"
                 value={
                   formatDecimal(
                     best.odd,
@@ -835,11 +761,21 @@ const markets: DashboardMarket[] =
               />
 
               <Metric
-                label="Prob."
+                label="EV"
                 value={
                   formatPercent(
-                    best.probability,
+                    best.ev,
                     1
+                  )
+                }
+              />
+
+              <Metric
+                label="Confiança"
+                value={
+                  formatPercent(
+                    best.confidence,
+                    0
                   )
                 }
               />
@@ -851,19 +787,7 @@ const markets: DashboardMarket[] =
                     getRisk(
                       best
                     ),
-                    1
-                  )
-                }
-              />
-
-              <Metric
-                label="Ranking"
-                value={
-                  formatDecimal(
-                    getRankingScore(
-                      best
-                    ),
-                    4
+                    0
                   )
                 }
               />
@@ -874,6 +798,10 @@ const markets: DashboardMarket[] =
                 best.probability
               }
             />
+
+            <div className="text-xs text-quantify-cyan mt-3">
+              🧠 Passou por todas as validações do DecisionPipeline
+            </div>
 
             {(() => {
               const bestExplain = getExplain(best);
@@ -940,11 +868,17 @@ const markets: DashboardMarket[] =
             })()}
           </>
         ) : (
-          <div className="text-red-400 mt-2">
-            ⚠️ Nenhuma oportunidade passou pela política de decisão
-            {dashboardData.reason
-              ? ` — ${dashboardData.reason}`
-              : ""}
+          <div className="mt-3">
+            <span className="text-sm font-bold px-3 py-1 rounded-full border text-quantify-red border-quantify-red/40 bg-quantify-red/10">
+              🔴 NO BET
+            </span>
+
+            <div className="text-sm text-zinc-400 mt-3">
+              Nenhum mercado sobreviveu ao DecisionPipeline
+              {dashboardData.reason
+                ? ` — ${dashboardData.reason}`
+                : ""}.
+            </div>
           </div>
         )}
       </Card>
@@ -1020,195 +954,209 @@ const markets: DashboardMarket[] =
 
       <CalibrationPanel report={calibrationReport} />
 
-      {/* RANKING */}
+      {/* MARKET LAB */}
 
       <Card>
         <h2 className="font-bold mb-3">
-          🔥 Ranking de Valor
+          📊 Market Lab
         </h2>
 
         {markets.length >
         0 ? (
-          <div className="space-y-2">
-            {markets
-              .slice(
-                0,
-                5
-              )
-              .map(
-                (
-                  market,
-                  index
-                ) => {
-                  const explainKey =
-                    String(
-                      market.market ??
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs md:text-sm border-collapse">
+              <thead>
+                <tr className="text-left text-[10px] uppercase tracking-wide text-zinc-500 border-b border-zinc-800">
+                  <th className="py-2 pr-2">
+                    Mercado
+                  </th>
+
+                  <th className="py-2 px-2 text-right">
+                    Modelo
+                  </th>
+
+                  <th className="py-2 px-2 text-right">
+                    Odd justa
+                  </th>
+
+                  <th className="py-2 px-2 text-right">
+                    Sua odd
+                  </th>
+
+                  <th className="py-2 px-2 text-right">
+                    EV
+                  </th>
+
+                  <th className="py-2 pl-2 text-right">
+                    Status
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {markets
+                  .slice(
+                    0,
+                    5
+                  )
+                  .map(
+                    (
+                      market,
                       index
-                    );
+                    ) => {
+                      const explainKey =
+                        String(
+                          market.market ??
+                          index
+                        );
 
-                  const explain =
-                    getExplain(market);
+                      const explain =
+                        getExplain(market);
 
-                  const isExplainOpen =
-                    expandedExplainKey ===
-                    explainKey;
+                      const isExplainOpen =
+                        expandedExplainKey ===
+                        explainKey;
 
-                  return (
-                  <div
-                    key={
-                      explainKey
-                    }
-                    className={
-                      `p-3 rounded-xl border ${
-                        getHeat(
-                          market
-                        )
-                      }`
-                    }
-                  >
-                    <div className="flex justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-zinc-500">
-                          #
-                          {market.rank ??
-                            index + 1}
-                        </span>
+                      const ev =
+                        toFiniteNumber(
+                          market.ev
+                        );
 
-                        <span>
-                          {getMarketLabel(market.market)}
-                        </span>
-                      </div>
+                      return (
+                        <>
+                          <tr
+                            key={
+                              explainKey
+                            }
+                            onClick={() =>
+                              explain &&
+                              setExpandedExplainKey(
+                                isExplainOpen
+                                  ? null
+                                  : explainKey
+                              )
+                            }
+                            className={
+                              `border-b border-zinc-800/60 ${
+                                explain
+                                  ? "cursor-pointer hover:bg-white/5"
+                                  : ""
+                              } ${
+                                getHeat(
+                                  market
+                                )
+                              }`
+                            }
+                          >
+                            <td className="py-2.5 pr-2">
+                              <span className="text-zinc-600 mr-1">
+                                #
+                                {market.rank ??
+                                  index + 1}
+                              </span>
 
-                      <span
-                        className={
-                          getValueColor(
-                            market
-                          )
-                        }
-                      >
-                        {getValueTag(
-                          market
-                        )}
-                      </span>
-                    </div>
+                              {getMarketLabel(market.market)}
+                            </td>
 
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs mt-2">
-                      <span>
-                        EV:{" "}
-                        <Glow
-                          value={
-                            market.ev
-                          }
-                        />
-                      </span>
+                            <td className="py-2.5 px-2 text-right">
+                              {formatPercent(
+                                market.probability,
+                                1
+                              )}
+                            </td>
 
-                      <span>
-                        Ranking:{" "}
-                        {formatDecimal(
-                          getRankingScore(
-                            market
-                          ),
-                          4
-                        )}
-                      </span>
+                            <td className="py-2.5 px-2 text-right text-zinc-400">
+                              {formatDecimal(
+                                getFairOdd(market),
+                                2
+                              )}
+                            </td>
 
-                      <span>
-                        Prob.:{" "}
-                        {formatPercent(
-                          market.probability,
-                          1
-                        )}
-                      </span>
+                            <td className="py-2.5 px-2 text-right">
+                              {formatDecimal(
+                                market.odd,
+                                2
+                              )}
+                            </td>
 
-                      <span>
-                        Risco:{" "}
-                        {formatPercent(
-                          getRisk(
-                            market
-                          ),
-                          1
-                        )}
-                      </span>
+                            <td
+                              className={
+                                `py-2.5 px-2 text-right font-semibold ${
+                                  ev !== null && ev > 0
+                                    ? "text-quantify-green"
+                                    : "text-quantify-red"
+                                }`
+                              }
+                            >
+                              {formatPercent(
+                                market.ev,
+                                1
+                              )}
+                            </td>
 
-                      <span
-                        className={
-                          getClassificationColor(
-                            market.classification
-                          )
-                        }
-                      >
-                        {market.classification ??
-                          "NO BET"}
-                      </span>
-                    </div>
-
-                    <StrengthBar
-                      value={
-                        market.probability
-                      }
-                    />
-
-                    {explain && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setExpandedExplainKey(
-                              isExplainOpen
-                                ? null
-                                : explainKey
-                            )
-                          }
-                          className="text-xs text-zinc-400 hover:text-zinc-200 mt-2 underline decoration-dotted"
-                        >
-                          {isExplainOpen
-                            ? "Ocultar por quê"
-                            : "Por quê?"}
-                        </button>
-
-                        {isExplainOpen && (
-                          <div className="mt-2 text-xs space-y-2 border-t border-zinc-800 pt-2">
-                            <div className="text-zinc-300">
-                              {explain.summary}
-                            </div>
-
-                            {explain.positives.length > 0 && (
-                              <ul className="space-y-1">
-                                {explain.positives.map(
-                                  (item, itemIndex) => (
-                                    <li
-                                      key={`positive-${itemIndex}`}
-                                      className="text-green-400"
-                                    >
-                                      + {item}
-                                    </li>
+                            <td
+                              className={
+                                `py-2.5 pl-2 text-right font-semibold ${
+                                  getClassificationColor(
+                                    getHonestClassification(market)
                                   )
-                                )}
-                              </ul>
-                            )}
+                                }`
+                              }
+                            >
+                              {getHonestClassification(market)}
+                            </td>
+                          </tr>
 
-                            {explain.negatives.length > 0 && (
-                              <ul className="space-y-1">
-                                {explain.negatives.map(
-                                  (item, itemIndex) => (
-                                    <li
-                                      key={`negative-${itemIndex}`}
-                                      className="text-red-400"
-                                    >
-                                      - {item}
-                                    </li>
-                                  )
-                                )}
-                              </ul>
-                            )}
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                  );
-                }
-              )}
+                          {isExplainOpen && explain && (
+                            <tr key={`${explainKey}-explain`}>
+                              <td
+                                colSpan={6}
+                                className="pb-3 px-2"
+                              >
+                                <div className="text-xs space-y-2 border-t border-zinc-800 pt-2">
+                                  <div className="text-zinc-300">
+                                    {explain.summary}
+                                  </div>
+
+                                  {explain.positives.length > 0 && (
+                                    <ul className="space-y-1">
+                                      {explain.positives.map(
+                                        (item, itemIndex) => (
+                                          <li
+                                            key={`positive-${itemIndex}`}
+                                            className="text-green-400"
+                                          >
+                                            + {item}
+                                          </li>
+                                        )
+                                      )}
+                                    </ul>
+                                  )}
+
+                                  {explain.negatives.length > 0 && (
+                                    <ul className="space-y-1">
+                                      {explain.negatives.map(
+                                        (item, itemIndex) => (
+                                          <li
+                                            key={`negative-${itemIndex}`}
+                                            className="text-red-400"
+                                          >
+                                            - {item}
+                                          </li>
+                                        )
+                                      )}
+                                    </ul>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </>
+                      );
+                    }
+                  )}
+              </tbody>
+            </table>
           </div>
         ) : (
           <div className="text-sm text-zinc-500">
