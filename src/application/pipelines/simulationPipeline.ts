@@ -247,7 +247,13 @@ interface ProbabilityCandidate {
 ========================================== */
 
 const VERSION = "V7.1_ELITE" as const;
-const DEFAULT_SIMULATIONS = 50_000;
+
+/*
+ * Exportado (2026-09-09) só para a barra superior estilo placar
+ * poder mostrar o número real de simulações Monte Carlo em vez de
+ * um valor inventado — sem duplicar a constante em outro arquivo.
+ */
+export const DEFAULT_SIMULATIONS = 50_000;
 const COMPARISON_CONFLICT_TOLERANCE = 0.005;
 
 /* ==========================================

@@ -21,6 +21,9 @@ import {
   resetHistory
 } from "./domain/tracking/trackingEngine";
 
+import { DEFAULT_SIMULATIONS } from "./application/pipelines/simulationPipeline";
+import { MODEL_VERSION } from "./domain/marketModels/goalsModel/constants";
+
 /* ==========================================
    APP — QUANTIFY V7
 ========================================== */
@@ -400,6 +403,37 @@ function App() {
 
   return (
     <div className="min-h-screen bg-quantify-bg">
+
+      {/* BARRA ESTILO PLACAR DE ESTÁDIO */}
+
+      <div className="px-5 py-2 border-b border-white/5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] tracking-wider text-zinc-500 uppercase">
+        <span className="text-quantify-ice font-bold">
+          Quantify Sports
+        </span>
+
+        <span className="text-zinc-700">●</span>
+
+        <span>Match Lab</span>
+
+        <span className="text-zinc-700">●</span>
+
+        <span className="flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-quantify-green animate-pulse" />
+          Model Online
+        </span>
+
+        <span className="text-zinc-700">●</span>
+
+        <span>
+          Monte Carlo {DEFAULT_SIMULATIONS / 1000}K
+        </span>
+
+        <span className="text-zinc-700">●</span>
+
+        <span>
+          {MODEL_VERSION.replace("_", " ")}
+        </span>
+      </div>
 
       {/* RESET */}
 

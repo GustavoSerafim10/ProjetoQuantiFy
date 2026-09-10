@@ -21,6 +21,13 @@ import CalibrationPanel from "./CalibrationPanel";
 
 import type { MarketCode } from "../shared/types/marketCode";
 
+import {
+  MIN_TEMPO_FACTOR,
+  MAX_TEMPO_FACTOR,
+  MIN_PRESSURE_FACTOR,
+  MAX_PRESSURE_FACTOR
+} from "../domain/context/contextEngine";
+
 /* ==========================================
    DASHBOARD — QUANTIFY V7
 ========================================== */
@@ -150,6 +157,123 @@ const StrengthBar = ({
     </div>
   );
 };
+
+/*
+ * Fase 4 do redesign visual (2026-09-09) — "Match Intelligence
+ * Radar". Só VISUALIZA números que o motor já calcula — nenhum eixo
+ * aqui é um score novo inventado pra caber no gráfico:
+ *
+ * - Ataque: goalExpectationScore (já existe, 0-1).
+ * - Ritmo / Pressão: tempoFactor/pressureFactor (já existem,
+ *   normalizados pela mesma faixa ±18% de contextEngine.ts —
+ *   MIN/MAX_TEMPO_FACTOR e MIN/MAX_PRESSURE_FACTOR).
+ * - Equilíbrio: transformação direta e transparente de
+ *   |lambdaHome - lambdaAway| (diferença real, só reescalada pra
+ *   0-100 — não é uma opinião nova, é o mesmo número de outro jeito).
+ * - Confiança: confidence (já existe, 0-1).
+ */
+interface RadarAxis {
+  label: string;
+  value: number;
+}
+
+function RadarChart({
+  axes
+}: {
+  axes: RadarAxis[];
+}) {
+  const size = 220;
+  const center = size / 2;
+  const radius = size / 2 - 34;
+  const angleStep = (Math.PI * 2) / axes.length;
+
+  const angleFor = (index: number) =>
+    -Math.PI / 2 + index * angleStep;
+
+  const points = axes.map((axis, index) => {
+    const angle = angleFor(index);
+    const r = radius * clampProbability(axis.value);
+
+    return {
+      x: center + r * Math.cos(angle),
+      y: center + r * Math.sin(angle),
+      labelX: center + (radius + 20) * Math.cos(angle),
+      labelY: center + (radius + 20) * Math.sin(angle),
+      axis
+    };
+  });
+
+  const polygonPoints = points
+    .map(point => `${point.x},${point.y}`)
+    .join(" ");
+
+  const rings = [0.25, 0.5, 0.75, 1].map(fraction =>
+    axes
+      .map((_, index) => {
+        const angle = angleFor(index);
+        const r = radius * fraction;
+
+        return `${center + r * Math.cos(angle)},${center + r * Math.sin(angle)}`;
+      })
+      .join(" ")
+  );
+
+  return (
+    <svg
+      viewBox={`0 0 ${size} ${size}`}
+      className="w-full max-w-[240px] mx-auto"
+    >
+      {rings.map((ring, index) => (
+        <polygon
+          key={index}
+          points={ring}
+          fill="none"
+          stroke="rgba(255,255,255,0.08)"
+          strokeWidth="1"
+        />
+      ))}
+
+      {axes.map((_, index) => (
+        <line
+          key={index}
+          x1={center}
+          y1={center}
+          x2={
+            center +
+            radius * Math.cos(angleFor(index))
+          }
+          y2={
+            center +
+            radius * Math.sin(angleFor(index))
+          }
+          stroke="rgba(255,255,255,0.08)"
+          strokeWidth="1"
+        />
+      ))}
+
+      <polygon
+        points={polygonPoints}
+        fill="rgba(25,230,140,0.18)"
+        stroke="#19E68C"
+        strokeWidth="2"
+      />
+
+      {points.map((point, index) => (
+        <text
+          key={index}
+          x={point.labelX}
+          y={point.labelY}
+          fontSize="9"
+          fill="#9aa4bf"
+          textAnchor="middle"
+          dominantBaseline="middle"
+        >
+          {point.axis.label}
+        </text>
+      ))}
+    </svg>
+  );
+}
 
 
 const MARKET_LABELS: Record<MarketCode, string> = {
@@ -560,6 +684,70 @@ const markets: DashboardMarket[] =
     ? dashboardData.markets
     : [];
 
+/*
+ * Fase 4 — Match Intelligence Radar. Normaliza campos que o motor já
+ * produz (ver comentário em RadarChart acima) para 0-1, sem inventar
+ * nenhum número novo.
+ */
+const radarLambdaHome =
+  toFiniteNumber(
+    dashboardData.lambdaHome
+  );
+
+const radarLambdaAway =
+  toFiniteNumber(
+    dashboardData.lambdaAway
+  );
+
+const radarBalance =
+  radarLambdaHome !== null &&
+  radarLambdaAway !== null
+    ? 1 -
+      Math.min(
+        Math.abs(radarLambdaHome - radarLambdaAway) / 2,
+        1
+      )
+    : 0;
+
+const radarAxes: RadarAxis[] = [
+  {
+    label: "Ataque",
+    value: clampProbability(
+      dashboardData.goalExpectationScore
+    )
+  },
+
+  {
+    label: "Ritmo",
+    value: normalizeToUnit(
+      toFiniteNumber(dashboardData.tempoFactor),
+      MIN_TEMPO_FACTOR,
+      MAX_TEMPO_FACTOR
+    )
+  },
+
+  {
+    label: "Pressão",
+    value: normalizeToUnit(
+      toFiniteNumber(dashboardData.pressureFactor),
+      MIN_PRESSURE_FACTOR,
+      MAX_PRESSURE_FACTOR
+    )
+  },
+
+  {
+    label: "Equilíbrio",
+    value: radarBalance
+  },
+
+  {
+    label: "Confiança",
+    value: clampProbability(
+      dashboardData.confidence
+    )
+  }
+];
+
   /* ==========================================
      AÇÕES
   ========================================== */
@@ -882,6 +1070,18 @@ const markets: DashboardMarket[] =
           </div>
         )}
       </Card>
+
+      {/* MATCH INTELLIGENCE RADAR */}
+
+      {best && (
+        <Card>
+          <h2 className="text-xs text-zinc-400 tracking-wide mb-1">
+            🧭 Match Intelligence Radar
+          </h2>
+
+          <RadarChart axes={radarAxes} />
+        </Card>
+      )}
 
       {/* ESTATÍSTICAS */}
 
@@ -1644,6 +1844,26 @@ function clampProbability(
       parsed,
       1
     )
+  );
+}
+
+/*
+ * Normaliza um valor real (ex: tempoFactor, ~0.82-1.18) pra 0-1
+ * dividindo primeiro e só então limitando — ao contrário de limitar
+ * antes de dividir, isso continua correto mesmo se a faixa min/max
+ * mudar de tamanho no futuro.
+ */
+function normalizeToUnit(
+  value: number | null,
+  min: number,
+  max: number
+): number {
+  if (value === null || max <= min) {
+    return 0;
+  }
+
+  return clampProbability(
+    (value - min) / (max - min)
   );
 }
 
