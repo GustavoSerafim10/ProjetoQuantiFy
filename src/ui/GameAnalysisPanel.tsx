@@ -208,20 +208,18 @@ function statusColor(
 ): string {
   switch (status) {
     case "SCALPER":
-      return "text-cyan-400";
+      return "text-quantify-cyan";
 
     case "ELITE":
-      return "text-green-400";
-
     case "BET":
-      return "text-emerald-400";
+      return "text-quantify-green";
 
     case "WATCHLIST":
-      return "text-yellow-400";
+      return "text-quantify-yellow";
 
     case "NO BET":
     default:
-      return "text-red-400";
+      return "text-quantify-red";
   }
 }
 
@@ -230,16 +228,14 @@ function rowHighlight(
 ): string {
   switch (status) {
     case "SCALPER":
-      return "bg-cyan-900/20";
+      return "bg-quantify-cyan/10";
 
     case "ELITE":
-      return "bg-green-900/20";
-
     case "BET":
-      return "bg-emerald-900/20";
+      return "bg-quantify-green/10";
 
     case "WATCHLIST":
-      return "bg-yellow-900/20";
+      return "bg-quantify-yellow/10";
 
     default:
       return "";
@@ -415,7 +411,7 @@ export default function GameAnalysisPanel({
     );
 
   return (
-    <div className="bg-black text-white p-6 md:p-12">
+    <div className="bg-quantify-bg text-quantify-ice p-6 md:p-12">
 
       <h2 className="text-3xl mb-8 font-bold">
         🏆 Ranking Quantitativo
@@ -426,7 +422,7 @@ export default function GameAnalysisPanel({
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
 
         <div>
-          <label className="text-sm text-gray-400">
+          <label className="text-sm text-zinc-400">
             Edge mínimo:{" "}
             {formatPercent(
               minimumEdge,
@@ -455,7 +451,7 @@ export default function GameAnalysisPanel({
         </div>
 
         <div>
-          <label className="text-sm text-gray-400">
+          <label className="text-sm text-zinc-400">
             Risco máximo:{" "}
             {formatPercent(
               maximumRisk,
@@ -484,7 +480,7 @@ export default function GameAnalysisPanel({
         </div>
 
         <div>
-          <label className="text-sm text-gray-400">
+          <label className="text-sm text-zinc-400">
             Classificação
           </label>
 
@@ -501,7 +497,7 @@ export default function GameAnalysisPanel({
                     | DecisionClassification
                 )
             }
-            className="w-full bg-gray-900 p-2 rounded mt-1"
+            className="w-full bg-quantify-card p-2 rounded mt-1"
           >
             <option value="ALL">
               Todas
@@ -554,7 +550,7 @@ export default function GameAnalysisPanel({
 
       {filteredMarkets.length ===
       0 ? (
-        <div className="text-gray-500 text-lg">
+        <div className="text-zinc-500 text-lg">
           Nenhum mercado dentro dos critérios atuais.
         </div>
       ) : (
@@ -562,7 +558,7 @@ export default function GameAnalysisPanel({
           <table className="w-full text-left border-collapse">
 
             <thead>
-              <tr className="border-b border-gray-700 text-gray-400 uppercase text-sm">
+              <tr className="border-b border-zinc-800 text-zinc-500 uppercase text-sm">
                 <th className="p-3">
                   Rank
                 </th>
@@ -656,7 +652,7 @@ export default function GameAnalysisPanel({
                         )
                       }
                       className={
-                        `border-b border-gray-800 transition ${
+                        `border-b border-zinc-800/60 transition ${
                           rowHighlight(
                             status
                           )
@@ -697,8 +693,8 @@ export default function GameAnalysisPanel({
                           `p-3 font-semibold ${
                             ev !== null &&
                             ev > 0
-                              ? "text-emerald-400"
-                              : "text-red-400"
+                              ? "text-quantify-green"
+                              : "text-quantify-red"
                           }`
                         }
                       >
