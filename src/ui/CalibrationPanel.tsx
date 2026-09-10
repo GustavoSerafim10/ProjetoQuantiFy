@@ -37,9 +37,9 @@ function formatDecimal(value: number, decimals = 3): string {
 }
 
 function calibrationColor(error: number): string {
-  if (error <= 0.05) return "text-green-400";
-  if (error <= 0.10) return "text-yellow-400";
-  return "text-red-400";
+  if (error <= 0.05) return "text-quantify-green";
+  if (error <= 0.10) return "text-quantify-yellow";
+  return "text-quantify-red";
 }
 
 function BucketRow({
@@ -119,7 +119,7 @@ export default function CalibrationPanel({
       </div>
 
       {report.sampleWarning && (
-        <div className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2 mb-3">
+        <div className="text-xs text-quantify-yellow bg-quantify-yellow/10 border border-quantify-yellow/30 rounded-lg px-3 py-2 mb-3">
           ⚠️ {report.sampleWarning}
         </div>
       )}

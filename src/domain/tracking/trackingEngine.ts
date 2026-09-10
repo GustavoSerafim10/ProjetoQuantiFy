@@ -255,6 +255,21 @@ export function getStats() {
   const roi = totalStake ? totalProfit / totalStake : 0;
   const winRate = totalBets ? wins / totalBets : 0;
 
+  /*
+   * EV e odd já são conhecidos no momento do registro (não dependem
+   * de liquidação, ao contrário de win/loss) — por isso a média aqui
+   * é sobre TODO o histórico registrado, não só o liquidado.
+   */
+  const evMedio =
+    history.length
+      ? history.reduce((acc, b) => acc + (b.ev || 0), 0) / history.length
+      : 0;
+
+  const oddMedia =
+    history.length
+      ? history.reduce((acc, b) => acc + (b.odd || 0), 0) / history.length
+      : 0;
+
   return {
     totalBets,
     wins,
@@ -262,7 +277,9 @@ export function getStats() {
     winRate,
     totalProfit,
     totalStake,
-    roi
+    roi,
+    evMedio,
+    oddMedia
   };
 }
 

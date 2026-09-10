@@ -1067,6 +1067,42 @@ const radarAxes: RadarAxis[] = [
                 ? ` — ${dashboardData.reason}`
                 : ""}.
             </div>
+
+            {markets.length > 0 && (() => {
+              const evValues =
+                markets
+                  .map(m => toFiniteNumber(m.ev))
+                  .filter(
+                    (v): v is number => v !== null
+                  );
+
+              const positiveEvCount =
+                evValues.filter(v => v > 0).length;
+
+              const bestEv =
+                evValues.length > 0
+                  ? Math.max(...evValues)
+                  : null;
+
+              return (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs mt-3">
+                  <Metric
+                    label="Mercados avaliados"
+                    value={String(markets.length)}
+                  />
+
+                  <Metric
+                    label="Com EV positivo"
+                    value={String(positiveEvCount)}
+                  />
+
+                  <Metric
+                    label="Melhor EV encontrado"
+                    value={formatPercent(bestEv, 1)}
+                  />
+                </div>
+              );
+            })()}
           </div>
         )}
       </Card>
@@ -1090,14 +1126,22 @@ const radarAxes: RadarAxis[] = [
         independente da análise em tela acima.
       </div>
 
-      <div className="grid md:grid-cols-5 gap-4">
+      <div className="grid md:grid-cols-7 gap-4">
 
         <Card>
           <h2 className="text-xs text-zinc-400">
             💰 ROI
           </h2>
 
-          <div className="text-2xl font-bold text-green-400 mt-2">
+          <div
+            className={
+              `text-2xl font-bold mt-2 ${
+                stats.roi >= 0
+                  ? "text-quantify-green"
+                  : "text-quantify-red"
+              }`
+            }
+          >
             {formatPercent(
               stats.roi,
               1
@@ -1110,7 +1154,7 @@ const radarAxes: RadarAxis[] = [
             🎯 WINRATE
           </h2>
 
-          <div className="text-2xl font-bold mt-2">
+          <div className="text-2xl font-bold mt-2 text-quantify-ice">
             {formatPercent(
               stats.winRate,
               0
@@ -1123,7 +1167,7 @@ const radarAxes: RadarAxis[] = [
             📈 BETS
           </h2>
 
-          <div className="text-2xl font-bold mt-2">
+          <div className="text-2xl font-bold mt-2 text-quantify-ice">
             {stats.totalBets}
           </div>
         </Card>
@@ -1133,7 +1177,7 @@ const radarAxes: RadarAxis[] = [
             ✅ WIN
           </h2>
 
-          <div className="text-2xl font-bold text-green-400 mt-2">
+          <div className="text-2xl font-bold text-quantify-green mt-2">
             {stats.wins}
           </div>
         </Card>
@@ -1143,8 +1187,34 @@ const radarAxes: RadarAxis[] = [
             ❌ LOSS
           </h2>
 
-          <div className="text-2xl font-bold text-red-400 mt-2">
+          <div className="text-2xl font-bold text-quantify-red mt-2">
             {stats.losses}
+          </div>
+        </Card>
+
+        <Card>
+          <h2 className="text-xs text-zinc-400">
+            📊 EV MÉDIO
+          </h2>
+
+          <div className="text-2xl font-bold mt-2 text-quantify-ice">
+            {formatPercent(
+              stats.evMedio,
+              1
+            )}
+          </div>
+        </Card>
+
+        <Card>
+          <h2 className="text-xs text-zinc-400">
+            🎲 ODD MÉDIA
+          </h2>
+
+          <div className="text-2xl font-bold mt-2 text-quantify-ice">
+            {formatDecimal(
+              stats.oddMedia,
+              2
+            )}
           </div>
         </Card>
 
@@ -1360,7 +1430,8 @@ const radarAxes: RadarAxis[] = [
           </div>
         ) : (
           <div className="text-sm text-zinc-500">
-            Nenhum mercado disponível para exibição.
+            Os mercados analisados aparecerão aqui assim que uma
+            análise rodar — mesmo quando o resultado for NO BET.
           </div>
         )}
       </Card>
@@ -1372,47 +1443,56 @@ const radarAxes: RadarAxis[] = [
           📈 Performance
         </h2>
 
-        <div className="flex gap-2 text-sm">
-          {history
-            .slice(
-              0,
-              10
-            )
-            .map(
-              (
-                bet,
-                index
-              ) => (
-                <span
-                  key={
-                    bet.id ??
+        {history.length > 0 ? (
+          <>
+            <div className="flex gap-2 text-sm">
+              {history
+                .slice(
+                  0,
+                  10
+                )
+                .map(
+                  (
+                    bet,
                     index
-                  }
-                  className={
-                    bet.result ===
-                    "win"
-                      ? "text-green-400"
-                      : bet.result ===
-                        "loss"
-                        ? "text-red-400"
-                        : "text-zinc-500"
-                  }
-                >
-                  {bet.result ===
-                  "win"
-                    ? "W"
-                    : bet.result ===
-                      "loss"
-                      ? "L"
-                      : "-"}
-                </span>
-              )
-            )}
-        </div>
+                  ) => (
+                    <span
+                      key={
+                        bet.id ??
+                        index
+                      }
+                      className={
+                        bet.result ===
+                        "win"
+                          ? "text-quantify-green"
+                          : bet.result ===
+                            "loss"
+                            ? "text-quantify-red"
+                            : "text-zinc-500"
+                      }
+                    >
+                      {bet.result ===
+                      "win"
+                        ? "W"
+                        : bet.result ===
+                          "loss"
+                          ? "L"
+                          : "-"}
+                    </span>
+                  )
+                )}
+            </div>
 
-        <div className="text-xs text-zinc-400 mt-2">
-          Últimas 10 entradas
-        </div>
+            <div className="text-xs text-zinc-400 mt-2">
+              Últimas 10 entradas
+            </div>
+          </>
+        ) : (
+          <div className="text-sm text-zinc-500">
+            Nenhuma entrada liquidada ainda. Assim que houver
+            histórico, este painel mostra o desempenho recente.
+          </div>
+        )}
       </Card>
 
       {/* HISTÓRICO */}
@@ -1438,7 +1518,7 @@ const radarAxes: RadarAxis[] = [
                   className="border-b border-zinc-800 py-2 flex justify-between items-center gap-3"
                 >
                   <div className="flex flex-col text-xs">
-                    <span className="font-semibold text-white">
+                    <span className="font-semibold text-quantify-ice">
                       {bet.match ||
                         "Jogo"}
                     </span>
@@ -1447,7 +1527,7 @@ const radarAxes: RadarAxis[] = [
                       {getMarketLabel(bet.market)}
                     </span>
 
-                    <span className="text-[10px] text-blue-400">
+                    <span className="text-[10px] text-quantify-cyan">
                       {bet.type ||
                         "BET"}
                       {bet.source ===
@@ -1482,8 +1562,8 @@ const radarAxes: RadarAxis[] = [
                         className={
                           bet.result ===
                           "win"
-                            ? "text-green-400 text-xs"
-                            : "text-red-400 text-xs"
+                            ? "text-quantify-green text-xs"
+                            : "text-quantify-red text-xs"
                         }
                       >
                         {bet.result.toUpperCase()}
@@ -1497,7 +1577,7 @@ const radarAxes: RadarAxis[] = [
                               "win"
                             )
                           }
-                          className="text-green-400 text-[10px]"
+                          className="text-quantify-green text-[10px]"
                         >
                           WIN
                         </button>
@@ -1509,7 +1589,7 @@ const radarAxes: RadarAxis[] = [
                               "loss"
                             )
                           }
-                          className="text-red-400 text-[10px]"
+                          className="text-quantify-red text-[10px]"
                         >
                           LOSS
                         </button>
@@ -1521,7 +1601,8 @@ const radarAxes: RadarAxis[] = [
             )
           ) : (
             <div className="text-xs text-zinc-500">
-              Nenhuma execução registrada.
+              Nenhuma execução registrada ainda. Registre uma entrada
+              aprovada pra começar o acompanhamento operacional.
             </div>
           )}
         </div>
@@ -1539,7 +1620,7 @@ const radarAxes: RadarAxis[] = [
           }
           className={
             best
-              ? "bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded"
+              ? "bg-quantify-green text-quantify-bg font-semibold hover:brightness-110 px-4 py-2 rounded"
               : "bg-zinc-800 text-zinc-500 px-4 py-2 rounded cursor-not-allowed"
           }
         >
