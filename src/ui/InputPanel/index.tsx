@@ -709,18 +709,28 @@ export default function InputPanel({
         {/* DEFESA */}
 
         <Card title="🛡️ Defesa">
-          <Row
-            label="Gols sofridos por jogo"
-            home="homeConcededPG"
-            away="awayConcededPG"
-            form={form}
-            handleChange={handleChange}
-          />
-
+          {/*
+            Achado real em 2026-09-10: no Sofascore, "Jogos sem
+            sofrer gols" (contagem inteira, ex: 6) vem ANTES de
+            "Gols sofridos por jogo" (taxa, ex: 1.1) — invertido do
+            que estava aqui, o que levava o usuário a digitar a
+            contagem de clean sheets na caixa da taxa por engano
+            (gerava o aviso de inconsistência "foi informado 6,00").
+            Ordem corrigida pra bater com a fonte real.
+          */}
           <Row
             label="Jogos sem sofrer gols"
             home="homeCleanSheets"
             away="awayCleanSheets"
+            form={form}
+            handleChange={handleChange}
+            integer
+          />
+
+          <Row
+            label="Gols sofridos por jogo"
+            home="homeConcededPG"
+            away="awayConcededPG"
             form={form}
             handleChange={handleChange}
           />
