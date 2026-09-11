@@ -685,6 +685,22 @@ const markets: DashboardMarket[] =
     : [];
 
 /*
+ * A tabela do Market Lab mostra TODOS os mercados (nunca corta a
+ * lista), ordenados pela EV de verdade — antes a lista vinha na
+ * ordem do rankingScore composto (rank interno da decisão) e a
+ * tabela cortava para as 5 primeiras, então o card "Melhor EV
+ * encontrado" podia apontar pra um mercado que nem aparecia embaixo.
+ * Aqui é só apresentação: nenhum valor de probabilidade/EV/decisão é
+ * recalculado, só a ordem de exibição muda.
+ */
+const marketsByEv: DashboardMarket[] =
+  [...markets].sort(
+    (a, b) =>
+      safeEvForSort(b.ev) -
+      safeEvForSort(a.ev)
+  );
+
+/*
  * Fase 4 — Match Intelligence Radar. Normaliza campos que o motor já
  * produz (ver comentário em RadarChart acima) para 0-1, sem inventar
  * nenhum número novo.
@@ -1233,9 +1249,9 @@ const radarAxes: RadarAxis[] = [
 
         {markets.length >
         0 ? (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
             <table className="w-full text-xs md:text-sm border-collapse">
-              <thead>
+              <thead className="sticky top-0 bg-quantify-bg/95 backdrop-blur-xl">
                 <tr className="text-left text-[10px] uppercase tracking-wide text-zinc-500 border-b border-zinc-800">
                   <th className="py-2 pr-2">
                     Mercado
@@ -1264,11 +1280,7 @@ const radarAxes: RadarAxis[] = [
               </thead>
 
               <tbody>
-                {markets
-                  .slice(
-                    0,
-                    5
-                  )
+                {marketsByEv
                   .map(
                     (
                       market,
@@ -1321,8 +1333,7 @@ const radarAxes: RadarAxis[] = [
                             <td className="py-2.5 pr-2">
                               <span className="text-zinc-600 mr-1">
                                 #
-                                {market.rank ??
-                                  index + 1}
+                                {index + 1}
                               </span>
 
                               {getMarketLabel(market.market)}
@@ -1671,6 +1682,16 @@ function toFiniteNumber(
   )
     ? parsed
     : null;
+}
+
+function safeEvForSort(
+  value: unknown
+): number {
+  const parsed =
+    toFiniteNumber(value);
+
+  return parsed ??
+    Number.NEGATIVE_INFINITY;
 }
 
 function firstFiniteNumber(
