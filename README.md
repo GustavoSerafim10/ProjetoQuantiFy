@@ -1,73 +1,62 @@
-# React + TypeScript + Vite
+# Quantify Sports
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Motor quantitativo em TypeScript que estima probabilidades de resultados de partidas de futebol e avalia se uma cotação tem valor esperado positivo.
 
-Currently, two official plugins are available:
+Projeto pessoal criado para praticar modelagem estatística, arquitetura em camadas e testes automatizados em um problema com dados reais.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## O que ele faz
 
-## React Compiler
+1. Recebe os dados de uma partida (médias de gols, contexto, cotações) pelo painel de entrada.
+2. Estima a taxa de gols de cada time (λ) com ajustes de ataque, defesa, mando de campo e qualidade dos dados.
+3. Gera a distribuição de placares com **Poisson** e correção **Dixon-Coles** para placares baixos.
+4. Roda **simulações de Monte Carlo** para medir a variação do resultado.
+5. Compara a probabilidade do modelo com a **probabilidade implícita** da cotação e calcula o **valor esperado (EV)**.
+6. Aplica regras de risco, dimensiona a entrada com **Kelly fracionado** e classifica os mercados.
+7. Mostra o resultado e a explicação de cada decisão no dashboard.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Arquitetura
 
-## Expanding the ESLint configuration
+O código separa regras de negócio, orquestração e interface:
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```
+src/
+├── domain/        # matemática e regras puras (modelos, distribuições, odds, risco, calibração)
+├── application/   # pipelines e orquestração (modelo → simulação → valor → risco → decisão) e backtests
+└── ui/            # componentes React do painel e do dashboard
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Fluxo de uma análise:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
 ```
+Contexto → Modelo (λ) → Simulação → Probabilidade → Valor (EV) → Risco → Ranking → Decisão
+```
+
+Cada etapa é um pipeline independente, testado separadamente.
+
+## Stack
+
+- React 19 + TypeScript + Vite
+- Recharts e Framer Motion na interface
+- Vitest para testes (39 arquivos de teste)
+- Scripts de backtest e relatório de robustez com `tsx`
+- Deploy automático no GitHub Pages via GitHub Actions
+
+## Como rodar
+
+```bash
+npm install
+npm run dev          # ambiente local
+npm test             # testes
+npm run typecheck    # checagem de tipos
+npm run backtest:robustness   # relatório de robustez do modelo
+```
+
+## Limitações
+
+- É um projeto de estudo. As probabilidades dependem da qualidade dos dados informados.
+- Não há integração com casas de apostas nem coleta automática de dados.
+- Os resultados do backtest não garantem desempenho futuro.
+
+## Autor
+
+Gustavo Vinicius — [LinkedIn](https://www.linkedin.com/in/gustavo-vinicius-961594219/)
