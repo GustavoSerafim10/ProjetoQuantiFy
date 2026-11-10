@@ -2,6 +2,8 @@
 
 Motor quantitativo em TypeScript que estima probabilidades de resultados de partidas de futebol e avalia se uma cotação tem valor esperado positivo.
 
+🌐 [Abrir o app](https://gustavoserafim10.github.io/ProjetoQuantiFy/)
+
 Projeto pessoal criado para praticar modelagem estatística, arquitetura em camadas e testes automatizados em um problema com dados reais.
 
 ## O que ele faz
@@ -13,6 +15,10 @@ Projeto pessoal criado para praticar modelagem estatística, arquitetura em cama
 5. Compara a probabilidade do modelo com a **probabilidade implícita** da cotação e calcula o **valor esperado (EV)**.
 6. Aplica regras de risco, dimensiona a entrada com **Kelly fracionado** e classifica os mercados.
 7. Mostra o resultado e a explicação de cada decisão no dashboard.
+
+Exemplo de saída com dados fictícios: o **Market Lab** compara a probabilidade do modelo com a cotação de cada mercado e só recomenda entrada quando o EV passa pelas regras de risco.
+
+![Market Lab do Quantify Sports](docs/market-lab.png)
 
 ## Arquitetura
 
